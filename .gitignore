@@ -1,0 +1,60 @@
+# Virtual Environments
+venv/
+env/
+.venv/
+myenv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+web/.clerk/
+web/next-env.d.ts
+web/*.tsbuildinfo
+
+# Environment variables
+.env
+.env*
+!.env.example
+web/.env*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Project Specific
+output/
+*.txt
+*.png
+*.csv
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!next.config.ts
+!eslint.config.mjs
+!postcss.config.mjs
+Earnings_MultiAgent.docx
+
+# Specifically excluding versioned files if necessary
+data/data_aggregator_v0.py
+data/yahoo_finance_v0.py
+{config,data,agents,output}/
