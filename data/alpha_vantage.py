@@ -190,7 +190,7 @@ class AlphaVantageDataSource(BaseDataSource):
             response = self.session.get(
                 self.base_url,
                 params=params,
-                timeout=self.config.timeout
+                timeout=getattr(self.config, 'timeout', 30)
             )
             response.raise_for_status()
             

@@ -1,8 +1,9 @@
-"""Agents module - Hugging Face only."""
+"""Agents module for earnings predictions."""
 
+from .llm_client import LLMClient
 from .huggingface_agents import (
     AgentResponse,
-    HuggingFaceAgent,
+    BaseAgent,
     BullAgent,
     BearAgent,
     QuantAgent,
@@ -11,8 +12,9 @@ from .huggingface_agents import (
 )
 
 __all__ = [
+    "LLMClient",
     "AgentResponse",
-    "HuggingFaceAgent",
+    "BaseAgent",
     "BullAgent",
     "BearAgent",
     "QuantAgent",

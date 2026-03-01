@@ -13,6 +13,20 @@ export interface Prediction {
     agent_votes?: Record<string, string>;
 }
 
+export interface TaskResponse {
+    task_id: string;
+    status: string;
+    message: string;
+}
+
+export interface TaskStatusResponse {
+    task_id: string;
+    status: string;
+    ready: boolean;
+    result?: any;
+    error?: string;
+}
+
 export const api = {
     async fetchWithAuth(url: string, token?: string, options: RequestInit = {}) {
         const headers = new Headers(options.headers || {});
@@ -32,15 +46,25 @@ export const api = {
         return this.fetchWithAuth(`${API_BASE_URL}/health`);
     },
 
-    async predictTicker(ticker: string, reportDate: string, token?: string): Promise<Prediction> {
+    async predictTicker(ticker: string, reportDate: string, token?: string): Promise<TaskResponse> {
         const url = new URL(`${API_BASE_URL}/earnings/predict/${ticker}`);
         url.searchParams.append("report_date", reportDate);
         return this.fetchWithAuth(url.toString(), token);
+    },
+
+    async getTaskStatus(taskId: string, token?: string): Promise<TaskStatusResponse> {
+        const url = `${API_BASE_URL}/earnings/tasks/${taskId}`;
+        return this.fetchWithAuth(url, token);
     },
 
     async getWeeklyPredictions(weekStart: string, token?: string): Promise<Prediction[]> {
         const url = new URL(`${API_BASE_URL}/earnings/weekly`);
         url.searchParams.append("week_start", weekStart);
         return this.fetchWithAuth(url.toString(), token);
+    },
+
+    async getPredictionHistory(token: string): Promise<Prediction[]> {
+        const url = `${API_BASE_URL}/earnings/history`;
+        return this.fetchWithAuth(url, token);
     }
 };

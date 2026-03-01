@@ -106,7 +106,8 @@ class EarningsPipeline:
         self,
         ticker: str,
         report_date: date,
-        prediction_date: Optional[date] = None
+        prediction_date: Optional[date] = None,
+        task_id: Optional[str] = None
     ) -> EarningsPrediction:
         """
         Generate prediction for a single company.
@@ -115,18 +116,31 @@ class EarningsPipeline:
             ticker: Company ticker symbol
             report_date: Earnings report date
             prediction_date: Date prediction is made (default: today)
+            task_id: Optional Celery task ID for real-time progress updates
             
         Returns:
             EarningsPrediction
         """
         self._ensure_initialized()
         
+        import redis
+        import json
+        import os
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        
+        def publish(msg: str):
+            if task_id:
+                r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": msg}))
+
         prediction_date = prediction_date or date.today()
         
         self.logger.info(f"Generating prediction for {ticker} (reports {report_date})")
+        publish(f"Gathering company and consensus data for {ticker}...")
         
         # Fetch company data from Aggregator
         company_data = self.aggregator.get_company_data(ticker, report_date, include_news=False)
+        
+        publish(f"Fetching recent news and performing sentiment analysis...")
         
         # Fetch news with sentiment
         news = self.aggregator.get_news_with_sentiment(
@@ -136,10 +150,14 @@ class EarningsPipeline:
             max_articles=self.config.max_news_articles
         )
         
+        publish(f"Data gathered successfully. Initializing 3-agent debate...")
+        
         # Run three-agent prediction
         prediction = self.agent_system.predict(
-            company_data, news, prediction_date
+            company_data, news, prediction_date, task_id=task_id
         )
+        
+        publish(f"Debate concluded. Finalizing decision...")
         
         return prediction
     

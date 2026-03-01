@@ -46,6 +46,7 @@ output/
 *.png
 *.csv
 *.json
+*.db
 !package.json
 !package-lock.json
 !tsconfig.json

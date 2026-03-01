@@ -1,7 +1,8 @@
 """
-Hugging Face Agents for Earnings Prediction POC.
+Multi-Agent System for Earnings Prediction.
 
 Contains:
+- BaseAgent: Core logic for interacting with LLMClient
 - BullAgent: Advocates for earnings BEAT
 - BearAgent: Advocates for earnings MISS
 - QuantAgent: Objective quantitative analysis
@@ -10,7 +11,6 @@ Contains:
 
 import json
 import re
-import os
 import logging
 from datetime import date
 from typing import List, Dict, Any, Optional
@@ -23,6 +23,7 @@ from config.settings import (
     EarningsPrediction,
     PredictionDirection,
 )
+from .llm_client import LLMClient
 
 
 # ============================================================================
@@ -141,79 +142,27 @@ OUTPUT FORMAT (JSON only, no other text):
 # BASE AGENT CLASS
 # ============================================================================
 
-class HuggingFaceAgent:
-    """
-    Base Hugging Face agent for earnings analysis.
-    
-    Supports both Inference API and local model loading.
-    """
+class BaseAgent:
+    """Base agent using LLMClient for analysis."""
     
     def __init__(self, config: AgentConfig, system_prompt: str):
         self.config = config
         self.system_prompt = system_prompt
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-        self.model = None
-        self.tokenizer = None
-        self.api_client = None
-        self._initialized = False
+        self.llm = LLMClient(
+            api_key=config.api_key,
+            provider=config.provider,
+            model=config.model_name
+        )
     
     def initialize(self) -> bool:
-        """Initialize the agent (load model or setup API)."""
-        if self.config.use_local:
-            return self._init_local()
-        else:
-            return self._init_api()
-    
-    def _init_local(self) -> bool:
-        """Initialize local model."""
-        try:
-            from transformers import AutoTokenizer, AutoModelForCausalLM
-            import torch
-            
-            self.logger.info(f"Loading local model: {self.config.model_name}")
-            
-            self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.config.model_name,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device_map="auto" if torch.cuda.is_available() else None,
-            )
-            
-            self._initialized = True
-            self.logger.info("Local model loaded successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Failed to load local model: {e}")
-            return False
-    
-    def _init_api(self) -> bool:
-        """Initialize Hugging Face Inference API."""
-        try:
-            from huggingface_hub import InferenceClient
-            
-            api_key = self.config.api_key or os.environ.get("HUGGINGFACE_API_KEY")
-            
-            self.api_client = InferenceClient(
-                model=self.config.model_name,
-                token=api_key,
-            )
-            
-            self._initialized = True
-            self.logger.info(f"HF API client initialized for {self.config.model_name}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Failed to initialize HF API: {e}")
-            return False
+        """Initialize the agent."""
+        # LLMClient handles initialization internally
+        return True
     
     def shutdown(self) -> None:
         """Cleanup resources."""
-        self.model = None
-        self.tokenizer = None
-        self.api_client = None
-        self._initialized = False
+        pass
     
     def _format_prompt(self, company: CompanyData, news: List[NewsArticle]) -> str:
         """Format company data into analysis prompt."""
@@ -228,7 +177,7 @@ class HuggingFaceAgent:
         rev_str = ""
         if company.estimate_revisions:
             for r in company.estimate_revisions[:5]:
-                rev_str += f"  - {r.get('date')}: {r.get('direction').upper()} (${r.get('old_estimate'):.2f} → ${r.get('new_estimate'):.2f})\n"
+                rev_str += f"  - {r.get('date')}: {r.get('direction').upper()} (${r.get('old_estimate', 0):.2f} → ${r.get('new_estimate', 0):.2f})\n"
         
         # Format news
         news_str = ""
@@ -237,32 +186,35 @@ class HuggingFaceAgent:
                 sent = f"[{n.sentiment_score:+.1f}]" if n.sentiment_score else ""
                 news_str += f"  - {n.headline} {sent}\n"
         
+        # Market Cap formatting
+        mc_val = company.market_cap / 1e9 if company.market_cap else 0
+        
         prompt = f"""
 ## Company Analysis Request
 
 **Company:** {company.company_name} ({company.ticker})
 **Sector:** {company.sector} | **Industry:** {company.industry}
-**Market Cap:** ${company.market_cap/1e9:.1f}B
+**Market Cap:** ${mc_val:.1f}B
 **Report Date:** {company.report_date}
 
 ### Consensus Estimates
 - EPS Estimate: ${company.consensus_eps:.2f}
-- Revenue Estimate: ${company.consensus_revenue/1e9:.1f}B
+- Revenue Estimate: ${company.consensus_revenue/1e9 if company.consensus_revenue else 0:.1f}B
 - Number of Analysts: {company.num_analysts}
 
 ### Historical Earnings (Last 4 Quarters)
 {hist_str if hist_str else "  No historical data available"}
-- Beat Rate: {company.beat_rate_4q:.0%} if company.beat_rate_4q else 'N/A'
-- Avg Surprise: {company.avg_surprise_4q:.1f}% if company.avg_surprise_4q else 'N/A'
+- Beat Rate: {f"{company.beat_rate_4q:.0%}" if company.beat_rate_4q is not None else "N/A"}
+- Avg Surprise: {f"{company.avg_surprise_4q:.1f}%" if company.avg_surprise_4q is not None else "N/A"}
 
 ### Recent Estimate Revisions
 {rev_str if rev_str else "  No recent revisions"}
 
 ### Price Momentum
-- Current Price: ${company.current_price:.2f} if company.current_price else 'N/A'
-- 5-Day Change: {company.price_change_5d:.1%} if company.price_change_5d else 'N/A'
-- 21-Day Change: {company.price_change_21d:.1%} if company.price_change_21d else 'N/A'
-- Short Interest: {company.short_interest:.1%} if company.short_interest else 'N/A'
+- Current Price: {f"${company.current_price:.2f}" if company.current_price is not None else "N/A"}
+- 5-Day Change: {f"{company.price_change_5d:.1%}" if company.price_change_5d is not None else "N/A"}
+- 21-Day Change: {f"{company.price_change_21d:.1%}" if company.price_change_21d is not None else "N/A"}
+- Short Interest: {f"{company.short_interest:.1%}" if company.short_interest is not None else "N/A"}
 
 ### Recent News Headlines
 {news_str if news_str else "  No recent news"}
@@ -272,61 +224,49 @@ Analyze this company and provide your prediction in the specified JSON format.
 """
         return prompt
     
-    def _generate_response(self, prompt: str) -> str:
-        """Generate response from model."""
-        full_prompt = f"{self.system_prompt}\n\n{prompt}"
-        
-        if self.config.use_local and self.model:
-            return self._generate_local(full_prompt)
-        elif self.api_client:
-            return self._generate_api(full_prompt)
-        else:
-            raise RuntimeError("Agent not initialized")
-    
-    def _generate_local(self, prompt: str) -> str:
-        """Generate using local model."""
-        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
-        
-        if hasattr(self.model, 'device'):
-            inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-        
-        outputs = self.model.generate(
-            **inputs,
-            max_new_tokens=self.config.max_tokens,
+    def analyze(self, company: CompanyData, news: List[NewsArticle]) -> AgentResponse:
+        """Analyze company and return prediction."""
+        prompt = self._format_prompt(company, news)
+        response = self.llm.generate(
+            system_prompt=self.system_prompt,
+            user_prompt=prompt,
             temperature=self.config.temperature,
-            do_sample=True,
-            pad_token_id=self.tokenizer.eos_token_id,
+            max_tokens=self.config.max_tokens
         )
-        
-        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        
-        # Extract only the new generated part
-        if prompt in response:
-            response = response[len(prompt):]
-        
-        return response.strip()
-    
-    def _generate_api(self, prompt: str) -> str:
-        """Generate using Hugging Face Inference API."""
-        response = self.api_client.text_generation(
-            prompt,
-            max_new_tokens=self.config.max_tokens,
-            temperature=self.config.temperature,
-            return_full_text=False,
-        )
-        
-        return response.strip()
+        return self._parse_response(response)
     
     def _parse_response(self, response: str) -> AgentResponse:
         """Parse JSON response from model."""
-        # Try to extract JSON from response
-        json_match = re.search(r'\{[^{}]*\}', response, re.DOTALL)
+        print(f"DEBUG: Raw response from {self.__class__.__name__}: {response[:500]}...")
+        # Check for error message
+        if "⚠️ Error" in response:
+            self.logger.error(f"Agent {self.__class__.__name__} received error: {response}")
+            return AgentResponse(
+                direction=PredictionDirection.MEET,
+                confidence=0.5,
+                reasoning=f"LLM Error: {response}",
+                bull_factors=[],
+                bear_factors=[],
+                key_signals={},
+                raw_response=response,
+            )
+
+        # Try to find JSON block in markdown
+        json_content = response
+        if "```json" in response:
+            json_content = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            json_content = response.split("```")[1].split("```")[0].strip()
+            
+        # Clean up potential leading/trailing non-JSON text
+        start_idx = json_content.find('{')
+        end_idx = json_content.rfind('}')
         
-        if json_match:
+        if start_idx != -1 and end_idx != -1:
+            json_str = json_content[start_idx:end_idx+1]
             try:
-                data = json.loads(json_match.group())
+                data = json.loads(json_str)
                 
-                # Parse direction
                 dir_str = data.get("direction", "meet").lower()
                 if "beat" in dir_str:
                     direction = PredictionDirection.BEAT
@@ -344,12 +284,10 @@ Analyze this company and provide your prediction in the specified JSON format.
                     key_signals=data.get("key_signals", {}),
                     raw_response=response,
                 )
-                
-            except json.JSONDecodeError:
+            except Exception:
                 pass
         
-        # Fallback: return default response
-        self.logger.warning("Failed to parse agent response, using defaults")
+        self.logger.warning(f"Failed to parse agent response for {self.__class__.__name__}")
         return AgentResponse(
             direction=PredictionDirection.MEET,
             confidence=0.5,
@@ -359,57 +297,31 @@ Analyze this company and provide your prediction in the specified JSON format.
             key_signals={},
             raw_response=response,
         )
-    
-    def analyze(
-        self,
-        company: CompanyData,
-        news: List[NewsArticle]
-    ) -> AgentResponse:
-        """
-        Analyze company and return prediction.
-        
-        Args:
-            company: CompanyData to analyze
-            news: Recent news articles
-            
-        Returns:
-            AgentResponse with prediction
-        """
-        if not self._initialized:
-            raise RuntimeError("Agent not initialized. Call initialize() first.")
-        
-        prompt = self._format_prompt(company, news)
-        response = self._generate_response(prompt)
-        
-        return self._parse_response(response)
 
 
 # ============================================================================
 # SPECIALIZED AGENTS
 # ============================================================================
 
-class BullAgent(HuggingFaceAgent):
+class BullAgent(BaseAgent):
     """Bull Agent - Advocates for earnings BEAT."""
-    
     def __init__(self, config: AgentConfig):
         super().__init__(config, BULL_PROMPT)
 
 
-class BearAgent(HuggingFaceAgent):
+class BearAgent(BaseAgent):
     """Bear Agent - Advocates for earnings MISS."""
-    
     def __init__(self, config: AgentConfig):
         super().__init__(config, BEAR_PROMPT)
 
 
-class QuantAgent(HuggingFaceAgent):
+class QuantAgent(BaseAgent):
     """Quant Agent - Objective quantitative analysis."""
-    
     def __init__(self, config: AgentConfig):
         super().__init__(config, QUANT_PROMPT)
 
 
-class ConsensusAgent(HuggingFaceAgent):
+class ConsensusAgent(BaseAgent):
     """Consensus Agent - Synthesizes debate and makes final call."""
     
     def __init__(self, config: AgentConfig):
@@ -422,18 +334,7 @@ class ConsensusAgent(HuggingFaceAgent):
         bear_response: AgentResponse,
         quant_response: AgentResponse
     ) -> AgentResponse:
-        """
-        Synthesize the three agent responses into final prediction.
-        
-        Args:
-            company: Company being analyzed
-            bull_response: Bull agent's analysis
-            bear_response: Bear agent's analysis
-            quant_response: Quant agent's analysis
-            
-        Returns:
-            Final consensus AgentResponse
-        """
+        """Synthesize the three agent responses into final prediction."""
         synthesis_prompt = f"""
 ## Synthesis Request for {company.ticker}
 
@@ -459,8 +360,12 @@ class ConsensusAgent(HuggingFaceAgent):
 Based on this debate, provide your FINAL consensus prediction.
 Weigh the evidence and make a decisive call.
 """
-        
-        response = self._generate_response(synthesis_prompt)
+        response = self.llm.generate(
+            system_prompt=self.system_prompt,
+            user_prompt=synthesis_prompt,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens
+        )
         return self._parse_response(response)
 
 
@@ -469,110 +374,68 @@ Weigh the evidence and make a decisive call.
 # ============================================================================
 
 class ThreeAgentSystem:
-    """
-    Orchestrates the three-agent prediction workflow.
-    
-    Workflow:
-    1. Bull, Bear, and Quant agents analyze independently
-    2. Consensus agent synthesizes all viewpoints
-    3. Final prediction with full reasoning trace
-    
-    Usage:
-        config = AgentConfig(model_name="mistralai/Mistral-7B-Instruct-v0.2")
-        system = ThreeAgentSystem(config)
-        system.initialize()
-        
-        prediction = system.predict(company_data, news)
-        print(f"Prediction: {prediction.direction} ({prediction.confidence:.0%})")
-        
-        system.shutdown()
-    """
+    """Orchestrates the three-agent prediction workflow."""
     
     def __init__(self, config: AgentConfig, enable_rebuttals: bool = False):
         self.config = config
         self.enable_rebuttals = enable_rebuttals
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        self.bull_agent: Optional[BullAgent] = None
-        self.bear_agent: Optional[BearAgent] = None
-        self.quant_agent: Optional[QuantAgent] = None
-        self.consensus_agent: Optional[ConsensusAgent] = None
+        self.bull_agent = BullAgent(config)
+        self.bear_agent = BearAgent(config)
+        self.quant_agent = QuantAgent(config)
+        self.consensus_agent = ConsensusAgent(config)
     
     def initialize(self) -> None:
-        """Initialize all four agents."""
-        self.logger.info("Initializing three-agent system...")
-        
-        self.bull_agent = BullAgent(self.config)
-        self.bear_agent = BearAgent(self.config)
-        self.quant_agent = QuantAgent(self.config)
-        self.consensus_agent = ConsensusAgent(self.config)
-        
+        """Initialize all agents."""
         self.bull_agent.initialize()
         self.bear_agent.initialize()
         self.quant_agent.initialize()
         self.consensus_agent.initialize()
-        
-        self.logger.info("All agents initialized")
     
     def shutdown(self) -> None:
         """Shutdown all agents."""
-        if self.bull_agent:
-            self.bull_agent.shutdown()
-        if self.bear_agent:
-            self.bear_agent.shutdown()
-        if self.quant_agent:
-            self.quant_agent.shutdown()
-        if self.consensus_agent:
-            self.consensus_agent.shutdown()
-        
-        self.logger.info("All agents shut down")
+        pass
     
     def predict(
         self,
         company: CompanyData,
         news: List[NewsArticle],
-        prediction_date: Optional[date] = None
+        prediction_date: Optional[date] = None,
+        task_id: Optional[str] = None
     ) -> EarningsPrediction:
-        """
-        Run full three-agent prediction.
-        
-        Args:
-            company: Company data to analyze
-            news: Recent news articles
-            prediction_date: Date of prediction (default: today)
-            
-        Returns:
-            EarningsPrediction with full debate record
-        """
+        """Run full three-agent prediction."""
         prediction_date = prediction_date or date.today()
         
+        import redis
+        import json
+        import os
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        
+        def publish(msg: str, agent: str = "System"):
+            if task_id:
+                r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": msg, "agent": agent}))
+
         self.logger.info(f"Starting analysis for {company.ticker}")
         
-        # Phase 1: Independent Analysis
-        self.logger.info("Phase 1: Independent agent analysis")
-        
+        publish(f"Bull Agent analyzing {company.ticker} for positive factors...", "Bull")
         bull_response = self.bull_agent.analyze(company, news)
-        self.logger.info(f"  Bull: {bull_response.direction.value} ({bull_response.confidence:.0%})")
+        publish(f"Bull Analysis Complete: Confidence {bull_response.confidence:.0%}", "Bull")
         
+        publish(f"Bear Agent investigating {company.ticker} for risk factors...", "Bear")
         bear_response = self.bear_agent.analyze(company, news)
-        self.logger.info(f"  Bear: {bear_response.direction.value} ({bear_response.confidence:.0%})")
+        publish(f"Bear Analysis Complete: Confidence {bear_response.confidence:.0%}", "Bear")
         
+        publish(f"Quant Agent computing statistical probabilities for {company.ticker}...", "Quant")
         quant_response = self.quant_agent.analyze(company, news)
-        self.logger.info(f"  Quant: {quant_response.direction.value} ({quant_response.confidence:.0%})")
+        publish(f"Quant Analysis Complete: Confidence {quant_response.confidence:.0%}", "Quant")
         
-        # Phase 2: Consensus Synthesis
-        self.logger.info("Phase 2: Consensus synthesis")
-        
+        publish(f"Consensus Agent synthesizing debate for final prediction...", "Consensus")
         consensus_response = self.consensus_agent.synthesize(
             company, bull_response, bear_response, quant_response
         )
+        publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "Consensus")
         
-        self.logger.info(
-            f"Final: {consensus_response.direction.value.upper()} "
-            f"({consensus_response.confidence:.0%})"
-        )
-        
-        # Build debate summary
         debate_summary = f"""
 === THREE-AGENT EARNINGS DEBATE ===
 

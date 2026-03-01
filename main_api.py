@@ -1,16 +1,38 @@
-from fastapi import FastAPI, Depends, HTTPException
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import earnings
-import uvicorn
+from api.routers import earnings, websockets
+from database.db import init_db
+import os
+import redis.asyncio as redis
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+
+# Initialize DB at startup
+init_db()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize Redis Cache
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        r = redis.from_url(redis_url, encoding="utf8", decode_responses=True)
+        FastAPICache.init(RedisBackend(r), prefix="fastapi-cache")
+    except Exception as e:
+        print(f"Warning: Failed to initialize Redis cache: {e}")
+    
+    yield
 
 app = FastAPI(
     title="Earnings Agents API",
     description="API for fetching and analyzing earnings data using multiple agents.",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # Include routers
 app.include_router(earnings.router)
+app.include_router(websockets.router)
 
 # CORS middleware for frontend communication
 app.add_middleware(

@@ -89,6 +89,7 @@ class CompanyInfo:
 class PriceData:
     """Price and momentum data."""
     current_price: float
+    open_price: Optional[float] = None # TO DO: INCLUDE OPEN, HIGH, LOW...
     price_change_1d: Optional[float] = None
     price_change_5d: Optional[float] = None
     price_change_21d: Optional[float] = None

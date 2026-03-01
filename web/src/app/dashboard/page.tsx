@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { api, Prediction } from "@/lib/api";
 
@@ -11,6 +11,12 @@ const stats = [
     { label: "Avg Confidence", value: "84%", icon: "📊", color: "var(--consensus-purple)" },
 ];
 
+interface WSMessage {
+    status: string;
+    message: string;
+    agent?: string;
+}
+
 export default function DashboardPage() {
     const { getToken } = useAuth();
     const [ticker, setTicker] = useState("");
@@ -18,6 +24,19 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<Prediction | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [messages, setMessages] = useState<WSMessage[]>([]);
+
+    const terminalEndRef = useRef<HTMLDivElement>(null);
+
+    const scrollToBottom = () => {
+        terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        if (loading) {
+            scrollToBottom();
+        }
+    }, [messages, loading]);
 
     const handleRunAnalysis = async () => {
         if (!ticker || !reportDate) {
@@ -28,18 +47,76 @@ export default function DashboardPage() {
         setLoading(true);
         setError(null);
         setResult(null);
+        setMessages([]);
+
+        let ws: WebSocket | null = null;
 
         try {
             const token = await getToken();
             if (!token) throw new Error("Not authenticated");
 
-            const data = await api.predictTicker(ticker, reportDate, token);
-            setResult(data);
+            // 1. Start Analysis
+            const { task_id } = await api.predictTicker(ticker, reportDate, token);
+
+            // Setup WebSocket
+            const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+            ws = new WebSocket(`${wsUrl}/ws/task/${task_id}`);
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    setMessages((prev) => [...prev, data]);
+                } catch (e) {
+                    console.error("Failed to parse WS message", e);
+                }
+            };
+
+            ws.onerror = (e) => {
+                console.error("WebSocket Error:", e);
+            }
+
+            // 2. Poll for Status
+            let isReady = false;
+            let attempts = 0;
+            const maxAttempts = 60; // 120 seconds max
+
+            while (!isReady && attempts < maxAttempts) {
+                const statusData = await api.getTaskStatus(task_id, token);
+
+                if (statusData.ready) {
+                    isReady = true;
+                    if (statusData.error) {
+                        throw new Error(statusData.error);
+                    }
+                    setResult(statusData.result.result || statusData.result);
+                } else {
+                    attempts++;
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
+
+            if (!isReady) {
+                throw new Error("Analysis timed out. Please check history later.");
+            }
+
         } catch (err: any) {
             setError(err.message || "An error occurred during analysis.");
         } finally {
             setLoading(false);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            }
         }
+    };
+
+    const getAgentColor = (agent?: string) => {
+        if (!agent) return "text-gray-400";
+        const a = agent.toLowerCase();
+        if (a === "bull") return "text-bull font-bold";
+        if (a === "bear") return "text-bear font-bold";
+        if (a === "quant") return "text-blue-400 font-bold";
+        if (a === "consensus") return "text-purple-400 font-bold";
+        return "text-accent font-bold";
     };
 
     return (
@@ -69,11 +146,44 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
                 <div className="lg:col-span-2 space-y-8">
                     <div className="flex items-center justify-between">
-                        <h2 className="text-2xl font-bold font-outfit">Recent Predictions</h2>
-                        <button className="text-sm font-bold text-accent hover:underline">View All</button>
+                        <h2 className="text-2xl font-bold font-outfit">
+                            {loading ? "Agent Debate in Progress" : "Recent Predictions"}
+                        </h2>
+                        {!loading && <button className="text-sm font-bold text-accent hover:underline">View All</button>}
                     </div>
 
-                    {result ? (
+                    {loading ? (
+                        <div className="glass p-8 rounded-3xl border border-accent/20 bg-black/60 shadow-2xl h-[400px] flex flex-col font-mono text-sm relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50 animate-pulse"></div>
+                            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/10">
+                                <div className="flex gap-1.5">
+                                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                                    <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                                </div>
+                                <span className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Live Terminal</span>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto space-y-3 pr-4 custom-scrollbar">
+                                {messages.length === 0 ? (
+                                    <div className="text-gray-500 animate-pulse">Connecting to debate stream...</div>
+                                ) : (
+                                    messages.map((msg, idx) => (
+                                        <div key={idx} className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                            <span className="text-gray-600 shrink-0">[{new Date().toLocaleTimeString()}]</span>
+                                            {msg.agent ? (
+                                                <span className={`${getAgentColor(msg.agent)} shrink-0 w-[80px]`}>{msg.agent.toUpperCase()}:</span>
+                                            ) : (
+                                                <span className="text-gray-500 shrink-0 w-[80px]">SYSTEM:</span>
+                                            )}
+                                            <span className="text-gray-300 whitespace-pre-wrap">{msg.message}</span>
+                                        </div>
+                                    ))
+                                )}
+                                <div ref={terminalEndRef} />
+                            </div>
+                        </div>
+                    ) : result ? (
                         <div className="glass p-10 rounded-3xl border border-accent/20 bg-accent/[0.02] animate-in fade-in slide-in-from-bottom-4 duration-1000">
                             <div className="flex justify-between items-start mb-8">
                                 <div>
@@ -82,7 +192,7 @@ export default function DashboardPage() {
                                 </div>
                                 <div className="text-right">
                                     <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Confidence</div>
-                                    <div className="text-4xl font-black text-white">{result.confidence}%</div>
+                                    <div className="text-4xl font-black text-white">{(result.confidence * 100).toFixed(0)}%</div>
                                 </div>
                             </div>
 
@@ -111,7 +221,7 @@ export default function DashboardPage() {
 
                             <div className="p-6 glass rounded-2xl border border-white/5">
                                 <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">Agent Debate Summary</p>
-                                <p className="text-sm text-gray-300 leading-relaxed font-medium">
+                                <p className="text-sm text-gray-300 leading-relaxed font-medium whitespace-pre-line">
                                     {result.reasoning_summary}
                                 </p>
                             </div>
@@ -156,7 +266,14 @@ export default function DashboardPage() {
                 {/* Quick Analysis Form */}
                 <div className="space-y-8">
                     <h2 className="text-2xl font-bold font-outfit">Quick Analysis</h2>
-                    <div className="glass p-10 rounded-3xl border border-white/5 space-y-8 shadow-2xl">
+                    <div className="glass p-10 rounded-3xl border border-white/5 space-y-8 shadow-2xl relative">
+                        {loading && (
+                            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm rounded-3xl z-10 flex flex-col items-center justify-center border border-accent/20">
+                                <div className="w-12 h-12 border-4 border-accent/20 border-t-accent rounded-full animate-spin mb-4"></div>
+                                <p className="text-accent font-bold animate-pulse text-sm tracking-widest uppercase">Analyzing Data</p>
+                            </div>
+                        )}
+
                         <div className="space-y-3">
                             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Stock Ticker</label>
                             <input
@@ -173,7 +290,7 @@ export default function DashboardPage() {
                                 type="date"
                                 value={reportDate}
                                 onChange={(e) => setReportDate(e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 focus:border-accent outline-none transition-all text-sm font-bold text-white"
+                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 focus:border-accent outline-none transition-all text-sm font-bold text-white relative [color-scheme:dark]"
                             />
                         </div>
 
@@ -191,7 +308,7 @@ export default function DashboardPage() {
                                 : "bg-accent text-background hover:shadow-[0_0_30px_rgba(45,212,191,0.4)] hover:-translate-y-1"
                                 }`}
                         >
-                            {loading ? "Analyzing Market Data..." : "Run AI Debate"}
+                            {loading ? "Debate in Progress..." : "Run AI Debate"}
                         </button>
 
                         <p className="text-[10px] text-gray-600 text-center leading-relaxed">

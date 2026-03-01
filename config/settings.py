@@ -34,9 +34,10 @@ class BloombergConfig:
 
 @dataclass
 class AgentConfig:
-    """Hugging Face agent configuration."""
-    model_name: str = "gemini-1.5-flash-002"
-    api_key: Optional[str] = "[ENCRYPTION_KEY]"
+    """Agent configuration for LLMs."""
+    provider: str = "gemini"  # or "anthropic", "openai"
+    model_name: str = "gemini-2.0-flash"
+    api_key: Optional[str] = None
     temperature: float = 0.3
     max_tokens: int = 2048
     use_local: bool = False
@@ -49,6 +50,8 @@ class DataSourceConfig:
     rate_limit_calls: int = 5
     rate_limit_period: float = 60.0  # seconds
     enabled: bool = True
+    timeout: int = 30
+    max_retries: int = 3
 
 
 @dataclass
@@ -80,6 +83,7 @@ class PipelineConfig:
     # News settings
     news_lookback_days: int = 30
     max_news_articles: int = 50
+    redis_url: str = "redis://localhost:6379/0"
 
 
 @dataclass
@@ -156,6 +160,18 @@ def load_config() -> PipelineConfig:
     from dotenv import load_dotenv
     load_dotenv()
     
+    provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+    
+    # Select the appropriate API key based on the provider
+    if provider == "gemini":
+        agent_api_key = os.getenv("GEMINI_API_KEY")
+    elif provider == "anthropic":
+        agent_api_key = os.getenv("ANTHROPIC_API_KEY")
+    elif provider == "openai":
+        agent_api_key = os.getenv("OPENAI_API_KEY")
+    else:
+        agent_api_key = None
+
     return PipelineConfig(
         newsapi=DataSourceConfig(
             api_key=os.getenv("NEWSAPI_API_KEY"),
@@ -166,6 +182,9 @@ def load_config() -> PipelineConfig:
             enabled=os.getenv("ALPHAVANTAGE_API_KEY") is not None
         ),
         agent=AgentConfig(
-            api_key=os.getenv("GEMINI_API_KEY") or "[ENCRYPTION_KEY]"
-        )
+            provider=provider,
+            model_name=os.getenv("LLM_MODEL_NAME") or "gemini-2.0-flash",
+            api_key=agent_api_key
+        ),
+        redis_url=os.getenv("REDIS_URL") or "redis://localhost:6379/0"
     )

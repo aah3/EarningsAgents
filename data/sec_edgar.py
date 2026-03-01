@@ -189,7 +189,7 @@ class SECEdgarDataSource(BaseDataSource):
             
             # Use SEC's company tickers JSON
             url = f"{self.base_url}/files/company_tickers.json"
-            response = self.session.get(url, timeout=self.config.timeout)
+            response = self.session.get(url, timeout=getattr(self.config, 'timeout', 30))
             response.raise_for_status()
             
             data = response.json()
@@ -250,7 +250,7 @@ class SECEdgarDataSource(BaseDataSource):
                 'output': 'atom'
             }
             
-            response = self.session.get(url, params=params, timeout=self.config.timeout)
+            response = self.session.get(url, params=params, timeout=getattr(self.config, 'timeout', 30))
             response.raise_for_status()
             
             # Parse XML/Atom feed
@@ -326,7 +326,7 @@ class SECEdgarDataSource(BaseDataSource):
             self._ensure_connected()
             self.rate_limiter.wait_if_needed()
             
-            response = self.session.get(filing_url, timeout=self.config.timeout)
+            response = self.session.get(filing_url, timeout=getattr(self.config, 'timeout', 30))
             response.raise_for_status()
             
             # Parse HTML and extract text
@@ -464,7 +464,7 @@ class SECEdgarDataSource(BaseDataSource):
             # Use company facts API
             # Note: SEC requires 'data.sec.gov' for this endpoint
             url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
-            response = self.session.get(url, timeout=self.config.timeout)
+            response = self.session.get(url, timeout=getattr(self.config, 'timeout', 30))
             response.raise_for_status()
             
             return response.json()

@@ -153,7 +153,7 @@ class NewsAPIDataSource:
                 'apiKey': self.config.api_key,
             }
             
-            response = self.session.get(url, params=params, timeout=self.config.timeout)
+            response = self.session.get(url, params=params, timeout=getattr(self.config, 'timeout', 30))
             response.raise_for_status()
             
             data = response.json()
@@ -350,7 +350,7 @@ class AlphaVantageNewsDataSource:
             response = self.session.get(
                 self.base_url,
                 params=params,
-                timeout=self.config.timeout
+                timeout=getattr(self.config, 'timeout', 30)
             )
             response.raise_for_status()
             
@@ -432,7 +432,7 @@ class AlphaVantageNewsDataSource:
             response = self.session.get(
                 self.base_url,
                 params=params,
-                timeout=self.config.timeout
+                timeout=getattr(self.config, 'timeout', 30)
             )
             response.raise_for_status()
             

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 from pydantic import BaseModel
+from sqlmodel import Session, select
 import sys
 import os
 
@@ -10,14 +11,26 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from pipeline import EarningsPipeline
 from config.settings import PipelineConfig, load_config
+from database.db import get_session
+from database.models import User, Prediction
+from api.dependencies.auth import get_current_user
 
 router = APIRouter(
     prefix="/earnings",
     tags=["earnings"],
 )
 
+def get_or_create_user(session: Session, clerk_id: str):
+    statement = select(User).where(User.clerk_id == clerk_id)
+    user = session.exec(statement).first()
+    if not user:
+        user = User(clerk_id=clerk_id)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+    return user
+
 # Initialize pipeline as a singleton-like object for the router
-# In a real app, this would be handled via a dependency or lifecycle event
 _pipeline_instance = None
 
 def get_pipeline():
@@ -30,17 +43,75 @@ def get_pipeline():
         _pipeline_instance.initialize()
     return _pipeline_instance
 
+from api.tasks import analyze_ticker_task
+from celery.result import AsyncResult
+
 @router.get("/predict/{ticker}")
 async def predict_ticker(
     ticker: str, 
     report_date: date,
-    pipeline: EarningsPipeline = Depends(get_pipeline),
-    user_id: str = Depends(get_current_user)
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
 ):
     try:
-        # In the future, we will use user_id to associate prediction with the user
-        prediction = pipeline.predict_single(ticker, report_date)
-        return prediction
+        # Ensure user exists in DB
+        get_or_create_user(session, clerk_id)
+        
+        # Dispatch background task
+        task = analyze_ticker_task.delay(
+            ticker.upper(), 
+            report_date.isoformat(), 
+            clerk_id
+        )
+        
+        return {
+            "task_id": task.id,
+            "status": "PENDING",
+            "message": f"Analysis for {ticker} started in background"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/tasks/{task_id}")
+async def get_task_status(task_id: str):
+    """
+    Check the status and result of a background analysis task.
+    """
+    res = AsyncResult(task_id)
+    
+    if res.ready():
+        result_data = res.result
+        if isinstance(result_data, dict) and result_data.get("status") == "FAILURE":
+            return {
+                "task_id": task_id,
+                "status": "SUCCESS", # The task completed (even if with internal error)
+                "ready": True,
+                "error": result_data.get("error")
+            }
+        
+        return {
+            "task_id": task_id,
+            "status": "SUCCESS",
+            "ready": True,
+            "result": result_data
+        }
+    
+    return {
+        "task_id": task_id,
+        "status": res.status,
+        "ready": False
+    }
+
+@router.get("/history")
+async def get_prediction_history(
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    try:
+        user = get_or_create_user(session, clerk_id)
+        statement = select(Prediction).where(Prediction.user_id == user.id).order_by(Prediction.prediction_date.desc())
+        predictions = session.exec(statement).all()
+        return predictions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
