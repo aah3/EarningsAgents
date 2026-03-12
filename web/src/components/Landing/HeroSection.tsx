@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { SignInButton, SignedIn, SignedOut } from "@clerk/nextjs";
+
 export default function HeroSection() {
     return (
         <section className="relative section-padding px-8 overflow-hidden min-h-[90vh] flex items-center">
@@ -20,9 +23,18 @@ export default function HeroSection() {
                     </div>
 
                     <div className="flex flex-wrap gap-6">
-                        <button className="px-10 py-4 bg-accent text-background rounded-full font-bold hover:shadow-[0_0_30px_rgba(45,212,191,0.3)] transition-all transform hover:-translate-y-1">
-                            View Sample Demo
-                        </button>
+                        <SignedOut>
+                            <SignInButton mode="modal">
+                                <button className="px-10 py-4 bg-accent text-background rounded-full font-bold hover:shadow-[0_0_30px_rgba(45,212,191,0.3)] transition-all transform hover:-translate-y-1">
+                                    Start Free Trial
+                                </button>
+                            </SignInButton>
+                        </SignedOut>
+                        <SignedIn>
+                            <Link href="/dashboard" className="px-10 py-4 bg-accent text-background rounded-full font-bold hover:shadow-[0_0_30px_rgba(45,212,191,0.3)] transition-all transform hover:-translate-y-1 flex items-center justify-center">
+                                Go to Dashboard
+                            </Link>
+                        </SignedIn>
                         <button className="px-10 py-4 glass rounded-full font-bold hover:bg-white/5 transition-all transform hover:-translate-y-1">
                             Watch 2-min Demo
                         </button>

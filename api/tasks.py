@@ -47,7 +47,14 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str):
         r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": f"Started analysis for {ticker}"}))
 
         # 1. Run Analysis
-        result = pipeline.predict_single(ticker, report_date, task_id=task_id)
+        raw_result = pipeline.predict_single(ticker, report_date, task_id=task_id)
+        
+        from dataclasses import asdict
+        result = asdict(raw_result)
+        
+        # Serialize enums for JSON
+        if hasattr(raw_result.direction, "value"):
+            result["direction"] = raw_result.direction.value
         
         # 2. Save directly to DB from worker
         with Session(engine) as session:
@@ -67,7 +74,7 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str):
                 ticker=ticker.upper(),
                 company_name=result.get("company_name", "Unknown"),
                 report_date=datetime.combine(report_date, datetime.min.time()),
-                direction=result.get("direction").value if hasattr(result.get("direction"), "value") else result.get("direction", "NEUTRAL"),
+                direction=result.get("direction", "NEUTRAL").upper(),
                 confidence=result.get("confidence", 0.0),
                 reasoning_summary=result.get("reasoning_summary", ""),
                 bull_factors=result.get("bull_factors", []),

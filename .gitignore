@@ -59,3 +59,5 @@ Earnings_MultiAgent.docx
 data/data_aggregator_v0.py
 data/yahoo_finance_v0.py
 {config,data,agents,output}/
+var_swaps.py
+options_screener.py
