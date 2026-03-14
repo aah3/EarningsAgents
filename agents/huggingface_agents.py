@@ -99,7 +99,8 @@ ANALYSIS FOCUS:
 2. Average surprise magnitude and consistency
 3. Estimate revision trends (7d, 30d, 90d)
 4. Pre-earnings price drift
-5. Statistical probability assessment
+5. Options market signals (Put/Call ratios, IV Skew, Max Pain, Net Gamma)
+6. Statistical probability assessment
 
 OUTPUT FORMAT (JSON only, no other text):
 {
@@ -189,6 +190,25 @@ class BaseAgent:
         # Market Cap formatting
         mc_val = company.market_cap / 1e9 if company.market_cap else 0
         
+        # Options formatting
+        options_str = ""
+        if company.options_features:
+            features = company.options_features
+            pc_ratio = features.get('put_call_volume_ratio')
+            if pc_ratio is not None and str(pc_ratio).lower() != 'nan':
+                options_str += f"  - Put/Call Vol Ratio: {pc_ratio:.2f}x\n"
+            iv_skew = features.get('iv_skew')
+            if iv_skew is not None and str(iv_skew).lower() != 'nan':
+                options_str += f"  - IV Skew (OTM Put - Call): {iv_skew:.4f}\n"
+            net_gamma = features.get('net_gamma_exposure')
+            if net_gamma is not None and str(net_gamma).lower() != 'nan':
+                options_str += f"  - Net Gamma Exposure: {net_gamma:.2f}\n"
+            max_pain = features.get('max_pain_to_spot')
+            if max_pain is not None and str(max_pain).lower() != 'nan':
+                options_str += f"  - Max Pain to Spot Ratio: {max_pain:.4f}\n"
+            if not options_str:
+                options_str = "  No significant options data\n"
+        
         prompt = f"""
 ## Company Analysis Request
 
@@ -215,6 +235,9 @@ class BaseAgent:
 - 5-Day Change: {f"{company.price_change_5d:.1%}" if company.price_change_5d is not None else "N/A"}
 - 21-Day Change: {f"{company.price_change_21d:.1%}" if company.price_change_21d is not None else "N/A"}
 - Short Interest: {f"{company.short_interest:.1%}" if company.short_interest is not None else "N/A"}
+
+### Options Market Signals
+{options_str if options_str else "  No options data available"}
 
 ### Recent News Headlines
 {news_str if news_str else "  No recent news"}
@@ -340,9 +363,16 @@ class ConsensusAgent(BaseAgent):
         company: CompanyData,
         bull_response: AgentResponse,
         bear_response: AgentResponse,
-        quant_response: AgentResponse
+        quant_response: AgentResponse,
+        user_analysis: Optional[str] = None
     ) -> AgentResponse:
         """Synthesize the three agent responses into final prediction."""
+        user_analysis_section = ""
+        if user_analysis:
+            user_analysis_section = f"""
+### ANALYST (USER PROVIDED) ANALYSIS
+- Analysis: {user_analysis}
+"""
         synthesis_prompt = f"""
 ## Synthesis Request for {company.ticker}
 
@@ -363,7 +393,7 @@ class ConsensusAgent(BaseAgent):
 - Confidence: {quant_response.confidence:.0%}
 - Reasoning: {quant_response.reasoning}
 - Key Signals: {json.dumps(quant_response.key_signals)}
-
+{user_analysis_section}
 ---
 Based on this debate, provide your FINAL consensus prediction.
 Weigh the evidence and make a decisive call.
@@ -410,7 +440,8 @@ class ThreeAgentSystem:
         company: CompanyData,
         news: List[NewsArticle],
         prediction_date: Optional[date] = None,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        user_analysis: Optional[str] = None
     ) -> EarningsPrediction:
         """Run full three-agent prediction."""
         prediction_date = prediction_date or date.today()
@@ -438,12 +469,16 @@ class ThreeAgentSystem:
         quant_response = self.quant_agent.analyze(company, news)
         publish(f"Quant Analysis Complete: Confidence {quant_response.confidence:.0%}", "Quant")
         
+        if user_analysis:
+            publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst")
+        
         publish(f"Consensus Agent synthesizing debate for final prediction...", "Consensus")
         consensus_response = self.consensus_agent.synthesize(
-            company, bull_response, bear_response, quant_response
+            company, bull_response, bear_response, quant_response, user_analysis
         )
         publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "Consensus")
         
+        user_summary = f"\n\nANALYST (USER):\n{user_analysis}" if user_analysis else ""
         debate_summary = f"""
 === THREE-AGENT EARNINGS DEBATE ===
 
@@ -454,7 +489,7 @@ BEAR ({bear_response.direction.value.upper()}, {bear_response.confidence:.0%}):
 {bear_response.reasoning}
 
 QUANT ({quant_response.direction.value.upper()}, {quant_response.confidence:.0%}):
-{quant_response.reasoning}
+{quant_response.reasoning}{user_summary}
 
 CONSENSUS ({consensus_response.direction.value.upper()}, {consensus_response.confidence:.0%}):
 {consensus_response.reasoning}
@@ -474,6 +509,7 @@ CONSENSUS ({consensus_response.direction.value.upper()}, {consensus_response.con
                 "bull": bull_response.direction.value,
                 "bear": bear_response.direction.value,
                 "quant": quant_response.direction.value,
+                "analyst": "user_provided" if user_analysis else "none",
                 "consensus": consensus_response.direction.value,
             },
             debate_summary=debate_summary,

@@ -261,21 +261,21 @@ class OptionContract:
             "right": self.option_type.value,
             "strike": self.strike,
             "exp": self.expiration.isoformat(),
-            "stockPrice": self.underlying_price,
+            "stock_price": self.underlying_price,
             "bid": self.bid,
             "ask": self.ask,
-            "lastPrice": self.last_price,
+            "last_price": self.last_price,
             "mid": self.mid_price,
             "volume": self.volume,
-            "openInterest": self.open_interest,
-            "impliedVolatility": self.implied_volatility,
+            "open_interest": self.open_interest,
+            "implied_volatility": self.implied_volatility,
             "delta": self.delta,
             "gamma": self.gamma,
             "theta": self.theta,
             "vega": self.vega,
             "rho": self.rho,
             "days2exp": self.days_to_expiry,
-            "inTheMoney": self.in_the_money,
+            "in_the_money": self.in_the_money,
             "moneyness": self.moneyness,
             "timeValue": self.time_value,
             "intrinsicValue": self.intrinsic_value,
@@ -339,13 +339,13 @@ class OptionChainSummary:
         return {
             "ticker": self.ticker,
             "date": self.capture_date.isoformat(),
-            "stockPrice": self.underlying_price,
-            "numContracts": self.num_contracts,
-            "numExpirations": self.num_expirations,
-            "callVolume": self.total_call_volume,
-            "putVolume": self.total_put_volume,
-            "callOI": self.total_call_oi,
-            "putOI": self.total_put_oi,
+            "stock_price": self.underlying_price,
+            "num_contracts": self.num_contracts,
+            "num_expirations": self.num_expirations,
+            "call_volume": self.total_call_volume,
+            "put_volume": self.total_put_volume,
+            "call_oi": self.total_call_oi,
+            "put_oi": self.total_put_oi,
             "pcVolumeRatio": self.put_call_volume_ratio,
             "pcOIRatio": self.put_call_oi_ratio,
             "atmIVCall": self.atm_iv_call,
@@ -728,9 +728,9 @@ class YahooFinanceDataSource(BaseDataSource):
     def get_option_chain(
         self,
         ticker: str,
-        num_expirations: int = 8,
-        min_days_to_expiry: int = 1,
-        strike_range_pct: float = 0.15,
+        num_expirations: Optional[int] = None,
+        min_days_to_expiry: int = 0,
+        strike_range_pct: Optional[float] = None,
         min_volume: int = 0,
         calculate_greeks: bool = True,
     ) -> Tuple[List[OptionContract], OptionChainSummary]:
@@ -807,11 +807,16 @@ class YahooFinanceDataSource(BaseDataSource):
             if days >= min_days_to_expiry:
                 valid_expirations.append(exp_str)
         
-        valid_expirations = valid_expirations[:num_expirations]
+        if num_expirations is not None:
+            valid_expirations = valid_expirations[:num_expirations]
         
         # Price bounds for filtering
-        price_low = underlying_price * (1 - strike_range_pct)
-        price_high = underlying_price * (1 + strike_range_pct)
+        if strike_range_pct is not None:
+            price_low = underlying_price * (1 - strike_range_pct)
+            price_high = underlying_price * (1 + strike_range_pct)
+        else:
+            price_low = 0.0
+            price_high = float('inf')
         
         contracts = []
         capture_time = datetime.now().strftime("%H:%M:%S")
@@ -903,10 +908,10 @@ class YahooFinanceDataSource(BaseDataSource):
             mid_price = (bid + ask) / 2 if bid > 0 and ask > 0 else last_price
             
             volume = safe_int(row.get('volume', 0))
-            open_interest = safe_int(row.get('openInterest', 0))
+            open_interest = safe_int(row.get('open_interest', 0))
             
             # Get implied volatility from Yahoo or calculate
-            iv = safe_float(row.get('impliedVolatility', 0))
+            iv = safe_float(row.get('implied_volatility', 0))
             
             # Calculate intrinsic and time value
             if option_type == OptionType.CALL:
@@ -965,7 +970,7 @@ class YahooFinanceDataSource(BaseDataSource):
                 vega=vega,
                 rho=rho,
                 days_to_expiry=days_to_exp,
-                in_the_money=row.get('inTheMoney', False),
+                in_the_money=row.get('in_the_money', False),
                 moneyness=underlying_price / strike,
                 time_value=time_value,
                 intrinsic_value=intrinsic,
@@ -1110,6 +1115,7 @@ class YahooFinanceDataSource(BaseDataSource):
     def get_option_chain_dataframe(
         self,
         ticker: str,
+        scan_criteria: Optional[Any] = None,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -1119,10 +1125,11 @@ class YahooFinanceDataSource(BaseDataSource):
         
         Args:
             ticker: Stock ticker
+            scan_criteria: Optional OptionChainScanner ScanCriteria for filtering
             **kwargs: Passed to get_option_chain
         
         Returns:
-            DataFrame with all option contracts
+            DataFrame with option contracts
         """
         contracts, _ = self.get_option_chain(ticker, **kwargs)
         
@@ -1131,6 +1138,27 @@ class YahooFinanceDataSource(BaseDataSource):
         
         records = [c.to_dict() for c in contracts]
         df = pd.DataFrame(records)
+        
+        if scan_criteria is not None:
+            try:
+                from options_screener import OptionChainScanner
+            except ImportError:
+                import sys
+                import os
+                parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                if parent_dir not in sys.path:
+                    sys.path.insert(0, parent_dir)
+                from options_screener import OptionChainScanner
+            
+            try:
+                scanner = OptionChainScanner(ticker)
+                scanner.load_data(df)
+                df = scanner.apply_scan(scan_criteria)
+            except Exception as e:
+                self.logger.warning(f"Failed to apply scan criteria: {e}")
+        
+        if df.empty:
+            return df
         
         # Sort by expiration, right, strike
         df.sort_values(['exp', 'right', 'strike'], inplace=True)
@@ -1462,7 +1490,7 @@ if __name__ == "__main__":
     df = yahoo.get_option_chain_dataframe(ticker, num_expirations=2)
     print(f"\nDataFrame shape: {df.shape}")
     if not df.empty:
-        print(df[['ticker', 'right', 'strike', 'exp', 'mid', 'impliedVolatility', 'delta', 'volume']].head())
+        print(df[['ticker', 'right', 'strike', 'exp', 'mid', 'implied_volatility', 'delta', 'volume']].head())
     else:
         print("  (No data available - network may be restricted)")
     

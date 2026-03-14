@@ -46,10 +46,18 @@ export const api = {
         return this.fetchWithAuth(`${API_BASE_URL}/health`);
     },
 
-    async predictTicker(ticker: string, reportDate: string, token?: string): Promise<TaskResponse> {
-        const url = new URL(`${API_BASE_URL}/earnings/predict/${ticker}`);
-        url.searchParams.append("report_date", reportDate);
-        return this.fetchWithAuth(url.toString(), token);
+    async predictTicker(ticker: string, reportDate: string, token?: string, userAnalysis?: string): Promise<TaskResponse> {
+        const url = `${API_BASE_URL}/earnings/predict/${ticker}`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                report_date: reportDate,
+                user_analysis: userAnalysis
+            })
+        });
     },
 
     async getTaskStatus(taskId: string, token?: string): Promise<TaskStatusResponse> {

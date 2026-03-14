@@ -21,6 +21,7 @@ export default function DashboardPage() {
     const { getToken } = useAuth();
     const [ticker, setTicker] = useState("");
     const [reportDate, setReportDate] = useState("");
+    const [userAnalysis, setUserAnalysis] = useState("");
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<Prediction | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export default function DashboardPage() {
             if (!token) throw new Error("Not authenticated");
 
             // 1. Start Analysis
-            const { task_id } = await api.predictTicker(ticker, reportDate, token);
+            const { task_id } = await api.predictTicker(ticker, reportDate, token, userAnalysis);
 
             // Setup WebSocket
             const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
@@ -331,6 +332,18 @@ export default function DashboardPage() {
                                 value={reportDate}
                                 onChange={(e) => setReportDate(e.target.value)}
                                 className="w-full bg-[#080b11] border border-white/10 rounded-2xl px-5 py-4 focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none transition-all text-sm font-bold text-white relative [color-scheme:dark]"
+                            />
+                        </div>
+                        <div className="space-y-2.5">
+                            <div className="flex justify-between items-center">
+                                <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">Your Analysis (Optional)</label>
+                                <span className="text-[9px] text-accent/80 font-bold uppercase tracking-widest bg-accent/10 px-2 py-1 rounded-md">Analyst Agent</span>
+                            </div>
+                            <textarea
+                                value={userAnalysis}
+                                onChange={(e) => setUserAnalysis(e.target.value)}
+                                placeholder="Include your prompt/analysis to be incorporated into the consensus."
+                                className="w-full bg-[#080b11] border border-white/10 rounded-2xl px-5 py-4 focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none transition-all text-sm font-bold text-white relative placeholder-white/20 min-h-[100px] resize-y custom-scrollbar"
                             />
                         </div>
 

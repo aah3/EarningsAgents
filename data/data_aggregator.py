@@ -207,7 +207,8 @@ class DataAggregator:
         self,
         ticker: str,
         report_date: date,
-        include_news: bool = True
+        include_news: bool = True,
+        options_df: Optional[pd.DataFrame] = None
     ) -> CompanyData:
         """
         Get comprehensive company data aggregated from all sources.
@@ -293,6 +294,47 @@ class DataAggregator:
         if self.yahoo:
             rec_list = self.yahoo.get_analyst_recommendations(ticker, 90)
             recommendations = [self._to_dict(r) for r in rec_list]
+            
+        # Get options features
+        options_features = None
+        df = options_df
+        
+        # If no explicit DataFrame is provided, try available sources
+        if df is None:
+            # Add sources here that might implement get_option_chain_dataframe
+            candidate_sources = [self.yahoo, self.alphavantage, self.sec]
+            for source in candidate_sources:
+                if source and hasattr(source, 'get_option_chain_dataframe'):
+                    try:
+                        df_candidate = source.get_option_chain_dataframe(ticker, num_expirations=4)
+                        if df_candidate is not None and not df_candidate.empty:
+                            df = df_candidate
+                            break
+                    except Exception as e:
+                        self.logger.warning(f"Failed to extract option features from {type(source).__name__} for {ticker}: {e}")
+
+        if df is not None and not df.empty:
+            try:
+                import sys
+                import os
+                parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                if parent_dir not in sys.path:
+                    sys.path.insert(0, parent_dir)
+                from options_features import OptionFeaturesExtractor
+                
+                # Default mapping assumes it follows our standard format
+                extractor = OptionFeaturesExtractor(date_col='date')
+                features_df = extractor.extract_features(df, group_by_expiry=False)
+                if not features_df.empty:
+                    # Extract the first row
+                    options_features = features_df.iloc[0].to_dict()
+                    
+                    # Add per-expiration data
+                    exp_df = extractor.extract_features(df, group_by_expiry=True)
+                    if not exp_df.empty:
+                        options_features['by_expiration'] = exp_df.to_dict('records')
+            except Exception as e:
+                self.logger.warning(f"Failed to compute option features for {ticker}: {e}")
         
         # Build CompanyData
         company_data = CompanyData(
@@ -314,6 +356,7 @@ class DataAggregator:
             short_interest=price_data.short_interest if price_data else None,
             estimate_revisions=revisions,
             analyst_recommendations=recommendations,
+            options_features=options_features,
         )
         
         return company_data

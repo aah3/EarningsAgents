@@ -26,7 +26,7 @@ class LLMClient:
         try:
             if self.provider == "gemini":
                 from google import genai
-                self.model = self.model or "gemini-2.0-flash" 
+                self.model = self.model or "gemini-2.5-flash" 
                 return genai.Client(api_key=self.api_key)
             
             elif self.provider == "anthropic":

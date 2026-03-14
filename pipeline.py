@@ -107,7 +107,9 @@ class EarningsPipeline:
         ticker: str,
         report_date: date,
         prediction_date: Optional[date] = None,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        user_analysis: Optional[str] = None,
+        options_df: Optional[Any] = None
     ) -> EarningsPrediction:
         """
         Generate prediction for a single company.
@@ -138,7 +140,9 @@ class EarningsPipeline:
         publish(f"Gathering company and consensus data for {ticker}...")
         
         # Fetch company data from Aggregator
-        company_data = self.aggregator.get_company_data(ticker, report_date, include_news=False)
+        company_data = self.aggregator.get_company_data(
+            ticker, report_date, include_news=False, options_df=options_df
+        )
         
         publish(f"Fetching recent news and performing sentiment analysis...")
         
@@ -154,7 +158,7 @@ class EarningsPipeline:
         
         # Run three-agent prediction
         prediction = self.agent_system.predict(
-            company_data, news, prediction_date, task_id=task_id
+            company_data, news, prediction_date, task_id=task_id, user_analysis=user_analysis
         )
         
         publish(f"Debate concluded. Finalizing decision...")
@@ -188,7 +192,9 @@ class EarningsPipeline:
                 prediction = self.predict_single(
                     company["ticker"],
                     company["report_date"],
-                    prediction_date
+                    prediction_date,
+                    user_analysis=company.get("user_analysis"),
+                    options_df=company.get("options_df")
                 )
                 predictions.append(prediction)
                 

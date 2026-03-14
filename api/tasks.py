@@ -29,7 +29,7 @@ def get_pipeline():
     return _pipeline
 
 @celery_app.task(bind=True, name="api.tasks.analyze_ticker_task")
-def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str):
+def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, user_analysis: str = ""):
     """
     Background task to analyze a ticker and save results.
     """
@@ -47,7 +47,7 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str):
         r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": f"Started analysis for {ticker}"}))
 
         # 1. Run Analysis
-        raw_result = pipeline.predict_single(ticker, report_date, task_id=task_id)
+        raw_result = pipeline.predict_single(ticker, report_date, task_id=task_id, user_analysis=user_analysis if user_analysis else None)
         
         from dataclasses import asdict
         result = asdict(raw_result)

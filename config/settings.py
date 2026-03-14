@@ -119,6 +119,7 @@ class CompanyData:
     # Additional signals
     short_interest: Optional[float] = None
     estimate_revisions: List[Dict[str, Any]] = field(default_factory=list)
+    options_features: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -183,7 +184,7 @@ def load_config() -> PipelineConfig:
         ),
         agent=AgentConfig(
             provider=provider,
-            model_name=os.getenv("LLM_MODEL_NAME") or "gemini-2.0-flash",
+            model_name=os.getenv("LLM_MODEL_NAME") or "gemini-2.5-flash",
             api_key=agent_api_key
         ),
         redis_url=os.getenv("REDIS_URL") or "redis://localhost:6379/0"

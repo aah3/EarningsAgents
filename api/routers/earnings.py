@@ -46,10 +46,14 @@ def get_pipeline():
 from api.tasks import analyze_ticker_task
 from celery.result import AsyncResult
 
-@router.get("/predict/{ticker}")
+class PredictRequest(BaseModel):
+    report_date: date
+    user_analysis: Optional[str] = None
+
+@router.post("/predict/{ticker}")
 async def predict_ticker(
     ticker: str, 
-    report_date: date,
+    request: PredictRequest,
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -60,8 +64,9 @@ async def predict_ticker(
         # Dispatch background task
         task = analyze_ticker_task.delay(
             ticker.upper(), 
-            report_date.isoformat(), 
-            clerk_id
+            request.report_date.isoformat(), 
+            clerk_id,
+            request.user_analysis or ""
         )
         
         return {
