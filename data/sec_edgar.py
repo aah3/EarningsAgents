@@ -331,7 +331,26 @@ class SECEdgarDataSource(BaseDataSource):
             
             # Parse HTML and extract text
             from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.content, 'html.parser')
+            import re
+            
+            # Decode to string and remove common binary block patterns (PDF, GRAPHIC, etc.)
+            content_str = response.content.decode('utf-8', errors='ignore')
+            content_str = re.sub(r'<DOCUMENT>\s*<TYPE>(?:GRAPHIC|ZIP|EXCEL|PDF).*?</DOCUMENT>', '', content_str, flags=re.DOTALL | re.IGNORECASE)
+            
+            try:
+                # lxml is faster and more robust with broken SEC text files
+                soup = BeautifulSoup(content_str, 'lxml')
+            except Exception:
+                try:
+                    # Fallback to html.parser
+                    soup = BeautifulSoup(content_str, 'html.parser')
+                except Exception as e:
+                    self.logger.warning(f"Failed to parse with BeautifulSoup, using regex fallback: {e}")
+                    # Ultimate fallback: strip HTML tags using regex
+                    text = re.sub(r'<[^>]+>', ' ', content_str)
+                    lines = (line.strip() for line in text.splitlines())
+                    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                    return '\n'.join(chunk for chunk in chunks if chunk)
             
             # Remove script and style elements
             for script in soup(["script", "style"]):

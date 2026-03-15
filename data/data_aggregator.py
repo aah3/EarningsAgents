@@ -336,6 +336,47 @@ class DataAggregator:
             except Exception as e:
                 self.logger.warning(f"Failed to compute option features for {ticker}: {e}")
         
+        # Get recent transcript from SEC (if enabled)
+        recent_transcripts = []
+        if self.sec:
+            try:
+                # We'll just fetch the most recent transcript without a specific date
+                transcripts_obj = self.get_earnings_transcripts(ticker)
+                
+                for t in transcripts_obj[:1]:  # Just take the latest one to preserve context
+                    # Trim transcript to ~10,000 chars to avoid blowing up the LLM context window
+                    trimmed_text = t.transcript[:10000] + ("..." if len(t.transcript) > 10000 else "")
+                    recent_transcripts.append({
+                        "year": t.year,
+                        "quarter": t.quarter,
+                        "transcript": trimmed_text
+                    })
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch SEC transcript for {ticker}: {e}")
+        # Get SEC XBRL company facts
+        company_facts = {}
+        if self.sec:
+            try:
+                raw_facts = self.get_company_facts(ticker)
+                if raw_facts:
+                    gaap = raw_facts.get('facts', {}).get('us-gaap', {})
+                    keys_to_extract = ['Assets', 'Liabilities', 'Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'NetIncomeLoss', 'OperatingIncomeLoss']
+                    for k in keys_to_extract:
+                        if k in gaap:
+                            val_list = gaap[k].get('units', {}).get('USD', [])
+                            if val_list:
+                                # Filter to stable standard forms (10-Q, 10-K)
+                                valid_vals = [v for v in val_list if v.get('form') in ['10-Q', '10-K']]
+                                if valid_vals:
+                                    latest_val = sorted(valid_vals, key=lambda x: x.get('end', ''))[-1]
+                                    company_facts[k] = {
+                                        'value': latest_val.get('val'),
+                                        'period_end': latest_val.get('end'),
+                                        'form': latest_val.get('form')
+                                    }
+            except Exception as e:
+                self.logger.warning(f"Failed to extract SEC company facts for {ticker}: {e}")
+        
         # Build CompanyData
         company_data = CompanyData(
             ticker=ticker,
@@ -357,6 +398,8 @@ class DataAggregator:
             estimate_revisions=revisions,
             analyst_recommendations=recommendations,
             options_features=options_features,
+            recent_transcripts=recent_transcripts,
+            company_facts=company_facts,
         )
         
         return company_data

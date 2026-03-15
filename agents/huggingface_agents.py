@@ -54,7 +54,7 @@ ANALYSIS FOCUS:
 1. Revenue strength signals (demand, market share, pricing power)
 2. Margin improvement indicators (cost savings, operating leverage)
 3. Positive estimate revision momentum
-4. Management's track record of beating estimates
+4. Management's tone and forward guidance in the Latest Earnings Transcript Snippet
 5. Positive sentiment and insider buying
 
 OUTPUT FORMAT (JSON only, no other text):
@@ -76,7 +76,7 @@ ANALYSIS FOCUS:
 1. Revenue risks (demand weakness, competition, macro headwinds)
 2. Margin pressures (rising costs, pricing pressure)
 3. Negative estimate revision trends
-4. Execution risks and management concerns
+4. Hesitant management tone or defensive posturing in the Latest Earnings Transcript Snippet
 5. High expectations that may be hard to meet
 
 OUTPUT FORMAT (JSON only, no other text):
@@ -100,7 +100,8 @@ ANALYSIS FOCUS:
 3. Estimate revision trends (7d, 30d, 90d)
 4. Pre-earnings price drift
 5. Options market signals (Put/Call ratios, IV Skew, Max Pain, Net Gamma)
-6. Statistical probability assessment
+6. SEC Company Facts (XBRL) analysis (balance sheet health, margins from revenues vs net income)
+7. Statistical probability assessment
 
 OUTPUT FORMAT (JSON only, no other text):
 {
@@ -209,6 +210,28 @@ class BaseAgent:
             if not options_str:
                 options_str = "  No significant options data\n"
         
+        # Transcript formatting
+        transcript_str = ""
+        if hasattr(company, 'recent_transcripts') and company.recent_transcripts:
+            latest_t = company.recent_transcripts[0]
+            transcript_str = f"  - Year/Quarter: {latest_t.get('year')}/{latest_t.get('quarter')}\n"
+            transcript_str += f"  - Transcript Snippet: {latest_t.get('transcript', '')[:5000]}\n"
+            
+        # Facts formatting
+        facts_str = ""
+        if hasattr(company, 'company_facts') and company.company_facts:
+            facts_str = "  (Latest SEC XBRL filings)\n"
+            for fact_name, fact_data in company.company_facts.items():
+                val = fact_data.get('value', 0)
+                # format millions/billions
+                if val >= 1e9:
+                    val_fmt = f"${val/1e9:.2f}B"
+                elif val >= 1e6:
+                    val_fmt = f"${val/1e6:.2f}M"
+                else:
+                    val_fmt = f"${val:,.0f}"
+                facts_str += f"  - {fact_name}: {val_fmt} (as of {fact_data.get('period_end')} via {fact_data.get('form')})\n"
+        
         prompt = f"""
 ## Company Analysis Request
 
@@ -241,6 +264,12 @@ class BaseAgent:
 
 ### Recent News Headlines
 {news_str if news_str else "  No recent news"}
+
+### Recent SEC Company Facts (XBRL)
+{facts_str if facts_str else "  No recent facts available"}
+
+### Latest Earnings Transcript Snippet
+{transcript_str if transcript_str else "  No transcript available"}
 
 ---
 Analyze this company and provide your prediction in the specified JSON format.

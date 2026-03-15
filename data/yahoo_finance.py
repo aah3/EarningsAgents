@@ -274,15 +274,15 @@ class OptionContract:
             "theta": self.theta,
             "vega": self.vega,
             "rho": self.rho,
-            "days2exp": self.days_to_expiry,
+            "days_to_expiry": self.days_to_expiry,
             "in_the_money": self.in_the_money,
             "moneyness": self.moneyness,
-            "timeValue": self.time_value,
-            "intrinsicValue": self.intrinsic_value,
-            "ivDaily": self.iv_daily,
-            "ivExp": self.iv_to_expiry,
-            "hvExp": self.historical_vol_1m,
-            "ivPremium": self.iv_premium,
+            "time_value": self.time_value,
+            "intrinsic_value": self.intrinsic_value,
+            "iv_daily": self.iv_daily,
+            "iv_to_expiry": self.iv_to_expiry,
+            "historical_vol_1m": self.historical_vol_1m,
+            "iv_premium": self.iv_premium,
             "date": self.capture_date.isoformat(),
             "time": self.capture_time,
         }
@@ -908,10 +908,10 @@ class YahooFinanceDataSource(BaseDataSource):
             mid_price = (bid + ask) / 2 if bid > 0 and ask > 0 else last_price
             
             volume = safe_int(row.get('volume', 0))
-            open_interest = safe_int(row.get('open_interest', 0))
+            open_interest = safe_int(row.get('openInterest', 0))
             
             # Get implied volatility from Yahoo or calculate
-            iv = safe_float(row.get('implied_volatility', 0))
+            iv = safe_float(row.get('impliedVolatility', 0))
             
             # Calculate intrinsic and time value
             if option_type == OptionType.CALL:
@@ -948,7 +948,7 @@ class YahooFinanceDataSource(BaseDataSource):
             # Calculate IV analytics
             iv_daily = iv / math.sqrt(252) if iv > 0 else 0
             iv_exp = math.sqrt(days_to_exp / 252) * iv if iv > 0 and days_to_exp > 0 else 0
-            iv_premium = iv - historical_vol if iv > 0 else None
+            iv_premium = iv / historical_vol if iv > 0 else None # IV premium ratio or difference
             
             return OptionContract(
                 ticker=ticker,
@@ -970,7 +970,7 @@ class YahooFinanceDataSource(BaseDataSource):
                 vega=vega,
                 rho=rho,
                 days_to_expiry=days_to_exp,
-                in_the_money=row.get('in_the_money', False),
+                in_the_money=row.get('inTheMoney', False),
                 moneyness=underlying_price / strike,
                 time_value=time_value,
                 intrinsic_value=intrinsic,
@@ -1450,7 +1450,7 @@ if __name__ == "__main__":
     for rec in recs[:5]:
         print(f"   {rec.date}: {rec.firm} - {rec.rating}")
 
-    ticker = "SPY"
+    # ticker = "SPY"
     print(f"\n{'='*60}")
     print(f"Testing Yahoo Finance Option Chain: {ticker}")
     print(f"{'='*60}\n")
@@ -1487,7 +1487,7 @@ if __name__ == "__main__":
                   f"IV={c.implied_volatility:.2%} Δ={c.delta:.3f} Mid=${c.mid_price:.2f}")
     
     # Get as DataFrame
-    df = yahoo.get_option_chain_dataframe(ticker, num_expirations=2)
+    df = yahoo.get_option_chain_dataframe(ticker, num_expirations=20)
     print(f"\nDataFrame shape: {df.shape}")
     if not df.empty:
         print(df[['ticker', 'right', 'strike', 'exp', 'mid', 'implied_volatility', 'delta', 'volume']].head())

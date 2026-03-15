@@ -196,13 +196,21 @@ class AlphaVantageDataSource(BaseDataSource):
             
             data = response.json()
             
+            # Sleep 1 second after API call to prevent Alpha Vantage '1 request per second' burst limit
+            import time
+            time.sleep(1.0)
+            
             # Check for errors
             if 'Error Message' in data:
                 self.logger.error(f"Alpha Vantage error: {data['Error Message']}")
                 return {}
             
+            if 'Information' in data:
+                self.logger.warning(f"Alpha Vantage info/rate limit: {data['Information']}")
+                return {}
+            
             if 'Note' in data:
-                self.logger.warning(f"Alpha Vantage note: {data['Note']}")
+                self.logger.warning(f"Alpha Vantage note/rate limit: {data['Note']}")
                 return {}
             
             return data
@@ -647,11 +655,25 @@ class AlphaVantageDataSource(BaseDataSource):
                 self.logger.warning(f"No transcript data for {ticker}")
                 return None
             
+            transcript_data = data.get('transcript', '')
+            
+            if isinstance(transcript_data, list):
+                if not transcript_data:
+                    transcript_text = ''
+                else:
+                    # Try to join if it's a list of strings, otherwise stringify
+                    try:
+                        transcript_text = '\n'.join([str(item) for item in transcript_data])
+                    except:
+                        transcript_text = str(transcript_data)
+            else:
+                transcript_text = str(transcript_data)
+
             return EarningsCallTranscript(
                 ticker=data.get('symbol', ticker),
                 year=safe_int(data.get('year')),
                 quarter=data.get('quarter', ''),
-                transcript=data.get('transcript', '')
+                transcript=transcript_text
             )
             
         except Exception as e:

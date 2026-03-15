@@ -198,6 +198,8 @@ class CompanyData(BaseModel):
     short_interest: Optional[float] = None
     estimate_revisions: List[Dict[str, Any]] = Field(default_factory=list)
     analyst_recommendations: List[Dict[str, Any]] = Field(default_factory=list)
+    recent_transcripts: List[Dict[str, Any]] = Field(default_factory=list)
+    company_facts: Dict[str, Any] = Field(default_factory=dict)
 
 
 # ============================================================================

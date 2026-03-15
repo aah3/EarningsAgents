@@ -245,7 +245,7 @@ if __name__ == "__main__":
     yahoo.connect()
     
     # We load option chains with a reasonable expiration limit for testing
-    df = yahoo.get_option_chain_dataframe("AAPL", num_expirations=3)
+    df = yahoo.get_option_chain_dataframe("AAPL", num_expirations=10)
     
     if not df.empty:
         # 1. Instantiate the extractor
