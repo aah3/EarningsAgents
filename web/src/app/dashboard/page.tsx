@@ -27,6 +27,11 @@ export default function DashboardPage() {
     const [error, setError] = useState<string | null>(null);
     const [messages, setMessages] = useState<WSMessage[]>([]);
 
+    const [chatMessages, setChatMessages] = useState<{role: string, content: string}[]>([]);
+    const [chatInput, setChatInput] = useState("");
+    const [chatLoading, setChatLoading] = useState(false);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+
     const terminalEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -39,6 +44,12 @@ export default function DashboardPage() {
         }
     }, [messages, loading]);
 
+    useEffect(() => {
+        if (chatMessages.length > 0) {
+            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [chatMessages]);
+
     const handleRunAnalysis = async () => {
         if (!ticker || !reportDate) {
             setError("Please provide both ticker and report date.");
@@ -49,6 +60,8 @@ export default function DashboardPage() {
         setError(null);
         setResult(null);
         setMessages([]);
+        setChatMessages([]);
+        setChatInput("");
 
         let ws: WebSocket | null = null;
 
@@ -107,6 +120,37 @@ export default function DashboardPage() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.close();
             }
+        }
+    };
+
+    const handleSendChatMessage = async () => {
+        if (!chatInput.trim() || !result) return;
+        
+        const currentMessages = [...chatMessages];
+        const newUserMsg = { role: "user", content: chatInput.trim() };
+        
+        setChatMessages([...currentMessages, newUserMsg]);
+        setChatInput("");
+        setChatLoading(true);
+        
+        try {
+            const token = await getToken();
+            if (!token) throw new Error("Not authenticated");
+            
+            // Send the entire context
+            // prediction_id is not inherently present in the `result` from celery task if not returned, so we'll pass ticker
+            const chatRes = await api.chatWithConsensus(result.ticker, [...currentMessages, newUserMsg], undefined, token);
+            
+            if (chatRes && chatRes.response) {
+                setChatMessages([...currentMessages, newUserMsg, { role: "model", content: chatRes.response }]);
+            } else {
+                setChatMessages([...currentMessages, newUserMsg, { role: "model", content: "⚠️ No response received from Consensus Agent." }]);
+            }
+            
+        } catch (err: any) {
+             setChatMessages([...currentMessages, newUserMsg, { role: "model", content: "⚠️ Error contacting Consensus Agent: " + err.message }]);
+        } finally {
+            setChatLoading(false);
         }
     };
 
@@ -253,6 +297,54 @@ export default function DashboardPage() {
                                 <p className="text-[15px] text-gray-300 leading-relaxed font-medium whitespace-pre-line">
                                     {result.reasoning_summary}
                                 </p>
+                            </div>
+
+                            {/* Interactive Consensus Chat */}
+                            <div className="mt-8 p-6 rounded-2xl border border-white/5 bg-[#080b11] shadow-inner flex flex-col">
+                                <h4 className="text-xs font-black text-consensus uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                    <span className="text-lg">💬</span> Chat with Consensus Agent
+                                </h4>
+                                
+                                <div className="max-h-[300px] overflow-y-auto mb-4 space-y-4 pr-2 custom-scrollbar">
+                                    {chatMessages.length === 0 ? (
+                                        <p className="text-sm text-gray-500 italic">Have questions about this prediction? Ask the Consensus Analyst directly.</p>
+                                    ) : (
+                                        chatMessages.map((msg, idx) => (
+                                            <div key={idx} className={`p-4 rounded-xl text-sm ${msg.role === 'user' ? 'bg-white/5 text-gray-200 ml-4 border border-white/10' : 'bg-consensus/10 text-gray-300 mr-4 border border-consensus/30'}`}>
+                                                <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${msg.role === 'user' ? 'text-gray-400' : 'text-consensus'}`}>
+                                                    {msg.role === 'user' ? 'You' : 'Consensus Analyst'}
+                                                </div>
+                                                <div className="whitespace-pre-wrap">{msg.content}</div>
+                                            </div>
+                                        ))
+                                    )}
+                                    {chatLoading && (
+                                        <div className="p-4 rounded-xl bg-consensus/10 text-consensus mr-4 border border-consensus/30 flex items-center gap-3 w-fit">
+                                            <span className="animate-pulse w-2 h-2 bg-consensus rounded-full"></span>
+                                            <span className="animate-pulse text-xs font-bold uppercase tracking-widest">Thinking...</span>
+                                        </div>
+                                    )}
+                                    <div ref={chatEndRef} />
+                                </div>
+                                
+                                <div className="flex gap-3 relative">
+                                    <input
+                                        type="text"
+                                        placeholder="E.g. What about the macroeconomic risks?"
+                                        value={chatInput}
+                                        onChange={(e) => setChatInput(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()}
+                                        className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 focus:border-consensus focus:ring-1 focus:ring-consensus/50 outline-none transition-all text-sm font-medium text-white placeholder-white/20"
+                                        disabled={chatLoading}
+                                    />
+                                    <button
+                                        onClick={handleSendChatMessage}
+                                        disabled={chatLoading || !chatInput.trim()}
+                                        className="px-6 rounded-xl font-bold uppercase tracking-widest text-xs transition-colors bg-consensus text-background hover:bg-consensus/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Send
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ) : (

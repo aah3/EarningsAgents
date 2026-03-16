@@ -81,6 +81,39 @@ class LLMClient:
         
         return "⚠️ Error: Maximum retries exceeded for LLM call."
 
+    def chat(self, system_prompt: str, messages: List[dict], temperature: float = 0.3, max_tokens: int = 2048) -> str:
+        """
+        Continues a conversation using a list of messages: [{"role": "user"|"model", "content": "..."}]
+        """
+        if not self.client:
+            return "⚠️ Error: LLM client not initialized."
+
+        max_retries = 3
+        base_delay = 5
+
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    time.sleep(base_delay * (2 ** (attempt - 1)))
+                else:
+                    time.sleep(1)
+
+                if self.provider == "gemini":
+                    return self._chat_gemini(system_prompt, messages, temperature, max_tokens)
+                elif self.provider == "anthropic":
+                    return self._chat_anthropic(system_prompt, messages, temperature, max_tokens)
+                elif self.provider == "openai":
+                    return self._chat_openai(system_prompt, messages, temperature, max_tokens)
+            except Exception as e:
+                err_msg = str(e)
+                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "rate_limit" in err_msg.lower():
+                    logger.warning(f"Rate limit hit on {self.provider} (chat attempt {attempt+1}/{max_retries}). Retrying...")
+                    continue
+                logger.error(f"Error calling {self.provider} API: {e}")
+                return f"⚠️ Error: {str(e)}"
+        
+        return "⚠️ Error: Maximum retries exceeded for LLM chat."
+
     def _call_gemini(self, sys_prompt, user_prompt, temperature, max_tokens):
         response = self.client.models.generate_content(
             model=self.model,
@@ -112,6 +145,52 @@ class LLMClient:
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": user_prompt}
             ],
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        return response.choices[0].message.content
+
+    def _chat_gemini(self, sys_prompt, messages, temperature, max_tokens):
+        contents = []
+        for msg in messages:
+            role = "user" if msg["role"] == "user" else "model"
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+            
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=contents,
+            config={
+                'system_instruction': sys_prompt,
+                'temperature': temperature,
+                'max_output_tokens': max_tokens
+            }
+        )
+        return response.text
+
+    def _chat_anthropic(self, sys_prompt, messages, temperature, max_tokens):
+        formatted_msgs = []
+        for msg in messages:
+            role = "user" if msg["role"] == "user" else "assistant"
+            formatted_msgs.append({"role": role, "content": msg["content"]})
+            
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=sys_prompt,
+            messages=formatted_msgs
+        )
+        return message.content[0].text
+
+    def _chat_openai(self, sys_prompt, messages, temperature, max_tokens):
+        formatted_msgs = [{"role": "system", "content": sys_prompt}]
+        for msg in messages:
+            role = "user" if msg["role"] == "user" else "assistant"
+            formatted_msgs.append({"role": role, "content": msg["content"]})
+            
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=formatted_msgs,
             temperature=temperature,
             max_tokens=max_tokens
         )

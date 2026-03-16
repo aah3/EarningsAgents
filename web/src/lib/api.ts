@@ -74,5 +74,25 @@ export const api = {
     async getPredictionHistory(token: string): Promise<Prediction[]> {
         const url = `${API_BASE_URL}/earnings/history`;
         return this.fetchWithAuth(url, token);
+    },
+
+    async chatWithConsensus(ticker: string, messages: {role: string, content: string}[], predictionId?: number, token?: string) {
+        const url = `${API_BASE_URL}/earnings/chat`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                ticker,
+                prediction_id: predictionId,
+                messages
+            })
+        });
+    },
+
+    async getChatHistory(token: string) {
+        const url = `${API_BASE_URL}/earnings/chat/history`;
+        return this.fetchWithAuth(url, token);
     }
 };

@@ -176,6 +176,19 @@ for article in articles:
 av.disconnect()
 ```
 
+### 5. Options Market Data
+**Purpose:** Pre-earnings implied moves, sentiment, and volatility  
+**Cost:** Free (via Yahoo Finance options chain)
+
+**Provides:**
+- Implied percent move from straddle pricing
+- Call/Put volume and Open Interest ratios
+- ATM Implied Volatility
+- Detailed option contract metrics and Greeks
+
+**Usage:**
+Options data is automatically fetched and parsed by the `DataAggregator` during the company data retrieval process to populate `options_features` and is processed by the Quant agent.
+
 ## Data Aggregator (Recommended)
 
 The `DataAggregator` combines all sources with intelligent fallback:
@@ -220,6 +233,9 @@ print(f"Company: {company.company_name}")
 print(f"Sector: {company.sector}")
 print(f"Consensus EPS: ${company.consensus_eps:.2f}")
 print(f"Beat Rate (4Q): {company.beat_rate_4q:.0%}")
+if company.options_features and 'implied_move' in company.options_features:
+    implied_pct = company.options_features['implied_move'].get('straddle_implied_move_pct', 0)
+    print(f"Options Implied Move: {implied_pct:.1%}")
 
 # Get news with sentiment (combines NewsAPI + Alpha Vantage)
 news = aggregator.get_news_with_sentiment(

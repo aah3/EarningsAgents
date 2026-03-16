@@ -59,14 +59,17 @@ def cmd_single(args, pipeline: EarningsPipeline):
     """Run single company prediction."""
     ticker = args.ticker.upper()
     report_date = parse_date(args.report_date)
+    user_analysis = getattr(args, 'user_analysis', None)
     
     print(f"\n{'='*60}")
     print(f"Single Company Prediction")
     print(f"Ticker: {ticker}")
     print(f"Report Date: {report_date}")
+    if user_analysis:
+        print(f"User Analysis: Provided")
     print(f"{'='*60}\n")
     
-    prediction = pipeline.predict_single(ticker, report_date)
+    prediction = pipeline.predict_single(ticker, report_date, user_analysis=user_analysis)
     
     # Print results
     print(f"\n{'='*60}")
@@ -132,6 +135,7 @@ def main():
     single_parser = subparsers.add_parser('single', help='Single prediction')
     single_parser.add_argument('--ticker', required=True, help='Ticker symbol')
     single_parser.add_argument('--report-date', required=True, help='Report date')
+    single_parser.add_argument('--user-analysis', help='Optional user analysis text')
     
     args = parser.parse_args()
     

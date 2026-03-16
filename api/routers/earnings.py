@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from pipeline import EarningsPipeline
 from config.settings import PipelineConfig, load_config
 from database.db import get_session
-from database.models import User, Prediction
+from database.models import User, Prediction, PredictionChat
 from api.dependencies.auth import get_current_user
 
 router = APIRouter(
@@ -49,6 +49,15 @@ from celery.result import AsyncResult
 class PredictRequest(BaseModel):
     report_date: date
     user_analysis: Optional[str] = None
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    ticker: str
+    prediction_id: Optional[int] = None
+    messages: List[ChatMessage]
 
 @router.post("/predict/{ticker}")
 async def predict_ticker(
@@ -117,6 +126,57 @@ async def get_prediction_history(
         statement = select(Prediction).where(Prediction.user_id == user.id).order_by(Prediction.prediction_date.desc())
         predictions = session.exec(statement).all()
         return predictions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/chat")
+async def chat_with_consensus(
+    request: ChatRequest,
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    pipeline: EarningsPipeline = Depends(get_pipeline)
+):
+    try:
+        user = get_or_create_user(session, clerk_id)
+        
+        # format messages for LLM
+        messages_dict = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+        
+        # query ConsensusAgent
+        response_text = pipeline.agent_system.consensus_agent.chat(messages_dict)
+        
+        # append agent response
+        messages_dict.append({"role": "model", "content": response_text})
+        
+        # persist chat locally
+        chat_session = PredictionChat(
+            user_id=user.id,
+            prediction_id=request.prediction_id,
+            ticker=request.ticker,
+            messages=messages_dict
+        )
+        session.add(chat_session)
+        session.commit()
+        session.refresh(chat_session)
+        
+        return {
+            "chat_id": chat_session.id,
+            "response": response_text,
+            "messages": messages_dict
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/chat/history")
+async def get_all_chats(
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    try:
+        user = get_or_create_user(session, clerk_id)
+        statement = select(PredictionChat).where(PredictionChat.user_id == user.id).order_by(PredictionChat.created_at.desc())
+        chats = session.exec(statement).all()
+        return chats
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

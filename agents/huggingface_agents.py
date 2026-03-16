@@ -116,18 +116,19 @@ OUTPUT FORMAT (JSON only, no other text):
 
 CONSENSUS_PROMPT = """You are the CONSENSUS analyst responsible for the final earnings prediction.
 
-YOUR MISSION: Synthesize Bull, Bear, and Quant analyses to make the optimal prediction.
+YOUR MISSION: Synthesize Bull, Bear, Quant, and User (Analyst) analyses to make the optimal prediction.
 
 DECISION FRAMEWORK:
 - Recent estimate revisions: 30% weight (most predictive)
 - Historical beat/miss pattern: 25% weight
 - Quantitative signals: 25% weight
-- Qualitative factors: 20% weight
+- Qualitative factors (including User Analysis): 20% weight
 
 RULES:
 - If Quant aligns with Bull or Bear: Weight Quant heavily
 - If estimate revisions are strongly directional: Follow them
 - If historical pattern is very consistent: Respect it
+- If User (Analyst) analysis provides verified unique insight, incorporate it into final reasoning
 
 OUTPUT FORMAT (JSON only, no other text):
 {
@@ -435,6 +436,19 @@ Weigh the evidence and make a decisive call.
         )
         return self._parse_response(response)
 
+    def chat(self, messages: List[Dict[str, str]]) -> str:
+        """Interact with the Consensus Agent regarding its analysis."""
+        chat_prompt = """You are the CONSENSUS analyst. The user is asking you questions about your recent earnings prediction.
+Please respond directly to the user as an informed analyst. Be concise, objective, and reference the bull, bear, and quant analyses where relevant."""
+        
+        response = self.llm.chat(
+            system_prompt=chat_prompt,
+            messages=messages,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens
+        )
+        return response
+
 
 # ============================================================================
 # MULTI-AGENT ORCHESTRATOR
@@ -509,7 +523,7 @@ class ThreeAgentSystem:
         
         user_summary = f"\n\nANALYST (USER):\n{user_analysis}" if user_analysis else ""
         debate_summary = f"""
-=== THREE-AGENT EARNINGS DEBATE ===
+=== AGENTS & USER EARNINGS DEBATE ===
 
 BULL ({bull_response.direction.value.upper()}, {bull_response.confidence:.0%}):
 {bull_response.reasoning}

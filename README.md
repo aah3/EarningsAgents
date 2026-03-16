@@ -1,29 +1,30 @@
 # Earnings Prediction POC
 
-A simplified proof-of-concept for AI-powered earnings predictions using AI agents and open source or paid data providers such as Bloomberg BQL data.
+A simplified proof-of-concept for AI-powered earnings predictions using AI agents and open source or paid data providers (e.g., Yahoo Finance, SEC EDGAR, Alpha Vantage).
 
 ## Overview
 
-This POC uses a **three-agent debate system** to predict earnings surprises:
+This POC uses a **multi-agent debate system** to predict earnings surprises, incorporating optional user analysis and options market data:
 
 ```
-                    Company Data (Bloomberg BQL)
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-        ┌──────────┐   ┌──────────┐   ┌──────────┐
-        │   BULL   │   │   BEAR   │   │  QUANT   │
-        │  Agent   │   │  Agent   │   │  Agent   │
-        │ (BEAT)   │   │ (MISS)   │   │ (DATA)   │
-        └────┬─────┘   └────┬─────┘   └────┬─────┘
-             └──────────────┼──────────────┘
-                           ▼
-                  ┌──────────────────┐
-                  │    CONSENSUS     │
-                  │     Agent        │
-                  └────────┬─────────┘
-                           ▼
-                     FINAL PREDICTION
+                  Company Data (Yahoo / SEC / News / AV)
+                               │
+         ┌──────────────┬──────┴───────┬──────────────┐
+         ▼              ▼              ▼              ▼
+   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌───────────┐
+   │   BULL   │   │   BEAR   │   │  QUANT   │   │   USER    │
+   │  Agent   │   │  Agent   │   │  Agent   │   │(Optional) │
+   │ (BEAT)   │   │ (MISS)   │   │ (DATA)   │   │ (Insight) │
+   └────┬─────┘   └────┬─────┘   └────┬─────┘   └─────┬─────┘
+        │              │              │               │
+        └──────────────┴──────┬───────┴───────────────┘
+                              ▼
+                     ┌──────────────────┐
+                     │    CONSENSUS     │
+                     │     Agent        │
+                     └────────┬─────────┘
+                              ▼
+                        FINAL PREDICTION
 ```
 
 ## Requirements
@@ -132,8 +133,9 @@ earnings_poc/
 |-------|------|-------|
 | **Bull** | Advocate for BEAT | Revenue growth, margins, momentum |
 | **Bear** | Advocate for MISS | Risks, headwinds, concerns |
-| **Quant** | Data analysis | Historical patterns, statistics |
-| **Consensus** | Final decision | Weighs all arguments |
+| **Quant** | Data analysis | Historical patterns, options data (implied moves, Greeks), statistics |
+| **User** | Optional input | User-provided analysis, external research, and custom insights |
+| **Consensus** | Final decision | Weighs all arguments (and user analysis, if provided) |
 
 ## Output
 
