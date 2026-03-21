@@ -258,6 +258,55 @@ class EarningsPipeline:
         
         return predictions
     
+    def run_daily(
+        self,
+        target_date: date,
+        output_format: str = "parquet"
+    ) -> List[EarningsPrediction]:
+        """
+        Run predictions for all companies reporting on a given day.
+        
+        Args:
+            target_date: The target day
+            output_format: Output format (parquet, csv, json)
+            
+        Returns:
+            List of predictions
+        """
+        self._ensure_initialized()
+        
+        self.logger.info(f"Running daily predictions for {target_date}")
+        
+        # For POC, we'll use a set of default tickers
+        default_tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA"]
+        
+        calendar = self.aggregator.get_earnings_calendar(
+            default_tickers, target_date, target_date
+        )
+        
+        self.logger.info(f"Found {len(calendar)} companies reporting on {target_date}")
+        
+        # Generate predictions
+        companies = []
+        for e in calendar:
+            # Handle both dataclass and dict
+            if hasattr(e, 'ticker'):
+                companies.append({"ticker": e.ticker, "report_date": e.report_date})
+            else:
+                companies.append({"ticker": e["ticker"], "report_date": e["report_date"]})
+        
+        predictions = self.predict_batch(companies, target_date)
+        
+        # Write output
+        filename = f"predictions_daily_{target_date.strftime('%Y%m%d')}"
+        if self.output_writer:
+            self.output_writer.write(predictions, filename, output_format)
+        
+        # Print summary
+        self._print_summary(predictions)
+        
+        return predictions
+    
     def _print_summary(self, predictions: List[EarningsPrediction]) -> None:
         """Print prediction summary."""
         if not predictions:

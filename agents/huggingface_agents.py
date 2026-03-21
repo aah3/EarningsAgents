@@ -35,6 +35,9 @@ class AgentResponse:
     """Response from an agent analysis."""
     direction: PredictionDirection
     confidence: float
+    expected_price_move: str
+    move_vs_implied: str
+    guidance_expectation: str
     reasoning: str
     bull_factors: List[str]
     bear_factors: List[str]
@@ -61,6 +64,9 @@ OUTPUT FORMAT (JSON only, no other text):
 {
     "direction": "BEAT",
     "confidence": <60-95>,
+    "expected_price_move": "positive" | "negative" | "neutral",
+    "move_vs_implied": "inside implied move" | "exceeds implied move",
+    "guidance_expectation": "positive" | "negative" | "neutral",
     "reasoning": "<2-3 sentence bull case>",
     "bull_factors": ["<factor 1>", "<factor 2>", "<factor 3>"],
     "bear_factors": ["<acknowledge 1 risk>"],
@@ -83,6 +89,9 @@ OUTPUT FORMAT (JSON only, no other text):
 {
     "direction": "MISS",
     "confidence": <60-95>,
+    "expected_price_move": "positive" | "negative" | "neutral",
+    "move_vs_implied": "inside implied move" | "exceeds implied move",
+    "guidance_expectation": "positive" | "negative" | "neutral",
     "reasoning": "<2-3 sentence bear case>",
     "bull_factors": ["<acknowledge 1 positive>"],
     "bear_factors": ["<risk 1>", "<risk 2>", "<risk 3>"],
@@ -107,6 +116,9 @@ OUTPUT FORMAT (JSON only, no other text):
 {
     "direction": "BEAT" or "MISS" or "MEET",
     "confidence": <50-85>,
+    "expected_price_move": "positive" | "negative" | "neutral",
+    "move_vs_implied": "inside implied move" | "exceeds implied move",
+    "guidance_expectation": "positive" | "negative" | "neutral",
     "reasoning": "<statistical summary with specific numbers>",
     "bull_factors": ["<quantitative positives>"],
     "bear_factors": ["<quantitative negatives>"],
@@ -134,6 +146,9 @@ OUTPUT FORMAT (JSON only, no other text):
 {
     "direction": "BEAT" or "MISS" or "MEET",
     "confidence": <50-95>,
+    "expected_price_move": "positive" | "negative" | "neutral",
+    "move_vs_implied": "inside implied move" | "exceeds implied move",
+    "guidance_expectation": "positive" | "negative" | "neutral",
     "reasoning": "<2-3 sentence final decision rationale>",
     "bull_factors": ["<accepted bull points>"],
     "bear_factors": ["<accepted bear points>"],
@@ -305,6 +320,9 @@ Analyze this company and provide your prediction in the specified JSON format.
             return AgentResponse(
                 direction=direction,
                 confidence=0.88 if direction == PredictionDirection.BEAT else 0.75,
+                expected_price_move="positive" if direction == PredictionDirection.BEAT else "negative",
+                move_vs_implied="inside implied move",
+                guidance_expectation="positive" if direction == PredictionDirection.BEAT else "negative",
                 reasoning=f"LLM API limit reached or key missing. Simulated {self.__class__.__name__} analysis: Strong quantitative signals suggest robust operational growth, offsetting minor margin pressures.",
                 bull_factors=["Consistent quarter-over-quarter revenue growth", "Strong product demand signals in alternative data", "Positive estimate revision momentum"],
                 bear_factors=["Macroeconomic uncertainty in specific regions", "Slight increase in customer acquisition costs"],
@@ -339,6 +357,9 @@ Analyze this company and provide your prediction in the specified JSON format.
                 return AgentResponse(
                     direction=direction,
                     confidence=float(data.get("confidence", 50)) / 100,
+                    expected_price_move=data.get("expected_price_move", "neutral"),
+                    move_vs_implied=data.get("move_vs_implied", "inside implied move"),
+                    guidance_expectation=data.get("guidance_expectation", "neutral"),
                     reasoning=data.get("reasoning", ""),
                     bull_factors=data.get("bull_factors", []),
                     bear_factors=data.get("bear_factors", []),
@@ -352,6 +373,9 @@ Analyze this company and provide your prediction in the specified JSON format.
         return AgentResponse(
             direction=PredictionDirection.MEET,
             confidence=0.5,
+            expected_price_move="neutral",
+            move_vs_implied="inside implied move",
+            guidance_expectation="neutral",
             reasoning="Unable to parse response",
             bull_factors=[],
             bear_factors=[],
@@ -545,6 +569,9 @@ CONSENSUS ({consensus_response.direction.value.upper()}, {consensus_response.con
             prediction_date=prediction_date,
             direction=consensus_response.direction,
             confidence=consensus_response.confidence,
+            expected_price_move=consensus_response.expected_price_move,
+            move_vs_implied=consensus_response.move_vs_implied,
+            guidance_expectation=consensus_response.guidance_expectation,
             reasoning_summary=consensus_response.reasoning,
             bull_factors=bull_response.bull_factors,
             bear_factors=bear_response.bear_factors,

@@ -76,9 +76,13 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                 report_date=datetime.combine(report_date, datetime.min.time()),
                 direction=result.get("direction", "NEUTRAL").upper(),
                 confidence=result.get("confidence", 0.0),
+                expected_price_move=result.get("expected_price_move", ""),
+                move_vs_implied=result.get("move_vs_implied", ""),
+                guidance_expectation=result.get("guidance_expectation", ""),
                 reasoning_summary=result.get("reasoning_summary", ""),
                 bull_factors=result.get("bull_factors", []),
-                bear_factors=result.get("bear_factors", [])
+                bear_factors=result.get("bear_factors", []),
+                debate_summary=result.get("debate_summary")
             )
             
             session.add(db_prediction)

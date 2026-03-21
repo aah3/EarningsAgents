@@ -200,6 +200,7 @@ class CompanyData(BaseModel):
     analyst_recommendations: List[Dict[str, Any]] = Field(default_factory=list)
     recent_transcripts: List[Dict[str, Any]] = Field(default_factory=list)
     company_facts: Dict[str, Any] = Field(default_factory=dict)
+    options_features: Optional[Dict[str, Any]] = None
 
 
 # ============================================================================

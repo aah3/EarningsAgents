@@ -8,6 +8,8 @@ import { UserButton, useUser } from "@clerk/nextjs";
 const navItems = [
     { name: "Overview", href: "/dashboard", icon: "📊" },
     { name: "Predictions", href: "/dashboard/predictions", icon: "📈" },
+    { name: "Batch Analysis", href: "/dashboard/batch", icon: "⚡" },
+    { name: "Calendar", href: "/dashboard/calendar", icon: "📅" },
     { name: "History", href: "/dashboard/history", icon: "📜" },
     { name: "Settings", href: "/dashboard/settings", icon: "⚙️" },
 ];

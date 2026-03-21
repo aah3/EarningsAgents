@@ -1,13 +1,13 @@
 # Earnings Prediction POC
 
-A simplified proof-of-concept for AI-powered earnings predictions using AI agents and open source or paid data providers (e.g., Yahoo Finance, SEC EDGAR, Alpha Vantage).
+A simplified proof-of-concept for AI-powered earnings predictions using AI agents and open source or paid data providers (e.g., Yahoo Finance, SEC EDGAR, Alpha Vantage, Bloomberg, FactSet, Reuters, etc.).
 
 ## Overview
 
 This POC uses a **multi-agent debate system** to predict earnings surprises, incorporating optional user analysis and options market data:
 
 ```
-                  Company Data (Yahoo / SEC / News / AV)
+                  Company Data (Yahoo / SEC / News / AV / BB)
                                │
          ┌──────────────┬──────┴───────┬──────────────┐
          ▼              ▼              ▼              ▼
@@ -30,7 +30,7 @@ This POC uses a **multi-agent debate system** to predict earnings surprises, inc
 ## Requirements
 
 - Python 3.9+
-- Bloomberg Terminal (for BQL data)
+- Bloomberg Terminal API (for BQL data)
 - Hugging Face account (for Inference API, optional)
 
 ## Installation
@@ -151,11 +151,11 @@ Predictions are saved with:
 
 This POC can be expanded into a full product by:
 
-1. **Add more data sources**: Yahoo Finance, Alpha Vantage for non-Bloomberg users
+1. **Add more data sources**: Yahoo Finance, Alpha Vantage for users with non-paid data sources (default)
 2. **Add more LLM providers**: Anthropic Claude, OpenAI GPT, Google Gemini
 3. **Add backtesting**: Track prediction accuracy over time
 4. **Add feature engineering**: More sophisticated signal extraction
-5. **Add scheduling**: Automated weekly runs
+5. **Add scheduling**: Automated daily/weekly runs
 6. **Add web interface**: Dashboard for viewing predictions
 
 See the full framework in `earnings_predictor/` for reference implementation.

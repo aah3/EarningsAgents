@@ -20,11 +20,19 @@ class Prediction(SQLModel, table=True):
     prediction_date: datetime = Field(default_factory=datetime.utcnow)
     direction: str # BEAT / MISS
     confidence: float
+    
+    # Extended predictions
+    expected_price_move: str = Field(default="")
+    move_vs_implied: str = Field(default="")
+    guidance_expectation: str = Field(default="")
+    
     reasoning_summary: str
     
     # Store bull/bear factors as JSON
     bull_factors: List[str] = Field(sa_column=Column(JSON))
     bear_factors: List[str] = Field(sa_column=Column(JSON))
+    
+    debate_summary: Optional[str] = Field(default=None)
     
     user: Optional[User] = Relationship(back_populates="predictions")
     chats: List["PredictionChat"] = Relationship(back_populates="prediction")

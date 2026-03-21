@@ -8,8 +8,12 @@ export interface Prediction {
     direction: string;
     confidence: number;
     reasoning_summary: string;
+    expected_price_move?: string;
+    move_vs_implied?: string;
+    guidance_expectation?: string;
     bull_factors: string[];
     bear_factors: string[];
+    debate_summary?: string;
     agent_votes?: Record<string, string>;
 }
 
@@ -76,7 +80,7 @@ export const api = {
         return this.fetchWithAuth(url, token);
     },
 
-    async chatWithConsensus(ticker: string, messages: {role: string, content: string}[], predictionId?: number, token?: string) {
+    async chatWithConsensus(ticker: string, messages: { role: string, content: string }[], predictionId?: number, token?: string) {
         const url = `${API_BASE_URL}/earnings/chat`;
         return this.fetchWithAuth(url, token, {
             method: 'POST',
@@ -94,5 +98,44 @@ export const api = {
     async getChatHistory(token: string) {
         const url = `${API_BASE_URL}/earnings/chat/history`;
         return this.fetchWithAuth(url, token);
+    },
+
+    async getDailyPredictions(targetDate: string, token?: string): Promise<Prediction[]> {
+        const url = new URL(`${API_BASE_URL}/earnings/daily`);
+        url.searchParams.append("target_date", targetDate);
+        return this.fetchWithAuth(url.toString(), token);
+    },
+
+    async getCalendar(startDate?: string, endDate?: string, tickers?: string, useFinviz: boolean = false, timeframe: string = "This Week", indexName: string = "S&P 500", token?: string) {
+        const url = new URL(`${API_BASE_URL}/earnings/calendar`);
+        if (startDate) url.searchParams.append("start_date", startDate);
+        if (endDate) url.searchParams.append("end_date", endDate);
+        if (tickers) url.searchParams.append("tickers", tickers);
+        if (useFinviz) {
+            url.searchParams.append("use_finviz", "true");
+            url.searchParams.append("timeframe", timeframe);
+            url.searchParams.append("index_name", indexName);
+        }
+        return this.fetchWithAuth(url.toString(), token);
+    },
+
+    async getSentiment(ticker: string, daysBack: number = 30, token?: string) {
+        const url = new URL(`${API_BASE_URL}/earnings/sentiment/${ticker}`);
+        url.searchParams.append("days_back", daysBack.toString());
+        return this.fetchWithAuth(url.toString(), token);
+    },
+
+    async predictBatch(companies: { ticker: string, report_date: string, user_analysis?: string }[], predictionDate?: string, token?: string): Promise<Prediction[]> {
+        const url = `${API_BASE_URL}/earnings/batch`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                companies,
+                prediction_date: predictionDate || new Date().toISOString().split('T')[0]
+            })
+        });
     }
 };

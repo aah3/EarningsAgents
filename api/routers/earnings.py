@@ -50,6 +50,15 @@ class PredictRequest(BaseModel):
     report_date: date
     user_analysis: Optional[str] = None
 
+class BatchPredictItem(BaseModel):
+    ticker: str
+    report_date: date
+    user_analysis: Optional[str] = None
+
+class BatchPredictRequest(BaseModel):
+    companies: List[BatchPredictItem]
+    prediction_date: Optional[date] = None
+
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -187,6 +196,110 @@ async def get_weekly_predictions(
 ):
     try:
         predictions = pipeline.run_weekly(week_start)
+        return predictions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/daily")
+async def get_daily_predictions(
+    target_date: date,
+    pipeline: EarningsPipeline = Depends(get_pipeline)
+):
+    """
+    Get earnings predictions for all companies reporting on a specific day.
+    """
+    try:
+        predictions = pipeline.run_daily(target_date)
+        return predictions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/calendar")
+async def get_earnings_calendar(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tickers: Optional[str] = None,
+    use_finviz: bool = False,
+    timeframe: str = "This Week",
+    index_name: str = "S&P 500",
+    pipeline: EarningsPipeline = Depends(get_pipeline)
+):
+    """
+    Get the earnings calendar.
+    If 'use_finviz' is true, it uses 'timeframe' and 'index_name'.
+    Otherwise, uses Yahoo Finance via 'start_date', 'end_date', and 'tickers'.
+    """
+    try:
+        if use_finviz:
+            events = pipeline.aggregator.get_finviz_earnings(index_name, timeframe)
+            return events
+
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="start_date and end_date required if not using finviz")
+
+        if tickers:
+            ticker_list = [t.strip().upper() for t in tickers.split(",")]
+        else:
+            ticker_list = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA"]
+            
+        events = pipeline.aggregator.get_earnings_calendar(ticker_list, start_date, end_date)
+        return events
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sentiment/{ticker}")
+async def get_sentiment(
+    ticker: str,
+    days_back: int = 30,
+    pipeline: EarningsPipeline = Depends(get_pipeline)
+):
+    """
+    Get recent news sentiment and options features for a company without running a full prediction.
+    """
+    try:
+        report_date = date.today()
+        # We invoke get_company_data safely to extract the company name, options features, etc.
+        company_data = pipeline.aggregator.get_company_data(ticker.upper(), report_date, include_news=False)
+        
+        # Then we specifically pull down the news and sentiment 
+        news = pipeline.aggregator.get_news_with_sentiment(
+            ticker.upper(), 
+            company_data.company_name, 
+            days_back=days_back,
+            max_articles=20
+        )
+        
+        return {
+            "ticker": ticker.upper(),
+            "company_name": company_data.company_name,
+            "options_features": company_data.options_features,
+            "news_sentiment": news
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/batch")
+async def predict_batch(
+    request: BatchPredictRequest,
+    pipeline: EarningsPipeline = Depends(get_pipeline)
+):
+    """
+    Run predictions for a bespoke list of tickers and reporting dates.
+    """
+    try:
+        companies_dicts = [
+            {
+                "ticker": item.ticker.upper(),
+                "report_date": item.report_date,
+                "user_analysis": item.user_analysis
+            }
+            for item in request.companies
+        ]
+        
+        predictions = pipeline.predict_batch(
+            companies_dicts,
+            prediction_date=request.prediction_date
+        )
         return predictions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

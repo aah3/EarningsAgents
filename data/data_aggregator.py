@@ -57,6 +57,8 @@ try:
 except ImportError:
     HAS_FULL_ALPHA_VANTAGE = False
 
+from finviz_source import FinvizDataSource
+
 
 class DataAggregator:
     """
@@ -127,6 +129,7 @@ class DataAggregator:
         self.alphavantage = None  # Full Alpha Vantage source (if available)
         self.alphavantage_news = None  # Just for news (legacy)
         self.sec = None
+        self.finviz = FinvizDataSource()
         
         # Create enabled sources
         if enable_yahoo and yahoo_config:
@@ -171,6 +174,10 @@ class DataAggregator:
         if self.sec:
             self.sec.connect()
             self.logger.info("✓ SEC EDGAR connected")
+            
+        if self.finviz:
+            self.finviz.connect()
+            self.logger.info("✓ Finviz connected")
         
         self._initialized = True
         self.logger.info("All data sources initialized")
@@ -498,6 +505,19 @@ class DataAggregator:
                 self.logger.warning(f"Yahoo Finance calendar failed: {e}")
         
         return events
+        
+    def get_finviz_earnings(
+        self,
+        index_name: Optional[str] = "S&P 500",
+        timeframe: str = "This Week"
+    ) -> List[EarningsEvent]:
+        """
+        Get earnings calendar from Finviz.
+        """
+        if not self._initialized:
+            raise RuntimeError("DataAggregator not initialized")
+            
+        return self.finviz.get_upcoming_earnings(index_name, timeframe)
     
     def get_sec_filings(
         self,

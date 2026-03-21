@@ -145,6 +145,11 @@ class EarningsPrediction:
     direction: PredictionDirection
     confidence: float  # 0 to 1
     
+    # Extended predictions
+    expected_price_move: str = ""
+    move_vs_implied: str = ""
+    guidance_expectation: str = ""
+    
     # Reasoning
     reasoning_summary: str = ""
     bull_factors: List[str] = field(default_factory=list)
