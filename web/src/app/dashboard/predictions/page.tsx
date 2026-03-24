@@ -1,22 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { api, Prediction } from "@/lib/api";
-
-const upcoming = [
-    { ticker: "NVDA", date: "2024-05-22", sector: "Technology", mkt_cap: "2.3T" },
-    { ticker: "MSFT", date: "2024-04-25", sector: "Technology", mkt_cap: "3.1T" },
-    { ticker: "AMZN", date: "2024-04-30", sector: "Consumer", mkt_cap: "1.8T" },
-    { ticker: "META", date: "2024-04-24", sector: "Technology", mkt_cap: "1.2T" },
-];
+import { api } from "@/lib/api";
 
 export default function PredictionsPage() {
     const { getToken } = useAuth();
-    const [loading, setLoading] = useState<string | null>(null);
+    const [loadingAnalysis, setLoadingAnalysis] = useState<string | null>(null);
+    const [upcoming, setUpcoming] = useState<any[]>([]);
+    const [loadingData, setLoadingData] = useState(true);
+
+    useEffect(() => {
+        const fetchUpcoming = async () => {
+            try {
+                setLoadingData(true);
+                const token = await getToken();
+                const data = await api.getCalendar(undefined, undefined, undefined, true, "Next Week", "S&P 500", token ?? undefined);
+                setUpcoming(data || []);
+            } catch (err) {
+                console.error("Failed to load upcoming earnings", err);
+            } finally {
+                setLoadingData(false);
+            }
+        };
+
+        fetchUpcoming();
+    }, [getToken]);
 
     const runAnalysis = async (ticker: string, date: string) => {
-        setLoading(ticker);
+        setLoadingAnalysis(ticker);
         try {
             const token = await getToken();
             if (!token) throw new Error("Not authenticated");
@@ -27,7 +39,7 @@ export default function PredictionsPage() {
         } catch (err: any) {
             alert(err.message);
         } finally {
-            setLoading(null);
+            setLoadingAnalysis(null);
         }
     };
 
@@ -45,39 +57,47 @@ export default function PredictionsPage() {
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {upcoming.map((stock) => (
-                    <div key={stock.ticker} className="glass p-10 rounded-3xl border border-white/5 group hover:border-accent/40 transition-all shadow-xl">
+                {loadingData ? (
+                    <div className="col-span-1 md:col-span-2 text-center py-20 text-accent animate-pulse font-bold tracking-widest uppercase text-sm">
+                        Discovering Upcoming Earnings...
+                    </div>
+                ) : upcoming.length === 0 ? (
+                    <div className="col-span-1 md:col-span-2 text-center py-20 text-gray-500 font-bold tracking-widest uppercase text-sm">
+                        No upcoming earnings found for next week.
+                    </div>
+                ) : upcoming.map((stock, i) => (
+                    <div key={`${stock.ticker}-${i}`} className="glass p-10 rounded-3xl border border-white/5 group hover:border-accent/40 transition-all shadow-xl">
                         <div className="flex justify-between items-start mb-8">
                             <div>
                                 <h3 className="text-4xl font-black mb-1 group-hover:text-accent transition-colors">{stock.ticker}</h3>
-                                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">{stock.sector}</p>
+                                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">{stock.sector || stock.industry || 'Unknown Sector'}</p>
                             </div>
                             <div className="text-right">
                                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Report Date</div>
-                                <div className="text-xl font-mono font-bold text-white">{stock.date}</div>
+                                <div className="text-lg font-mono font-bold text-white whitespace-pre-wrap">{stock.date_range || stock.report_date}</div>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 mb-8">
                             <div className="p-4 bg-white/[0.02] rounded-2xl border border-white/5">
                                 <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1">Market Cap</p>
-                                <p className="font-bold">{stock.mkt_cap}</p>
+                                <p className="font-bold text-white">{stock.market_cap || "N/A"}</p>
                             </div>
                             <div className="p-4 bg-white/[0.02] rounded-2xl border border-white/5">
                                 <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1">Volume</p>
-                                <p className="font-bold">High</p>
+                                <p className="font-bold text-white">{stock.volume || "N/A"}</p>
                             </div>
                         </div>
 
                         <button
-                            onClick={() => runAnalysis(stock.ticker, stock.date)}
-                            disabled={loading === stock.ticker}
-                            className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all ${loading === stock.ticker
+                            onClick={() => runAnalysis(stock.ticker, stock.report_date)}
+                            disabled={loadingAnalysis === stock.ticker}
+                            className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all ${loadingAnalysis === stock.ticker
                                 ? "bg-gray-800 text-gray-500"
                                 : "bg-white/[0.03] text-white hover:bg-accent hover:text-background border border-white/10"
                                 }`}
                         >
-                            {loading === stock.ticker ? "Agent Debate in Progress..." : "Run AI Analysis"}
+                            {loadingAnalysis === stock.ticker ? "Agent Debate in Progress..." : "Run AI Analysis"}
                         </button>
                     </div>
                 ))}

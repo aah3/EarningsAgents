@@ -52,12 +52,19 @@ except (ImportError, ValueError):
 
 # Try to import full Alpha Vantage source (may not be available)
 try:
-    from alpha_vantage import AlphaVantageDataSource, InsiderTransaction, QuarterlyEarnings
+    from .alpha_vantage import AlphaVantageDataSource, InsiderTransaction, QuarterlyEarnings
     HAS_FULL_ALPHA_VANTAGE = True
-except ImportError:
-    HAS_FULL_ALPHA_VANTAGE = False
+except (ImportError, ValueError):
+    try:
+        from alpha_vantage import AlphaVantageDataSource, InsiderTransaction, QuarterlyEarnings
+        HAS_FULL_ALPHA_VANTAGE = True
+    except ImportError:
+        HAS_FULL_ALPHA_VANTAGE = False
 
-from finviz_source import FinvizDataSource
+try:
+    from .finviz_source import FinvizDataSource
+except (ImportError, ValueError):
+    from finviz_source import FinvizDataSource
 
 
 class DataAggregator:

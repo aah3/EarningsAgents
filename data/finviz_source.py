@@ -60,19 +60,61 @@ class FinvizDataSource(BaseDataSource):
             records = df.to_dict('records')
             
             events = []
+            
+            target_date = date.today()
+            date_range = None
+            if timeframe == "Next Week":
+                days_ahead = 7 - target_date.weekday()
+                if days_ahead <= 0:
+                    days_ahead += 7
+                next_monday = target_date + timedelta(days=days_ahead)
+                next_friday = next_monday + timedelta(days=4)
+                target_date = next_monday
+                date_range = f"{next_monday.strftime('%Y-%m-%d')} to {next_friday.strftime('%Y-%m-%d')}"
+            elif timeframe == "This Week":
+                days_ago = target_date.weekday()
+                this_monday = target_date - timedelta(days=days_ago)
+                this_friday = this_monday + timedelta(days=4)
+                date_range = f"{this_monday.strftime('%Y-%m-%d')} to {this_friday.strftime('%Y-%m-%d')}"
+            elif timeframe == "Tomorrow":
+                target_date = target_date + timedelta(days=1)
+                date_range = target_date.strftime('%Y-%m-%d')
+            elif timeframe == "Today":
+                date_range = target_date.strftime('%Y-%m-%d')
+
+            def format_mkt_cap(mc):
+                try:
+                    val = float(mc)
+                    if val >= 1e12: return f"{val/1e12:.1f}T"
+                    if val >= 1e9: return f"{val/1e9:.1f}B"
+                    if val >= 1e6: return f"{val/1e6:.1f}M"
+                    return f"{val:.1f}"
+                except: return str(mc) if mc else None
+
+            def format_volume(vol):
+                try:
+                    val = float(vol)
+                    if val >= 1e6: return f"{val/1e6:.1f}M"
+                    if val >= 1e3: return f"{val/1e3:.1f}K"
+                    return f"{val:.1f}"
+                except: return str(vol) if vol else None
+
             for r in records:
-                # Mock up an approximation of the date
-                # We can't know the exact day from the general Overview easily
-                target_date = date.today()
                 events.append(
                     EarningsEvent(
                         ticker=r.get("Ticker", ""),
                         report_date=target_date,
                         report_time=ReportTime.UNKNOWN,
+                        company_name=str(r.get("Company", "")),
+                        sector=str(r.get("Sector", "")),
+                        industry=str(r.get("Industry", "")),
+                        market_cap=format_mkt_cap(r.get("Market Cap")),
+                        volume=format_volume(r.get("Volume")),
+                        date_range=date_range
                     )
                 )
             return events
 
         except Exception as e:
             self.logger.error(f"Error fetching Finviz upcoming earnings: {e}")
-            return []
+            raise RuntimeError(f"DEBUG FINVIZ ERR: {e}")

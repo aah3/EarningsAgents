@@ -128,11 +128,15 @@ class EarningsPipeline:
         import redis
         import json
         import os
-        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=5)
+
         
         def publish(msg: str):
             if task_id:
-                r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": msg}))
+                try:
+                    r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": msg}))
+                except Exception as e:
+                    self.logger.warning(f"Failed to publish to redis: {e}")
 
         prediction_date = prediction_date or date.today()
         

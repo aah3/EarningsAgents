@@ -16,6 +16,7 @@ interface WSMessage {
     status: string;
     message: string;
     agent?: string;
+    type?: string;
 }
 
 export default function DashboardPage() {
@@ -27,6 +28,12 @@ export default function DashboardPage() {
     const [result, setResult] = useState<Prediction | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [messages, setMessages] = useState<WSMessage[]>([]);
+    const [agentStreams, setAgentStreams] = useState<{
+        Bull: string;
+        Bear: string;
+        Quant: string;
+        Consensus: string;
+    }>({ Bull: "", Bear: "", Quant: "", Consensus: "" });
     const [history, setHistory] = useState<Prediction[]>([]);
 
     const terminalEndRef = useRef<HTMLDivElement>(null);
@@ -72,6 +79,7 @@ export default function DashboardPage() {
         setError(null);
         setResult(null);
         setMessages([]);
+        setAgentStreams({ Bull: "", Bear: "", Quant: "", Consensus: "" });
 
         let ws: WebSocket | null = null;
 
@@ -89,7 +97,14 @@ export default function DashboardPage() {
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    setMessages((prev) => [...prev, data]);
+                    if (data.type === "stream" && data.agent) {
+                        setAgentStreams(prev => ({
+                            ...prev,
+                            [data.agent as keyof typeof prev]: prev[data.agent as keyof typeof prev] + data.message
+                        }));
+                    } else if (data.message) {
+                        setMessages((prev) => [...prev, data]);
+                    }
                 } catch (e) {
                     console.error("Failed to parse WS message", e);
                 }
@@ -138,11 +153,11 @@ export default function DashboardPage() {
     const getAgentColor = (agent?: string) => {
         if (!agent) return "text-gray-400";
         const a = agent.toLowerCase();
-        if (a === "bull") return "text-bull font-bold";
-        if (a === "bear") return "text-bear font-bold";
-        if (a === "quant") return "text-blue-400 font-bold";
-        if (a === "consensus") return "text-purple-400 font-bold";
-        return "text-accent font-bold";
+        if (a === "bull") return "text-bull text-shadow-bull";
+        if (a === "bear") return "text-bear text-shadow-bear";
+        if (a === "quant") return "text-blue-400";
+        if (a === "consensus") return "text-purple-400";
+        return "text-accent";
     };
 
     return (
@@ -188,35 +203,28 @@ export default function DashboardPage() {
                     </div>
 
                     {loading ? (
-                        <div className="flex-1 glass p-8 rounded-3xl border border-accent/30 bg-[#080b11] shadow-2xl flex flex-col font-mono text-sm relative overflow-hidden min-h-[400px]">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50 animate-[pulse_2s_ease-in-out_infinite]"></div>
-                            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/10 shrink-0">
-                                <div className="flex gap-2">
-                                    <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
-                                    <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)]"></div>
-                                    <div className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
+                        <div className="flex-1 grid grid-cols-2 gap-4 auto-rows-fr min-h-[500px]">
+                            {['Bull', 'Bear', 'Quant', 'Consensus'].map((agentName) => (
+                                <div key={agentName} className="glass p-5 rounded-3xl border border-white/5 bg-[#0c1017] shadow-xl flex flex-col font-mono text-xs relative overflow-hidden h-full">
+                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10 shrink-0">
+                                        <span className={`font-black uppercase tracking-widest text-[11px] ${getAgentColor(agentName)}`}>{agentName} Agent</span>
+                                        {agentStreams[agentName as keyof typeof agentStreams] === "" ? (
+                                            <span className="text-[9px] text-gray-500 uppercase flex items-center gap-1.5 font-bold tracking-widest">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-pulse"></div> Waiting
+                                            </span>
+                                        ) : (
+                                            <span className="text-[9px] text-accent uppercase flex items-center gap-1.5 font-bold tracking-widest">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></div> Thinking
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar text-gray-300 leading-relaxed font-outfit text-sm flex flex-col justify-end">
+                                        <span className="whitespace-pre-wrap mt-auto">
+                                            {agentStreams[agentName as keyof typeof agentStreams] || "Connection established. Awaiting analysis..."}
+                                        </span>
+                                    </div>
                                 </div>
-                                <span className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">Debate Connect / Live Stream</span>
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto space-y-3 pr-4 custom-scrollbar text-[13px] leading-relaxed">
-                                {messages.length === 0 ? (
-                                    <div className="text-gray-500 animate-pulse font-medium">Establishing secure connection to debate server...</div>
-                                ) : (
-                                    messages.map((msg, idx) => (
-                                        <div key={idx} className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                            <span className="text-gray-600 shrink-0 select-none">[{new Date().toLocaleTimeString(undefined, { hour12: false })}]</span>
-                                            {msg.agent ? (
-                                                <span className={`${getAgentColor(msg.agent)} shrink-0 w-[85px] uppercase tracking-wider`}>{msg.agent}:</span>
-                                            ) : (
-                                                <span className="text-gray-500 shrink-0 w-[85px] uppercase tracking-wider">SYSTEM:</span>
-                                            )}
-                                            <span className="text-gray-300 whitespace-pre-wrap">{msg.message}</span>
-                                        </div>
-                                    ))
-                                )}
-                                <div ref={terminalEndRef} />
-                            </div>
+                            ))}
                         </div>
                     ) : result ? (
                         <AnalysisResult result={result} />

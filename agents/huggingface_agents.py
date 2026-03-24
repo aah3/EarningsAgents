@@ -60,7 +60,9 @@ ANALYSIS FOCUS:
 4. Management's tone and forward guidance in the Latest Earnings Transcript Snippet
 5. Positive sentiment and insider buying
 
-OUTPUT FORMAT (JSON only, no other text):
+INSTRUCTIONS:
+First, provide a brief paragraph explaining your thoughts and reasoning (your "thinking process").
+Then, output your final decision in the following exact JSON format, enclosed in a ```json``` code block:
 {
     "direction": "BEAT",
     "confidence": <60-95>,
@@ -85,7 +87,9 @@ ANALYSIS FOCUS:
 4. Hesitant management tone or defensive posturing in the Latest Earnings Transcript Snippet
 5. High expectations that may be hard to meet
 
-OUTPUT FORMAT (JSON only, no other text):
+INSTRUCTIONS:
+First, provide a brief paragraph explaining your thoughts and reasoning (your "thinking process").
+Then, output your final decision in the following exact JSON format, enclosed in a ```json``` code block:
 {
     "direction": "MISS",
     "confidence": <60-95>,
@@ -112,7 +116,9 @@ ANALYSIS FOCUS:
 6. SEC Company Facts (XBRL) analysis (balance sheet health, margins from revenues vs net income)
 7. Statistical probability assessment
 
-OUTPUT FORMAT (JSON only, no other text):
+INSTRUCTIONS:
+First, provide a brief paragraph explaining your thoughts and reasoning (your "thinking process").
+Then, output your final decision in the following exact JSON format, enclosed in a ```json``` code block:
 {
     "direction": "BEAT" or "MISS" or "MEET",
     "confidence": <50-85>,
@@ -142,7 +148,9 @@ RULES:
 - If historical pattern is very consistent: Respect it
 - If User (Analyst) analysis provides verified unique insight, incorporate it into final reasoning
 
-OUTPUT FORMAT (JSON only, no other text):
+INSTRUCTIONS:
+First, provide a brief paragraph explaining your thoughts and reasoning (your "thinking process").
+Then, output your final decision in the following exact JSON format, enclosed in a ```json``` code block:
 {
     "direction": "BEAT" or "MISS" or "MEET",
     "confidence": <50-95>,
@@ -292,9 +300,22 @@ Analyze this company and provide your prediction in the specified JSON format.
 """
         return prompt
     
-    def analyze(self, company: CompanyData, news: List[NewsArticle]) -> AgentResponse:
+    def analyze(self, company: CompanyData, news: List[NewsArticle], stream_callback=None) -> AgentResponse:
         """Analyze company and return prediction."""
         prompt = self._format_prompt(company, news)
+        
+        if stream_callback:
+            full_response = ""
+            for chunk in self.llm.generate_stream(
+                system_prompt=self.system_prompt,
+                user_prompt=prompt,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens
+            ):
+                full_response += chunk
+                stream_callback(chunk)
+            return self._parse_response(full_response)
+        
         response = self.llm.generate(
             system_prompt=self.system_prompt,
             user_prompt=prompt,
@@ -344,9 +365,19 @@ Analyze this company and provide your prediction in the specified JSON format.
         if start_idx != -1 and end_idx != -1:
             json_str = json_content[start_idx:end_idx+1]
             try:
-                data = json.loads(json_str)
+                # Remove common LLM json errors: trailing commas
+                import re
+                json_str = re.sub(r',\s*}', '}', json_str)
+                json_str = re.sub(r',\s*]', ']', json_str)
+                # Remove unescaped newlines inside strings 
+                data = json.loads(json_str, strict=False)
                 
-                dir_str = data.get("direction", "meet").lower()
+                dir_str = data.get("direction", "meet")
+                if isinstance(dir_str, str):
+                    dir_str = dir_str.lower()
+                else:
+                    dir_str = "meet"
+                    
                 if "beat" in dir_str:
                     direction = PredictionDirection.BEAT
                 elif "miss" in dir_str:
@@ -356,7 +387,7 @@ Analyze this company and provide your prediction in the specified JSON format.
                 
                 return AgentResponse(
                     direction=direction,
-                    confidence=float(data.get("confidence", 50)) / 100,
+                    confidence=float(data.get("confidence", 50)) / 100 if isinstance(data.get("confidence"), (int, float, str)) else 0.5,
                     expected_price_move=data.get("expected_price_move", "neutral"),
                     move_vs_implied=data.get("move_vs_implied", "inside implied move"),
                     guidance_expectation=data.get("guidance_expectation", "neutral"),
@@ -366,8 +397,8 @@ Analyze this company and provide your prediction in the specified JSON format.
                     key_signals=data.get("key_signals", {}),
                     raw_response=response,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"JSON Parse Error for {self.__class__.__name__}: {e}. Raw snippet: {json_str[:200]}")
         
         self.logger.warning(f"Failed to parse agent response for {self.__class__.__name__}")
         return AgentResponse(
@@ -418,7 +449,8 @@ class ConsensusAgent(BaseAgent):
         bull_response: AgentResponse,
         bear_response: AgentResponse,
         quant_response: AgentResponse,
-        user_analysis: Optional[str] = None
+        user_analysis: Optional[str] = None,
+        stream_callback=None
     ) -> AgentResponse:
         """Synthesize the three agent responses into final prediction."""
         user_analysis_section = ""
@@ -452,6 +484,18 @@ class ConsensusAgent(BaseAgent):
 Based on this debate, provide your FINAL consensus prediction.
 Weigh the evidence and make a decisive call.
 """
+        if stream_callback:
+            full_response = ""
+            for chunk in self.llm.generate_stream(
+                system_prompt=self.system_prompt,
+                user_prompt=synthesis_prompt,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens
+            ):
+                full_response += chunk
+                stream_callback(chunk)
+            return self._parse_response(full_response)
+        
         response = self.llm.generate(
             system_prompt=self.system_prompt,
             user_prompt=synthesis_prompt,
@@ -511,39 +555,48 @@ class ThreeAgentSystem:
         user_analysis: Optional[str] = None
     ) -> EarningsPrediction:
         """Run full three-agent prediction."""
+        from concurrent.futures import ThreadPoolExecutor
+        
         prediction_date = prediction_date or date.today()
         
         import redis
         import json
         import os
-        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
-        
-        def publish(msg: str, agent: str = "System"):
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=5)
+
+        def publish(msg: str, agent: str = "System", msg_type: str = "status"):
             if task_id:
-                r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": msg, "agent": agent}))
+                try:
+                    r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": msg, "agent": agent, "type": msg_type}))
+                except Exception as e:
+                    self.logger.warning(f"Failed to publish to redis: {e}")
+
+        def get_stream_callback(agent: str):
+            def callback(chunk: str):
+                publish(chunk, agent, "stream")
+            return callback
 
         self.logger.info(f"Starting analysis for {company.ticker}")
         
-        publish(f"Bull Agent analyzing {company.ticker} for positive factors...", "Bull")
-        bull_response = self.bull_agent.analyze(company, news)
-        publish(f"Bull Analysis Complete: Confidence {bull_response.confidence:.0%}", "Bull")
-        
-        publish(f"Bear Agent investigating {company.ticker} for risk factors...", "Bear")
-        bear_response = self.bear_agent.analyze(company, news)
-        publish(f"Bear Analysis Complete: Confidence {bear_response.confidence:.0%}", "Bear")
-        
-        publish(f"Quant Agent computing statistical probabilities for {company.ticker}...", "Quant")
-        quant_response = self.quant_agent.analyze(company, news)
-        publish(f"Quant Analysis Complete: Confidence {quant_response.confidence:.0%}", "Quant")
-        
+        publish(f"Agents initiating parallel analysis for {company.ticker}...", "System", "status")
+
         if user_analysis:
-            publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst")
+            publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst", "status")
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_bull = executor.submit(self.bull_agent.analyze, company, news, get_stream_callback("Bull"))
+            future_bear = executor.submit(self.bear_agent.analyze, company, news, get_stream_callback("Bear"))
+            future_quant = executor.submit(self.quant_agent.analyze, company, news, get_stream_callback("Quant"))
+            
+            bull_response = future_bull.result()
+            bear_response = future_bear.result()
+            quant_response = future_quant.result()
         
-        publish(f"Consensus Agent synthesizing debate for final prediction...", "Consensus")
+        publish(f"Consensus Agent synthesizing debate for final prediction...", "System", "status")
         consensus_response = self.consensus_agent.synthesize(
-            company, bull_response, bear_response, quant_response, user_analysis
+            company, bull_response, bear_response, quant_response, user_analysis, get_stream_callback("Consensus")
         )
-        publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "Consensus")
+        publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "System", "status")
         
         user_summary = f"\n\nANALYST (USER):\n{user_analysis}" if user_analysis else ""
         debate_summary = f"""

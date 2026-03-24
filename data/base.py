@@ -155,6 +155,13 @@ class EarningsEvent(BaseModel):
     fiscal_year: Optional[int] = None
     consensus_eps: Optional[float] = None
     consensus_revenue: Optional[float] = None
+    # Additional context for UI displays 
+    company_name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    market_cap: Optional[str] = None  # Example: "2.3T" or raw float, string works well for UI
+    volume: Optional[str] = None      # Strings like "High", "3.2M", etc.
+    date_range: Optional[str] = None  # Example: "2026-03-23 - 2026-03-27"
 
 
 class EarningsCallTranscript(BaseModel):

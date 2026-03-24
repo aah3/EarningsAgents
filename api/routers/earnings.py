@@ -215,7 +215,7 @@ async def get_daily_predictions(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/calendar")
-async def get_earnings_calendar(
+def get_earnings_calendar(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     tickers: Optional[str] = None,

@@ -81,6 +81,46 @@ class LLMClient:
         
         return "⚠️ Error: Maximum retries exceeded for LLM call."
 
+    def generate_stream(self, system_prompt: str, user_prompt: str, temperature: float = 0.3, max_tokens: int = 2048):
+        """
+        Generates content from the LLM based on system and user prompts, yielding chunks as they arrive.
+        """
+        if not self.client:
+            yield "⚠️ Error: LLM client not initialized."
+            return
+
+        max_retries = 3
+        base_delay = 5
+
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    time.sleep(base_delay * (2 ** (attempt - 1)))
+                else:
+                    time.sleep(1) # Small initial pause
+
+                if self.provider == "gemini":
+                    yield from self._stream_gemini(system_prompt, user_prompt, temperature, max_tokens)
+                elif self.provider == "anthropic":
+                    yield from self._stream_anthropic(system_prompt, user_prompt, temperature, max_tokens)
+                elif self.provider == "openai":
+                    yield from self._stream_openai(system_prompt, user_prompt, temperature, max_tokens)
+                
+                # If successful, exit the retry loop
+                break
+                
+            except Exception as e:
+                err_msg = str(e)
+                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "rate_limit" in err_msg.lower():
+                    logger.warning(f"Rate limit hit on {self.provider} streaming (attempt {attempt+1}/{max_retries}). Retrying...")
+                    if attempt == max_retries - 1:
+                        yield f"\n⚠️ Error: {str(e)}"
+                    continue
+                
+                logger.error(f"Error streaming {self.provider} API: {e}")
+                yield f"\n⚠️ Error: {str(e)}"
+                break
+
     def chat(self, system_prompt: str, messages: List[dict], temperature: float = 0.3, max_tokens: int = 2048) -> str:
         """
         Continues a conversation using a list of messages: [{"role": "user"|"model", "content": "..."}]
@@ -149,6 +189,50 @@ class LLMClient:
             max_tokens=max_tokens
         )
         return response.choices[0].message.content
+
+    def _stream_gemini(self, sys_prompt, user_prompt, temperature, max_tokens):
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=user_prompt,
+            config={
+                'system_instruction': sys_prompt,
+                'temperature': temperature,
+                'max_output_tokens': max_tokens
+            },
+            stream=True
+        )
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
+
+    def _stream_anthropic(self, sys_prompt, user_prompt, temperature, max_tokens):
+        with self.client.messages.stream(
+            model=self.model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=sys_prompt,
+            messages=[
+                {"role": "user", "content": user_prompt}
+            ]
+        ) as stream:
+            for text in stream.text_stream:
+                if text:
+                    yield text
+
+    def _stream_openai(self, sys_prompt, user_prompt, temperature, max_tokens):
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True
+        )
+        for chunk in response:
+            if getattr(chunk.choices[0].delta, "content", None):
+                yield chunk.choices[0].delta.content
 
     def _chat_gemini(self, sys_prompt, messages, temperature, max_tokens):
         contents = []

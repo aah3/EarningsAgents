@@ -97,8 +97,9 @@ export default function CalendarPage() {
                         >
                             <option value="S&P 500">S&P 500</option>
                             <option value="DJIA">Dow Jones (DJIA)</option>
-                            <option value="NDX">NASDAQ 100</option>
-                            <option value="">Any</option>
+                            <option value="NASDAQ 100">NASDAQ 100</option>
+                            <option value="RUSSELL 2000">Russell 2000</option>
+                            <option value="Any">Any</option>
                         </select>
                     </div>
                     <div className="w-full lg:w-1/3">

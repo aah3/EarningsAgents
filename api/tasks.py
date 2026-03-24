@@ -43,8 +43,12 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
         import redis
         import json
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        r = redis.from_url(redis_url)
-        r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": f"Started analysis for {ticker}"}))
+        r = redis.from_url(redis_url, socket_timeout=5)
+
+        try:
+            r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": f"Started analysis for {ticker}"}))
+        except Exception as e:
+            logger.warning(f"Failed to publish to redis: {e}")
 
         # 1. Run Analysis
         raw_result = pipeline.predict_single(ticker, report_date, task_id=task_id, user_analysis=user_analysis if user_analysis else None)
