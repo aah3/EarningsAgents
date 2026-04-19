@@ -30,7 +30,8 @@ def get_current_user(auth: HTTPAuthorizationCredentials = Security(security)):
             signing_key.key,
             algorithms=["RS256"],
             # You should also verify audience (azp) and issuer (iss) in production
-            options={"verify_aud": False} 
+            options={"verify_aud": False, "verify_iat": False},
+            leeway=60  # Add 60 seconds of leeway for clock skew
         )
         
         user_id = payload.get("sub")

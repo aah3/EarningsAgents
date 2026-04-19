@@ -6,28 +6,35 @@ import { api, Prediction } from "@/lib/api";
 
 export default function AnalysisResult({ result }: { result: Prediction }) {
     const { getToken } = useAuth();
-    const [chatMessages, setChatMessages] = useState<{role: string, content: string}[]>([]);
+    const [chatMessages, setChatMessages] = useState<{ role: string, content: string }[]>([]);
     const [chatInput, setChatInput] = useState("");
     const [chatLoading, setChatLoading] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
 
     const parseDebate = (summary?: string) => {
-        if (!summary) return { quant: null, user: null };
+        if (!summary) return { bull: null, bear: null, quant: null, user: null };
         const parts = summary.split(/\n(?=(?:BULL |BEAR |QUANT |ANALYST \(USER\):|CONSENSUS ))/);
-        let quant = null, user = null;
-        for (const p of parts) {
-            if (p.startsWith("QUANT")) {
-                const idx = p.indexOf(':\n');
-                if (idx !== -1) quant = p.substring(idx + 2).trim();
+        let bull = null, bear = null, quant = null, user = null;
+        for (let p of parts) {
+            p = p.trim();
+            if (p.startsWith("BULL (")) {
+                const idx = p.indexOf('):\n');
+                if (idx !== -1) bull = p.substring(idx + 3).trim();
+            } else if (p.startsWith("BEAR (")) {
+                const idx = p.indexOf('):\n');
+                if (idx !== -1) bear = p.substring(idx + 3).trim();
+            } else if (p.startsWith("QUANT (")) {
+                const idx = p.indexOf('):\n');
+                if (idx !== -1) quant = p.substring(idx + 3).trim();
             } else if (p.startsWith("ANALYST (USER):")) {
                 const idx = p.indexOf(':\n');
                 if (idx !== -1) user = p.substring(idx + 2).trim();
             }
         }
-        return { quant, user };
+        return { bull, bear, quant, user };
     };
 
-    const { quant: quantSummary, user: userSummary } = parseDebate(result.debate_summary);
+    const { bull: bullSummary, bear: bearSummary, quant: quantSummary, user: userSummary } = parseDebate(result.debate_summary);
 
     useEffect(() => {
         if (chatMessages.length > 0) {
@@ -37,29 +44,43 @@ export default function AnalysisResult({ result }: { result: Prediction }) {
 
     const handleSendChatMessage = async () => {
         if (!chatInput.trim() || !result) return;
-        
+
         const currentMessages = [...chatMessages];
-        const newUserMsg = { role: "user", content: chatInput.trim() };
-        
+        const userText = chatInput.trim();
+        const newUserMsg = { role: "user", content: userText };
+
         setChatMessages([...currentMessages, newUserMsg]);
         setChatInput("");
         setChatLoading(true);
-        
+
         try {
-            const token = await getToken();
-            if (!token) throw new Error("Not authenticated");
-            
-            // Send the entire context
-            const chatRes = await api.chatWithConsensus(result.ticker, [...currentMessages, newUserMsg], undefined, token);
-            
+            const token = await getToken() || undefined;
+
+            // Send the entire context on the first message
+            let messagesToSend = [...currentMessages, newUserMsg];
+            if (currentMessages.length === 0) {
+                messagesToSend = [{
+                    role: "user",
+                    content: `Context: We are discussing your recent earnings prediction for ${result.ticker} (${result.company_name}).
+Your Prediction: ${result.direction} (Confidence: ${(result.confidence * 100).toFixed(0)}%)
+Reasoning: ${result.reasoning_summary}
+Debate Summary: ${result.debate_summary}
+
+User Question:
+${userText}`
+                }];
+            }
+
+            const chatRes = await api.chatWithConsensus(result.ticker, messagesToSend, undefined, token);
+
             if (chatRes && chatRes.response) {
                 setChatMessages([...currentMessages, newUserMsg, { role: "model", content: chatRes.response }]);
             } else {
                 setChatMessages([...currentMessages, newUserMsg, { role: "model", content: "⚠️ No response received from Consensus Agent." }]);
             }
-            
+
         } catch (err: any) {
-             setChatMessages([...currentMessages, newUserMsg, { role: "model", content: "⚠️ Error contacting Consensus Agent: " + err.message }]);
+            setChatMessages([...currentMessages, newUserMsg, { role: "model", content: "⚠️ Error contacting Consensus Agent: " + err.message }]);
         } finally {
             setChatLoading(false);
         }
@@ -112,15 +133,24 @@ export default function AnalysisResult({ result }: { result: Prediction }) {
                         </div>
                         <p className="text-xs font-black text-bull uppercase tracking-[0.2em]">Bull Case</p>
                     </div>
+                    {bullSummary && (
+                        <p className="text-[14px] text-gray-300 leading-relaxed font-medium whitespace-pre-line mb-6 pb-6 border-b border-bull/10">
+                            {bullSummary}
+                        </p>
+                    )}
                     <ul className="space-y-4">
-                        {result.bull_factors?.map((f, i) => (
-                            <li key={i} className="text-sm text-gray-300 flex items-start gap-3 leading-relaxed">
-                                <span className="text-bull mt-1 font-bold">✓</span> {f}
-                            </li>
-                        ))}
+                        {result.bull_factors && result.bull_factors.length > 0 ? (
+                            result.bull_factors.map((f, i) => (
+                                <li key={i} className="text-sm text-gray-300 flex items-start gap-3 leading-relaxed">
+                                    <span className="text-bull mt-1 font-bold">✓</span> {f}
+                                </li>
+                            ))
+                        ) : (
+                            <li className="text-sm text-gray-500 italic flex items-center justify-center p-4">No significant bullish factors identified in this analysis.</li>
+                        )}
                     </ul>
                 </div>
-                
+
                 <div className="p-6 bg-[#1a0a0a] rounded-2xl border border-bear/20 shadow-inner">
                     <div className="flex items-center gap-3 mb-5">
                         <div className="w-8 h-8 rounded-full bg-bear/20 flex items-center justify-center border border-bear/30">
@@ -128,12 +158,21 @@ export default function AnalysisResult({ result }: { result: Prediction }) {
                         </div>
                         <p className="text-xs font-black text-bear uppercase tracking-[0.2em]">Bear Case</p>
                     </div>
+                    {bearSummary && (
+                        <p className="text-[14px] text-gray-300 leading-relaxed font-medium whitespace-pre-line mb-6 pb-6 border-b border-bear/10">
+                            {bearSummary}
+                        </p>
+                    )}
                     <ul className="space-y-4">
-                        {result.bear_factors?.map((f, i) => (
-                            <li key={i} className="text-sm text-gray-300 flex items-start gap-3 leading-relaxed">
-                                <span className="text-bear mt-1 font-bold">×</span> {f}
-                            </li>
-                        ))}
+                        {result.bear_factors && result.bear_factors.length > 0 ? (
+                            result.bear_factors.map((f, i) => (
+                                <li key={i} className="text-sm text-gray-300 flex items-start gap-3 leading-relaxed">
+                                    <span className="text-bear mt-1 font-bold">×</span> {f}
+                                </li>
+                            ))
+                        ) : (
+                            <li className="text-sm text-gray-500 italic flex items-center justify-center p-4">No significant bearish factors identified in this analysis.</li>
+                        )}
                     </ul>
                 </div>
 
@@ -148,7 +187,7 @@ export default function AnalysisResult({ result }: { result: Prediction }) {
                         <p className="text-[15px] text-gray-300 leading-relaxed font-medium whitespace-pre-line">{quantSummary}</p>
                     </div>
                 )}
-                
+
                 {userSummary && (
                     <div className="p-6 bg-white/5 rounded-2xl border border-white/10 shadow-inner">
                         <div className="flex items-center gap-3 mb-5">
@@ -178,10 +217,14 @@ export default function AnalysisResult({ result }: { result: Prediction }) {
                 <h4 className="text-xs font-black text-consensus uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
                     <span className="text-lg">💬</span> Chat with Consensus Agent
                 </h4>
-                
-                <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-2 custom-scrollbar min-h-[400px]">
+
+                <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-2 custom-scrollbar min-h-[300px]">
                     {chatMessages.length === 0 ? (
-                        <p className="text-sm text-gray-500 italic">Have questions about this prediction? Ask the Consensus Analyst directly.</p>
+                        <div className="flex flex-col items-center justify-center h-full opacity-50 py-10">
+                            <span className="text-4xl mb-4">🤖</span>
+                            <p className="text-sm font-bold text-gray-400">No messages yet.</p>
+                            <p className="text-xs text-gray-500 mt-2">Type your questions below to debate the analysis!</p>
+                        </div>
                     ) : (
                         chatMessages.map((msg, idx) => (
                             <div key={idx} className={`p-4 rounded-xl text-sm ${msg.role === 'user' ? 'bg-white/5 text-gray-200 ml-4 border border-white/10' : 'bg-consensus/10 text-gray-300 mr-4 border border-consensus/30'}`}>
@@ -200,21 +243,25 @@ export default function AnalysisResult({ result }: { result: Prediction }) {
                     )}
                     <div ref={chatEndRef} />
                 </div>
-                
-                <div className="flex gap-3 relative mt-auto">
-                    <input
-                        type="text"
-                        placeholder="E.g. What about the macroeconomic risks?"
+
+                <div className="flex gap-3 relative z-10 mt-auto items-end">
+                    <textarea
+                        placeholder="Have questions about this prediction? Ask the Consensus Analyst directly..."
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()}
-                        className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-4 focus:border-consensus focus:ring-1 focus:ring-consensus/50 outline-none transition-all text-sm font-medium text-white placeholder-white/20"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendChatMessage();
+                            }
+                        }}
+                        className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-4 focus:border-consensus focus:ring-1 focus:ring-consensus/50 outline-none transition-all text-sm font-medium text-white placeholder-white/40 resize-y min-h-[60px] max-h-[200px] custom-scrollbar"
                         disabled={chatLoading}
                     />
                     <button
                         onClick={handleSendChatMessage}
                         disabled={chatLoading || !chatInput.trim()}
-                        className="px-8 rounded-xl font-bold uppercase tracking-widest text-sm transition-colors bg-consensus text-background hover:bg-consensus/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-8 py-4 h-[60px] rounded-xl font-bold uppercase tracking-widest text-sm transition-colors bg-consensus text-background hover:bg-consensus/90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                     >
                         Send
                     </button>

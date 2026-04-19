@@ -72,12 +72,30 @@ class ChatRequest(BaseModel):
 async def predict_ticker(
     ticker: str, 
     request: PredictRequest,
+    force_refresh: bool = Query(False, description="Force new analysis and bypass cache"),
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     try:
         # Ensure user exists in DB
-        get_or_create_user(session, clerk_id)
+        user = get_or_create_user(session, clerk_id)
+        
+        # 1. Check for cached prediction if not forcing refresh and no custom analysis
+        if not force_refresh and not request.user_analysis:
+            statement = select(Prediction).where(
+                Prediction.user_id == user.id,
+                Prediction.ticker == ticker.upper()
+            ).order_by(Prediction.prediction_date.desc())
+            existing_predictions = session.exec(statement).all()
+            
+            for p in existing_predictions:
+                # Check if we already ran it today for this report
+                if p.report_date.date() == request.report_date and p.prediction_date.date() == date.today():
+                    return {
+                        "task_id": f"cached-{p.id}",
+                        "status": "PENDING",
+                        "message": f"Cached analysis found for {ticker}"
+                    }
         
         # Dispatch background task
         task = analyze_ticker_task.delay(
@@ -96,10 +114,40 @@ async def predict_ticker(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/tasks/{task_id}")
-async def get_task_status(task_id: str):
+async def get_task_status(
+    task_id: str,
+    session: Session = Depends(get_session)
+):
     """
     Check the status and result of a background analysis task.
     """
+    # 1. Fast path for cached predictions
+    if task_id.startswith("cached-"):
+        prediction_id = int(task_id.replace("cached-", ""))
+        prediction = session.get(Prediction, prediction_id)
+        if prediction:
+            result_data = prediction.dict() if hasattr(prediction, "dict") else prediction.__dict__
+            # Fix datetimes
+            if isinstance(result_data.get('report_date'), datetime):
+                result_data['report_date'] = result_data['report_date'].isoformat()
+            if isinstance(result_data.get('prediction_date'), datetime):
+                result_data['prediction_date'] = result_data['prediction_date'].isoformat()
+            
+            return {
+                "task_id": task_id,
+                "status": "SUCCESS",
+                "ready": True,
+                "result": result_data
+            }
+        
+        return {
+            "task_id": task_id,
+            "status": "FAILURE",
+            "ready": True,
+            "error": "Cached prediction not found"
+        }
+
+    # 2. Regular celery task status
     res = AsyncResult(task_id)
     
     if res.ready():

@@ -142,6 +142,7 @@ export default function DashboardPage() {
             setError(err.message || "An error occurred during analysis.");
         } finally {
             setLoading(false);
+            setMessages([]); // Clear toasts after completion
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.close();
             }
@@ -161,193 +162,244 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="space-y-10 pb-20">
-            <header className="mb-10">
-                <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight mb-3 font-outfit text-white">Dashboard Overview</h1>
-                <p className="text-gray-400 font-medium text-lg">Your intelligent hub for AI-driven earnings forecasts.</p>
+        <div className="space-y-8 pb-20">
+            <header className="flex justify-between items-end mb-6">
+                <div>
+                    <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight mb-2 font-outfit text-white">Dashboard Overview</h1>
+                    <p className="text-gray-400 font-medium text-lg">Your intelligent hub for AI-driven earnings forecasts.</p>
+                </div>
             </header>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat) => (
-                    <div key={stat.label} className="relative overflow-hidden p-8 rounded-3xl border border-white/10 bg-[#0c1017] group hover:border-white/20 hover:shadow-[0_0_30px_rgba(45,212,191,0.05)] transition-all duration-300 transform hover:-translate-y-1">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-white/5 to-transparent rounded-bl-full -z-0 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
-                        <div className="relative z-10 flex justify-between items-start mb-6">
-                            <span className="text-3xl drop-shadow-lg">{stat.icon}</span>
-                            <div
-                                className="w-2.5 h-2.5 rounded-full ring-4 ring-black/20"
-                                style={{ backgroundColor: stat.color, boxShadow: `0 0 15px ${stat.color}` }}
-                            />
+            {/* AI Analysis Hub (Centralized Core Feature) */}
+            <div className="glass p-8 lg:p-10 rounded-3xl border border-white/10 bg-[#0c1017] mb-8 shadow-2xl relative overflow-hidden group">
+                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50 group-hover:opacity-100 transition-opacity"></div>
+
+                {loading && (
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-20 flex flex-col items-center justify-center border border-accent/20">
+                        <div className="relative w-20 h-20 mb-6">
+                            <div className="absolute inset-0 rounded-full border-4 border-white/10"></div>
+                            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-accent animate-spin"></div>
+                            <div className="absolute inset-0 flex items-center justify-center text-accent text-2xl">
+                                <span className="animate-pulse">⚡</span>
+                            </div>
                         </div>
-                        <p className="relative z-10 text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">{stat.label}</p>
-                        <p className="relative z-10 text-4xl font-black text-white tracking-tight mb-2">{stat.value}</p>
-                        <p className="relative z-10 text-[10px] font-semibold text-gray-500 tracking-wide uppercase">{stat.subtext}</p>
+                        <p className="text-accent font-black animate-pulse text-sm tracking-[0.3em] uppercase">Initializing Agent Debate Pipeline</p>
+                    </div>
+                )}
+
+                <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-black font-outfit text-white tracking-wide uppercase flex items-center gap-3">
+                        <span className="text-accent text-3xl">🎯</span> AI Analysis Hub
+                    </h2>
+                    <div className="text-[11px] text-gray-500 font-bold uppercase tracking-widest bg-white/5 px-4 py-2 rounded-lg">
+                        Aggregating BQL / EDGAR / Alpha Vantage
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full">
+                    {/* Giant Ticker Input */}
+                    <div className="lg:col-span-4 space-y-3">
+                        <label className="text-[11px] font-black uppercase tracking-[0.2em] text-accent">Target Stock Ticker</label>
+                        <input
+                            type="text"
+                            value={ticker}
+                            onChange={(e) => setTicker(e.target.value)}
+                            placeholder="E.G. NVDA"
+                            className="w-full bg-[#05070a] border-2 border-white/10 rounded-2xl px-6 py-5 focus:border-accent focus:ring-4 focus:ring-accent/20 outline-none transition-all uppercase font-black text-4xl lg:text-5xl tracking-widest text-white placeholder-white/10 h-[90px] shadow-inner"
+                            suppressHydrationWarning
+                        />
+                    </div>
+
+                    {/* Date Input */}
+                    <div className="lg:col-span-3 space-y-3">
+                        <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Report Date</label>
+                        <input
+                            type="date"
+                            value={reportDate}
+                            onChange={(e) => setReportDate(e.target.value)}
+                            className="w-full bg-[#05070a] border border-white/10 rounded-2xl px-6 py-5 focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all text-xl font-bold text-white relative [color-scheme:dark] h-[90px]"
+                            suppressHydrationWarning
+                        />
+                    </div>
+
+                    {/* Submit Button */}
+                    <div className="lg:col-span-5 flex flex-col justify-end space-y-3">
+                        <div className="flex justify-between items-center opacity-0"><label>Spacer</label></div>
+                        <button
+                            onClick={handleRunAnalysis}
+                            disabled={loading || !ticker || !reportDate}
+                            className={`w-full h-[90px] rounded-2xl font-black uppercase tracking-[0.2em] text-lg lg:text-xl transition-all shadow-xl flex items-center justify-center gap-4 ${loading || !ticker || !reportDate
+                                ? "bg-gray-800 text-gray-500 cursor-not-allowed border-2 border-gray-700"
+                                : "bg-accent text-background hover:bg-white hover:text-black border-2 border-accent hover:border-white shadow-[0_0_40px_rgba(45,212,191,0.3)] hover:shadow-[0_0_50px_rgba(255,255,255,0.5)] transform hover:-translate-y-1"
+                                }`}
+                        >
+                            {loading ? "Analyzing..." : "Launch Agent Debate 🚀"}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                    <div className="flex justify-between items-center pr-2">
+                        <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-500">Your Custom Analysis context (Optional)</label>
+                        <span className="text-[9px] text-accent font-bold uppercase tracking-widest bg-accent/10 px-3 py-1.5 rounded-md border border-accent/20">Analyst Agent Input</span>
+                    </div>
+                    <textarea
+                        value={userAnalysis}
+                        onChange={(e) => setUserAnalysis(e.target.value)}
+                        placeholder="Include your prompt/analysis to be incorporated into the consensus."
+                        className="w-full bg-[#05070a] border border-white/10 rounded-xl px-5 py-4 focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none transition-all text-sm font-medium text-white relative placeholder-white/20 min-h-[80px] resize-y custom-scrollbar"
+                    />
+                </div>
+
+                {error && (
+                    <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-400 font-bold flex items-start gap-3">
+                        <span className="text-xl">⚠️</span>
+                        <span className="pt-0.5">{error}</span>
+                    </div>
+                )}
+            </div>
+
+            {/* Dense Stats Summary */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                {stats.map((stat) => (
+                    <div key={stat.label} className="p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center gap-4 hover:bg-[#11161d] transition-colors">
+                        <div className="text-3xl opacity-80">{stat.icon}</div>
+                        <div>
+                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{stat.label}</p>
+                            <div className="flex items-baseline gap-2">
+                                <p className="text-2xl font-black text-white tracking-tight">{stat.value}</p>
+                                <p className="text-[10px] font-bold" style={{ color: stat.color }}>{stat.subtext.split(' ')[0]}</p>
+                            </div>
+                        </div>
                     </div>
                 ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 mt-6 min-h-[500px]">
-                {/* Main Content Area */}
-                <div className="lg:col-span-2 space-y-6 flex flex-col">
-                    <div className="flex items-center justify-between px-2">
-                        <h2 className="text-2xl font-bold font-outfit text-white">
-                            {loading ? "Agent Debate in Progress" : result ? "Analysis Results" : "Recent Predictions"}
-                        </h2>
-                        {!loading && (
-                            result ? (
-                                <button onClick={() => setResult(null)} className="text-xs font-bold text-accent hover:text-white uppercase tracking-widest transition-colors flex items-center gap-2">&larr; Back to Overview</button>
-                            ) : (
-                                <a href="/dashboard/history" className="text-xs font-bold text-accent hover:text-white uppercase tracking-widest transition-colors flex items-center gap-2">View History &rarr;</a>
-                            )
-                        )}
-                    </div>
-
-                    {loading ? (
-                        <div className="flex-1 grid grid-cols-2 gap-4 auto-rows-fr min-h-[500px]">
-                            {['Bull', 'Bear', 'Quant', 'Consensus'].map((agentName) => (
-                                <div key={agentName} className="glass p-5 rounded-3xl border border-white/5 bg-[#0c1017] shadow-xl flex flex-col font-mono text-xs relative overflow-hidden h-full">
-                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10 shrink-0">
-                                        <span className={`font-black uppercase tracking-widest text-[11px] ${getAgentColor(agentName)}`}>{agentName} Agent</span>
-                                        {agentStreams[agentName as keyof typeof agentStreams] === "" ? (
-                                            <span className="text-[9px] text-gray-500 uppercase flex items-center gap-1.5 font-bold tracking-widest">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-pulse"></div> Waiting
-                                            </span>
-                                        ) : (
-                                            <span className="text-[9px] text-accent uppercase flex items-center gap-1.5 font-bold tracking-widest">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></div> Thinking
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar text-gray-300 leading-relaxed font-outfit text-sm flex flex-col justify-end">
-                                        <span className="whitespace-pre-wrap mt-auto">
-                                            {agentStreams[agentName as keyof typeof agentStreams] || "Connection established. Awaiting analysis..."}
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : result ? (
-                        <AnalysisResult result={result} />
-                    ) : (
-                        <div className="flex-1 glass rounded-3xl overflow-hidden border border-white/5 bg-[#0c1017]">
-                            <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
-                                <table className="w-full text-left">
-                                    <thead className="bg-[#080b11] border-b border-white/10 sticky top-0 z-10">
-                                        <tr className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">
-                                            <th className="px-8 py-6">Ticker</th>
-                                            <th className="px-8 py-6 hidden sm:table-cell">Status</th>
-                                            <th className="px-8 py-6 text-center">Prediction</th>
-                                            <th className="px-8 py-6 text-right">Confidence</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-white/5">
-                                        {history.length > 0 ? history.map((row) => (
-                                            <tr key={row.ticker + row.prediction_date} onClick={() => setResult(row)} className="hover:bg-white/[0.02] transition-colors group cursor-pointer">
-                                                <td className="px-8 py-6 font-black text-white group-hover:pl-10 group-hover:text-accent transition-all text-lg">{row.ticker}</td>
-                                                <td className="px-8 py-6 text-sm text-gray-400 font-medium hidden sm:table-cell">Analyzed</td>
-                                                <td className="px-8 py-6 text-center">
-                                                    <span
-                                                        className={`px-5 py-1.5 rounded-full text-xs font-black
-                                                            ${row.direction === 'BEAT' ? 'bg-bull/10 text-bull border-bull/30 border' :
-                                                              row.direction === 'MISS' ? 'bg-bear/10 text-bear border-bear/30 border' :
-                                                              'bg-gray-500/10 text-gray-400 border-gray-500/30 border'}`}
-                                                    >
-                                                        {row.direction}
-                                                    </span>
-                                                </td>
-                                                <td className="px-8 py-6 text-right font-mono font-bold text-xl tracking-tight text-white group-hover:text-accent transition-colors">{(row.confidence * 100).toFixed(0)}%</td>
-                                            </tr>
-                                        )) : (
-                                            <tr>
-                                                <td colSpan={4} className="px-8 py-6 text-center text-gray-500 text-sm font-bold uppercase tracking-widest">
-                                                    No recent predictions found.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+            {/* Main Content Area (Full Width) */}
+            <div className="min-h-[600px] flex flex-col">
+                <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-4">
+                    <h2 className="text-xl font-bold font-outfit text-white uppercase tracking-widest">
+                        {loading ? "Live Agent Debate" : result ? "Comprehensive Analysis Results" : "Recent Institutional Predictions"}
+                    </h2>
+                    {!loading && (
+                        result ? (
+                            <button onClick={() => setResult(null)} className="text-[11px] px-4 py-2 bg-white/5 rounded-lg font-bold text-white hover:bg-white/10 uppercase tracking-widest transition-colors flex items-center gap-2">&larr; Back to Dashboard Grid</button>
+                        ) : (
+                            <a href="/dashboard/history" className="text-[11px] px-4 py-2 bg-white/5 rounded-lg font-bold text-accent hover:bg-accent hover:text-black uppercase tracking-widest transition-colors flex items-center gap-2">View Full Ledger &rarr;</a>
+                        )
                     )}
                 </div>
 
-                {/* Quick Analysis Form */}
-                <div className="space-y-6">
-                    <h2 className="text-2xl font-bold font-outfit px-2 text-white">Quick Analysis</h2>
-                    <div className="glass p-8 rounded-3xl border border-white/10 bg-[#0c1017] space-y-8 shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-accent/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-
-                        {loading && (
-                            <div className="absolute inset-0 bg-black/60 backdrop-blur-md rounded-3xl z-10 flex flex-col items-center justify-center border border-accent/20">
-                                <div className="relative w-16 h-16 mb-6">
-                                    <div className="absolute inset-0 rounded-full border-4 border-white/10"></div>
-                                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-accent animate-spin"></div>
-                                    <div className="absolute inset-0 flex items-center justify-center text-accent">
-                                        <span className="animate-pulse">⚡</span>
-                                    </div>
+                {loading ? (
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 auto-rows-fr min-h-[500px]">
+                        {['Bull', 'Bear', 'Quant', 'Consensus'].map((agentName) => (
+                            <div key={agentName} className="glass p-6 rounded-2xl border border-white/10 bg-[#0c1017] shadow-xl flex flex-col font-mono text-xs relative overflow-hidden h-full">
+                                <div className="absolute top-0 left-0 w-full h-1" style={{ backgroundColor: getAgentColor(agentName).includes('bull') ? '#2dd4bf' : getAgentColor(agentName).includes('bear') ? '#f87171' : getAgentColor(agentName).includes('blue') ? '#60a5fa' : '#c084fc' }}></div>
+                                <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10 shrink-0 mt-2">
+                                    <span className={`font-black uppercase tracking-widest text-sm ${getAgentColor(agentName)} text-shadow-sm`}>{agentName} Node</span>
+                                    {agentStreams[agentName as keyof typeof agentStreams] === "" ? (
+                                        <span className="text-[10px] text-gray-500 uppercase flex items-center gap-2 font-bold tracking-widest">
+                                            <div className="w-2 h-2 rounded-full bg-gray-600 animate-pulse"></div> Awaiting
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] text-accent uppercase flex items-center gap-2 font-bold tracking-widest">
+                                            <div className="w-2 h-2 rounded-full bg-accent animate-ping"></div> Generating
+                                        </span>
+                                    )}
                                 </div>
-                                <p className="text-accent font-bold animate-pulse text-xs tracking-[0.2em] uppercase">Processing Data Pipeline</p>
+                                <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar text-gray-300 leading-relaxed font-outfit text-[13px] flex flex-col justify-end">
+                                    <span ref={terminalEndRef} className="whitespace-pre-wrap mt-auto">
+                                        {agentStreams[agentName as keyof typeof agentStreams] || "Standard output connection established. Listening for real-time analysis tokens..."}
+                                    </span>
+                                </div>
                             </div>
-                        )}
-
-                        <div className="space-y-2.5">
-                            <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">Stock Ticker</label>
-                            <input
-                                type="text"
-                                value={ticker}
-                                onChange={(e) => setTicker(e.target.value)}
-                                placeholder="E.G. NVDA"
-                                className="w-full bg-[#080b11] border border-white/10 rounded-2xl px-5 py-4 focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none transition-all uppercase font-black text-lg tracking-wider text-white placeholder-white/20"
-                            />
-                        </div>
-                        <div className="space-y-2.5">
-                            <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">Report Date</label>
-                            <input
-                                type="date"
-                                value={reportDate}
-                                onChange={(e) => setReportDate(e.target.value)}
-                                className="w-full bg-[#080b11] border border-white/10 rounded-2xl px-5 py-4 focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none transition-all text-sm font-bold text-white relative [color-scheme:dark]"
-                            />
-                        </div>
-                        <div className="space-y-2.5">
-                            <div className="flex justify-between items-center">
-                                <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">Your Analysis (Optional)</label>
-                                <span className="text-[9px] text-accent/80 font-bold uppercase tracking-widest bg-accent/10 px-2 py-1 rounded-md">Analyst Agent</span>
-                            </div>
-                            <textarea
-                                value={userAnalysis}
-                                onChange={(e) => setUserAnalysis(e.target.value)}
-                                placeholder="Include your prompt/analysis to be incorporated into the consensus."
-                                className="w-full bg-[#080b11] border border-white/10 rounded-2xl px-5 py-4 focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none transition-all text-sm font-bold text-white relative placeholder-white/20 min-h-[100px] resize-y custom-scrollbar"
-                            />
-                        </div>
-
-                        {error && (
-                            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-500 font-bold flex items-start gap-3">
-                                <span>⚠️</span>
-                                <span>{error}</span>
-                            </div>
-                        )}
-
-                        <button
-                            onClick={handleRunAnalysis}
-                            disabled={loading}
-                            className={`w-full py-5 rounded-2xl font-black uppercase tracking-[0.15em] text-xs transition-all shadow-xl flex items-center justify-center gap-3 ${loading
-                                ? "bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700"
-                                : "bg-accent text-background hover:bg-accent/90 hover:shadow-[0_0_30px_rgba(45,212,191,0.4)] hover:-translate-y-1"
-                                }`}
-                        >
-                            {loading ? "System Analyzing..." : "Launch Agent Debate"}
-                        </button>
-
-                        <div className="pt-4 border-t border-white/5">
-                            <p className="text-[11px] text-gray-500 leading-relaxed font-medium">
-                                Analysis aggregates institutional-grade real-time data from <strong className="text-white/70">Bloomberg BQL</strong>, <strong className="text-white/70">SEC Edgar</strong>, and <strong className="text-white/70">Alpha Vantage</strong>.
-                            </p>
+                        ))}
+                    </div>
+                ) : result ? (
+                    <div className="bg-[#0c1017] p-1 rounded-3xl border border-white/10">
+                        <AnalysisResult result={result} />
+                    </div>
+                ) : (
+                    <div className="flex-1 glass rounded-2xl overflow-hidden border border-white/10 bg-[#080b11]">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left whitespace-nowrap">
+                                <thead className="bg-[#05070a] border-b border-white/10">
+                                    <tr className="text-[11px] font-black uppercase tracking-[0.2em] text-gray-500">
+                                        <th className="px-8 py-5 text-accent">Ticker</th>
+                                        <th className="px-8 py-5 hidden sm:table-cell">Target Date</th>
+                                        <th className="px-8 py-5">Status</th>
+                                        <th className="px-8 py-5 text-center">Consensus</th>
+                                        <th className="px-8 py-5 text-right">Confidence Score</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {history.length > 0 ? history.map((row) => (
+                                        <tr key={row.ticker + row.prediction_date} onClick={() => setResult(row)} className="hover:bg-white/[0.04] transition-all group cursor-pointer h-[70px]">
+                                            <td className="px-8 py-4 font-black text-white group-hover:pl-10 group-hover:text-accent transition-all text-xl">{row.ticker}</td>
+                                            <td className="px-8 py-4 text-sm text-gray-400 font-medium hidden sm:table-cell">{new Date(row.prediction_date).toLocaleDateString()}</td>
+                                            <td className="px-8 py-4">
+                                                <span className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-widest">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Validated
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-4 text-center">
+                                                <span
+                                                    className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest inline-block min-w-[100px]
+                                                        ${row.direction === 'BEAT' ? 'bg-bull/20 text-bull border-bull/50 border shadow-[0_0_15px_rgba(45,212,191,0.2)]' :
+                                                            row.direction === 'MISS' ? 'bg-bear/20 text-bear border-bear/50 border shadow-[0_0_15px_rgba(248,113,113,0.2)]' :
+                                                                'bg-gray-800 text-gray-300 border-gray-600 border'}`}
+                                                >
+                                                    {row.direction}
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-4 text-right">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="font-mono font-black text-2xl tracking-tight text-white group-hover:text-accent transition-colors">
+                                                        {(row.confidence * 100).toFixed(0)}<span className="text-gray-500 text-lg">%</span>
+                                                    </span>
+                                                    <div className="w-24 h-1 bg-white/10 rounded-full mt-1 overflow-hidden">
+                                                        <div className="h-full bg-accent" style={{ width: `${row.confidence * 100}%` }}></div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )) : (
+                                        <tr>
+                                            <td colSpan={5} className="px-8 py-16 text-center text-accent text-sm font-bold uppercase tracking-widest">
+                                                <div className="flex flex-col items-center justify-center gap-3">
+                                                    <span className="text-4xl text-white/20">📋</span>
+                                                    <span>No recent predictions found in ledger.</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                </div>
+                )}
             </div>
+
+            {/* Toast Notifications for Status/Retries */}
+            {messages.length > 0 && (
+                <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 pointer-events-none max-w-sm w-full">
+                    {messages.slice(-3).map((m, i) => (
+                        <div key={i} className="glass bg-[#0c1017]/90 border border-accent/30 p-4 rounded-2xl shadow-[0_0_20px_rgba(45,212,191,0.15)] backdrop-blur-md animate-in slide-in-from-right fade-in duration-300">
+                            <div className="flex items-center gap-3">
+                                {m.message.includes("Error") || m.message.includes("Limit") ? (
+                                    <span className="text-xl animate-pulse">⚠️</span>
+                                ) : (
+                                    <span className="text-xl text-accent animate-pulse">⚙️</span>
+                                )}
+                                <div>
+                                    {m.agent && <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">{m.agent} Note</p>}
+                                    <p className="text-xs font-bold text-white leading-relaxed">{m.message}</p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

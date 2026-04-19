@@ -8,9 +8,6 @@ import redis.asyncio as redis
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 
-# Initialize DB at startup
-init_db()
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize Redis Cache

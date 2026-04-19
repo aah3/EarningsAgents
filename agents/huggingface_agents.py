@@ -10,7 +10,6 @@ Contains:
 """
 
 import json
-import re
 import logging
 from datetime import date
 from typing import List, Dict, Any, Optional
@@ -44,6 +43,60 @@ class AgentResponse:
     key_signals: Dict[str, Any]
     raw_response: str = ""
 
+
+AGENT_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "direction": {"type": "string"},
+        "confidence": {"type": "number"},
+        "expected_price_move": {"type": "string"},
+        "move_vs_implied": {"type": "string"},
+        "guidance_expectation": {"type": "string"},
+        "reasoning": {"type": "string"},
+        "bull_factors": {"type": "array", "items": {"type": "string"}},
+        "bear_factors": {"type": "array", "items": {"type": "string"}},
+        "key_signals": {
+            "type": "object",
+            "properties": {
+                "estimate_momentum": {"type": "string"},
+                "beat_rate": {"type": "string"},
+                "estimate_risk": {"type": "string"},
+                "headwinds": {"type": "string"},
+                "beat_probability": {"type": "string"},
+                "historical_beat_rate": {"type": "string"},
+                "revision_trend": {"type": "string"},
+                "deciding_factor": {"type": "string"},
+                "bull_strength": {"type": "string"},
+                "bear_strength": {"type": "string"}
+            },
+            "required": [
+                "estimate_momentum", "beat_rate", "estimate_risk", "headwinds",
+                "beat_probability", "historical_beat_rate", "revision_trend",
+                "deciding_factor", "bull_strength", "bear_strength"
+            ],
+            "additionalProperties": False
+        }
+    },
+    "required": [
+        "direction", "confidence", "expected_price_move", "move_vs_implied",
+        "guidance_expectation", "reasoning", "bull_factors", "bear_factors",
+        "key_signals"
+    ],
+    "additionalProperties": False
+}
+
+
+class AgentResponseError(Exception):
+    """Exception raised when an agent fails to generate a valid response."""
+    def __init__(self, agent: str, cause: Exception):
+        self.agent = agent
+        self.cause = cause
+        super().__init__(f"{agent} failed to formulate a response: {cause}")
+
+
+class ConsensusError(Exception):
+    """Exception raised when consensus cannot be formed (e.g. not enough agent responses)."""
+    pass
 
 # ============================================================================
 # SYSTEM PROMPTS FOR EACH AGENT
@@ -300,119 +353,334 @@ Analyze this company and provide your prediction in the specified JSON format.
 """
         return prompt
     
-    def analyze(self, company: CompanyData, news: List[NewsArticle], stream_callback=None) -> AgentResponse:
-        """Analyze company and return prediction."""
+    def _get_llm_kwargs(self) -> dict:
+        """Get provider-specific formatting instructions to enforce JSON Schema outputs."""
+        kwargs = {}
+        if self.config.provider == "openai":
+            kwargs["response_format"] = {
+                "type": "json_schema", 
+                "json_schema": {"name": "AgentResponse", "strict": True, "schema": AGENT_RESPONSE_SCHEMA}
+            }
+        elif self.config.provider == "anthropic":
+            kwargs["tools"] = [{
+                "name": "AgentResponse",
+                "description": "Output the final prediction",
+                "input_schema": AGENT_RESPONSE_SCHEMA
+            }]
+            kwargs["tool_choice"] = {"type": "tool", "name": "AgentResponse"}
+        elif self.config.provider == "gemini":
+            kwargs["generation_config"] = {
+                "response_mime_type": "application/json",
+                "response_schema": AGENT_RESPONSE_SCHEMA
+            }
+        return kwargs
+    
+    def _build_react_system_prompt(self, tool_descriptions: List[dict]) -> str:
+        """Build a ReAct-style system prompt by appending a protocol block to self.system_prompt.
+
+        Args:
+            tool_descriptions: List of tool descriptor dicts, each with at minimum
+                               a 'name' key and optionally 'description' and 'args'.
+
+        Returns:
+            The combined system prompt with the ReAct protocol appended.
+        """
+        # Serialise the tool list for injection into the prompt
+        tools_json = json.dumps(tool_descriptions, indent=2)
+
+        # Build the final_answer schema summary for the prompt
+        required_fields = AGENT_RESPONSE_SCHEMA.get("required", [])
+        schema_summary = json.dumps(
+            {field: AGENT_RESPONSE_SCHEMA["properties"][field] for field in required_fields},
+            indent=2,
+        )
+
+        react_block = f"""
+
+================================================================================
+REACT PROTOCOL — STRICT JSON OUTPUT REQUIRED
+================================================================================
+
+On EVERY turn you must output ONLY valid JSON — no markdown, no prose, no
+explanations outside the JSON value fields.  Choose exactly one of the two
+formats below:
+
+1. TOOL CALL — when you need to invoke a tool:
+{{
+  "thought": "<your internal reasoning, 1-3 sentences>",
+  "tool": "<tool_name>",
+  "args": {{<optional key-value arguments>}}
+}}
+
+2. FINAL ANSWER — when you have gathered enough information to conclude:
+{{
+  "thought": "<your final reasoning, 1-3 sentences>",
+  "final_answer": {{
+    <AgentResponse fields — see schema below>
+  }}
+}}
+
+RULES:
+- Never mix plain text with JSON.  The entire response must be parseable JSON.
+- Do NOT include any text before or after the JSON object.
+- Always call `get_company_summary` FIRST to orient yourself before any other tool.
+- After `get_company_summary`, call 2–4 additional tools as appropriate, then
+  return a `final_answer`.
+- The `final_answer` object must conform EXACTLY to the following schema:
+{schema_summary}
+
+AVAILABLE TOOLS:
+{tools_json}
+
+When selecting tools, prefer tools that provide data you have not yet seen.
+Stop calling tools once you have enough information to form a confident prediction.
+================================================================================
+"""
+        return self.system_prompt + react_block
+
+    def _react_analyze(
+        self,
+        company: CompanyData,
+        news: List[NewsArticle],
+        max_turns: int = 6,
+    ) -> AgentResponse:
+        """Run a ReAct tool-use loop and return a parsed AgentResponse.
+
+        The loop:
+        1. Builds a tool registry over the already-fetched company/news data.
+        2. Constructs a ReAct system prompt via _build_react_system_prompt.
+        3. Seeds the conversation with a minimal framing message.
+        4. On each turn:
+           - Calls self.llm.chat to get the next model turn.
+           - Parses the JSON response.
+           - If it contains "final_answer", parses and returns it.
+           - If it contains "tool", dispatches the tool and injects the result
+             back as a user message.
+           - Otherwise raises AgentResponseError.
+        5. Raises AgentResponseError if max_turns is exhausted without a
+           final_answer.
+
+        Parameters
+        ----------
+        company : CompanyData
+            Pre-fetched company snapshot.
+        news : List[NewsArticle]
+            Pre-fetched news articles.
+        max_turns : int
+            Maximum number of LLM turns before giving up (default 6).
+
+        Returns
+        -------
+        AgentResponse
+            Parsed and validated agent prediction.
+        """
+        from .agent_tools import AgentToolRegistry
+
+        # 1. Build registry and tool descriptions
+        registry = AgentToolRegistry(company, news)
+        tool_descriptions = registry.get_tool_descriptions()
+
+        # 2. Build ReAct system prompt
+        react_system_prompt = self._build_react_system_prompt(tool_descriptions)
+
+        # 3. Initial user message — minimal context only
+        report_date_str = (
+            company.report_date.isoformat() if company.report_date else "unknown"
+        )
+        initial_user_message = (
+            f"Ticker: {company.ticker}\n"
+            f"Company: {company.company_name}\n"
+            f"Report Date: {report_date_str}\n"
+            f"Consensus EPS Estimate: ${company.consensus_eps:.2f}\n\n"
+            "Analyze this company's earnings outlook. Use the available tools to "
+            "gather the data you need, then return your final_answer."
+        )
+
+        messages = [{"role": "user", "content": initial_user_message}]
+
+        # 4. ReAct loop
+        for turn in range(max_turns):
+            response = self.llm.chat(
+                system_prompt=react_system_prompt,
+                messages=messages,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+            )
+
+            # Append assistant turn to history
+            messages.append({"role": "assistant", "content": response})
+
+            # Parse the response — must be valid JSON
+            try:
+                parsed = json.loads(response)
+            except json.JSONDecodeError as exc:
+                raise AgentResponseError(
+                    agent=self.__class__.__name__,
+                    cause=exc,
+                )
+
+            # --- Branch: final answer ---
+            if "final_answer" in parsed:
+                return self._parse_response(json.dumps(parsed["final_answer"]))
+
+            # --- Branch: tool call ---
+            if "tool" in parsed:
+                tool_name = parsed["tool"]
+                tool_args = parsed.get("args", {}) or {}
+
+                tool_result: "ToolResult" = registry.dispatch(tool_name, tool_args)
+
+                # Build tool result message and inject as next user turn
+                tool_result_msg = {
+                    "tool_result": {
+                        "tool": tool_name,
+                        "data": tool_result.result if tool_result.error is None
+                        else {"error": tool_result.error},
+                    }
+                }
+                messages.append(
+                    {"role": "user", "content": json.dumps(tool_result_msg)}
+                )
+                continue
+
+            # --- Branch: unexpected format ---
+            raise AgentResponseError(
+                agent=self.__class__.__name__,
+                cause=Exception("Unexpected response format"),
+            )
+
+        # Exhausted all turns without a final_answer
+        raise AgentResponseError(
+            agent=self.__class__.__name__,
+            cause=Exception(
+                "ReAct loop exceeded max_turns without producing final_answer"
+            ),
+        )
+
+    def analyze(
+        self,
+        company: CompanyData,
+        news: List[NewsArticle],
+        stream_callback=None,
+        status_callback=None,
+        use_react: bool = False,
+    ) -> AgentResponse:
+        """Analyze company and return prediction.
+
+        Parameters
+        ----------
+        company : CompanyData
+            Pre-fetched company snapshot.
+        news : List[NewsArticle]
+            Pre-fetched news articles.
+        stream_callback : callable, optional
+            Token-level streaming callback (single-shot path only).
+        status_callback : callable, optional
+            Status/retry callback (single-shot path only).
+        use_react : bool
+            When True, delegate to _react_analyze() which runs the full
+            ReAct tool-use loop. stream_callback and status_callback are
+            ignored in this mode. Defaults to False.
+        """
+        # --- ReAct path ---
+        if use_react:
+            return self._react_analyze(company, news)
+
+        # --- Existing single-shot path (unchanged) ---
         prompt = self._format_prompt(company, news)
-        
-        if stream_callback:
-            full_response = ""
-            for chunk in self.llm.generate_stream(
+        kwargs = self._get_llm_kwargs()
+        try:
+            if stream_callback:
+                full_response = ""
+                for chunk in self.llm.generate_stream(
+                    system_prompt=self.system_prompt,
+                    user_prompt=prompt,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                    on_retry=status_callback,
+                    **kwargs
+                ):
+                    full_response += chunk
+                    stream_callback(chunk)
+                return self._parse_response(full_response)
+            
+            response = self.llm.generate(
                 system_prompt=self.system_prompt,
                 user_prompt=prompt,
                 temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens
-            ):
-                full_response += chunk
-                stream_callback(chunk)
-            return self._parse_response(full_response)
-        
-        response = self.llm.generate(
-            system_prompt=self.system_prompt,
-            user_prompt=prompt,
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens
-        )
-        return self._parse_response(response)
+                max_tokens=self.config.max_tokens,
+                on_retry=status_callback,
+                **kwargs
+            )
+            return self._parse_response(response)
+        except Exception as e:
+            raise AgentResponseError(agent=self.__class__.__name__, cause=e)
     
     def _parse_response(self, response: str) -> AgentResponse:
-        """Parse JSON response from model."""
-        print(f"DEBUG: Raw response from {self.__class__.__name__}: {response[:500]}...")
-        # Check for error message
-        if "⚠️ Error" in response:
-            self.logger.error(f"Agent {self.__class__.__name__} received error: {response}")
-            
-            # Create a robust mock response so the UI looks complete while bypassing missing API keys
-            direction = PredictionDirection.BEAT
-            if "Bear" in self.__class__.__name__:
-                direction = PredictionDirection.MISS
-            elif "Consensus" in self.__class__.__name__:
-                direction = PredictionDirection.BEAT
-                
+        """Parse JSON response from model directly into typed AgentResponse."""
+        try:
+            data = json.loads(response)
+
+            # --- 1. Validate required top-level keys ---
+            required_keys = AGENT_RESPONSE_SCHEMA["required"]
+            missing = [k for k in required_keys if k not in data]
+            if missing:
+                raise AgentResponseError(
+                    agent=self.__class__.__name__,
+                    cause=Exception(
+                        f"Response missing required keys: {missing}"
+                    ),
+                )
+
+            # --- 2. Validate and clamp confidence ---
+            raw_confidence = data["confidence"]
+            try:
+                confidence = float(raw_confidence)
+            except (TypeError, ValueError):
+                self.logger.warning(
+                    "confidence value %r is not numeric; clamping to 0.", raw_confidence
+                )
+                confidence = 0.0
+            if not (0 <= confidence <= 100):
+                clamped = max(0.0, min(100.0, confidence))
+                self.logger.warning(
+                    "confidence %s is out of [0, 100]; clamping to %s.", confidence, clamped
+                )
+                confidence = clamped
+
+            # --- 3. Validate direction ---
+            dir_str = str(data["direction"]).lower().strip()
+            _VALID_DIRECTIONS = {"beat", "miss", "meet"}
+            if dir_str not in _VALID_DIRECTIONS:
+                raise AgentResponseError(
+                    agent=self.__class__.__name__,
+                    cause=Exception(
+                        f"Invalid direction {data['direction']!r}; must be one of {sorted(_VALID_DIRECTIONS)}."
+                    ),
+                )
+            direction_map = {
+                "beat": PredictionDirection.BEAT,
+                "miss": PredictionDirection.MISS,
+                "meet": PredictionDirection.MEET,
+            }
+            direction = direction_map[dir_str]
+
             return AgentResponse(
                 direction=direction,
-                confidence=0.88 if direction == PredictionDirection.BEAT else 0.75,
-                expected_price_move="positive" if direction == PredictionDirection.BEAT else "negative",
-                move_vs_implied="inside implied move",
-                guidance_expectation="positive" if direction == PredictionDirection.BEAT else "negative",
-                reasoning=f"LLM API limit reached or key missing. Simulated {self.__class__.__name__} analysis: Strong quantitative signals suggest robust operational growth, offsetting minor margin pressures.",
-                bull_factors=["Consistent quarter-over-quarter revenue growth", "Strong product demand signals in alternative data", "Positive estimate revision momentum"],
-                bear_factors=["Macroeconomic uncertainty in specific regions", "Slight increase in customer acquisition costs"],
-                key_signals={"demo_mode": "true", "api_status": "disconnected"},
+                confidence=confidence,
+                expected_price_move=data.get("expected_price_move", "neutral"),
+                move_vs_implied=data.get("move_vs_implied", "inside implied move"),
+                guidance_expectation=data.get("guidance_expectation", "neutral"),
+                reasoning=data.get("reasoning", ""),
+                bull_factors=data.get("bull_factors", []),
+                bear_factors=data.get("bear_factors", []),
+                key_signals=data.get("key_signals", {}),
                 raw_response=response,
             )
-
-        # Try to find JSON block in markdown
-        json_content = response
-        if "```json" in response:
-            json_content = response.split("```json")[1].split("```")[0].strip()
-        elif "```" in response:
-            json_content = response.split("```")[1].split("```")[0].strip()
-            
-        # Clean up potential leading/trailing non-JSON text
-        start_idx = json_content.find('{')
-        end_idx = json_content.rfind('}')
-        
-        if start_idx != -1 and end_idx != -1:
-            json_str = json_content[start_idx:end_idx+1]
-            try:
-                # Remove common LLM json errors: trailing commas
-                import re
-                json_str = re.sub(r',\s*}', '}', json_str)
-                json_str = re.sub(r',\s*]', ']', json_str)
-                # Remove unescaped newlines inside strings 
-                data = json.loads(json_str, strict=False)
-                
-                dir_str = data.get("direction", "meet")
-                if isinstance(dir_str, str):
-                    dir_str = dir_str.lower()
-                else:
-                    dir_str = "meet"
-                    
-                if "beat" in dir_str:
-                    direction = PredictionDirection.BEAT
-                elif "miss" in dir_str:
-                    direction = PredictionDirection.MISS
-                else:
-                    direction = PredictionDirection.MEET
-                
-                return AgentResponse(
-                    direction=direction,
-                    confidence=float(data.get("confidence", 50)) / 100 if isinstance(data.get("confidence"), (int, float, str)) else 0.5,
-                    expected_price_move=data.get("expected_price_move", "neutral"),
-                    move_vs_implied=data.get("move_vs_implied", "inside implied move"),
-                    guidance_expectation=data.get("guidance_expectation", "neutral"),
-                    reasoning=data.get("reasoning", ""),
-                    bull_factors=data.get("bull_factors", []),
-                    bear_factors=data.get("bear_factors", []),
-                    key_signals=data.get("key_signals", {}),
-                    raw_response=response,
-                )
-            except Exception as e:
-                self.logger.warning(f"JSON Parse Error for {self.__class__.__name__}: {e}. Raw snippet: {json_str[:200]}")
-        
-        self.logger.warning(f"Failed to parse agent response for {self.__class__.__name__}")
-        return AgentResponse(
-            direction=PredictionDirection.MEET,
-            confidence=0.5,
-            expected_price_move="neutral",
-            move_vs_implied="inside implied move",
-            guidance_expectation="neutral",
-            reasoning="Unable to parse response",
-            bull_factors=[],
-            bear_factors=[],
-            key_signals={},
-            raw_response=response,
-        )
+        except AgentResponseError:
+            raise
+        except Exception as e:
+            raise AgentResponseError(agent=self.__class__.__name__, cause=e)
 
 
 # ============================================================================
@@ -446,63 +714,94 @@ class ConsensusAgent(BaseAgent):
     def synthesize(
         self,
         company: CompanyData,
-        bull_response: AgentResponse,
-        bear_response: AgentResponse,
-        quant_response: AgentResponse,
+        bull_response: Optional[AgentResponse] = None,
+        bear_response: Optional[AgentResponse] = None,
+        quant_response: Optional[AgentResponse] = None,
         user_analysis: Optional[str] = None,
-        stream_callback=None
+        stream_callback=None,
+        status_callback=None
     ) -> AgentResponse:
         """Synthesize the three agent responses into final prediction."""
+        successful_agents = []
+        if bull_response:
+            successful_agents.append("BULL")
+        if bear_response:
+            successful_agents.append("BEAR")
+        if quant_response:
+            successful_agents.append("QUANT")
+            
+        absent_agents = [agent for agent in ["BULL", "BEAR", "QUANT"] if agent not in successful_agents]
+        if absent_agents:
+            self.logger.warning(f"Consensus proceeding without {', '.join(absent_agents)}.")
+            
+        if len(successful_agents) < 2:
+            raise ConsensusError(f"Cannot form consensus. Fewer than 2 agents succeeded. Absent: {', '.join(absent_agents)}")
+            
         user_analysis_section = ""
         if user_analysis:
             user_analysis_section = f"""
 ### ANALYST (USER PROVIDED) ANALYSIS
 - Analysis: {user_analysis}
 """
-        synthesis_prompt = f"""
-## Synthesis Request for {company.ticker}
 
+        bull_section = f"""
 ### BULL AGENT ANALYSIS
 - Direction: {bull_response.direction.value.upper()}
 - Confidence: {bull_response.confidence:.0%}
 - Reasoning: {bull_response.reasoning}
 - Key Factors: {', '.join(bull_response.bull_factors[:3])}
+""" if bull_response else "\n### BULL AGENT ANALYSIS\n- Status: FAILED TO RESPOND - EXCLUDE FROM CONSIDERATION\n"
 
+        bear_section = f"""
 ### BEAR AGENT ANALYSIS
 - Direction: {bear_response.direction.value.upper()}
 - Confidence: {bear_response.confidence:.0%}
 - Reasoning: {bear_response.reasoning}
 - Key Factors: {', '.join(bear_response.bear_factors[:3])}
+""" if bear_response else "\n### BEAR AGENT ANALYSIS\n- Status: FAILED TO RESPOND - EXCLUDE FROM CONSIDERATION\n"
 
+        quant_section = f"""
 ### QUANT AGENT ANALYSIS
 - Direction: {quant_response.direction.value.upper()}
 - Confidence: {quant_response.confidence:.0%}
 - Reasoning: {quant_response.reasoning}
 - Key Signals: {json.dumps(quant_response.key_signals)}
-{user_analysis_section}
+""" if quant_response else "\n### QUANT AGENT ANALYSIS\n- Status: FAILED TO RESPOND - EXCLUDE FROM CONSIDERATION\n"
+
+        synthesis_prompt = f"""
+## Synthesis Request for {company.ticker}
+{bull_section}{bear_section}{quant_section}{user_analysis_section}
 ---
 Based on this debate, provide your FINAL consensus prediction.
 Weigh the evidence and make a decisive call.
 """
-        if stream_callback:
-            full_response = ""
-            for chunk in self.llm.generate_stream(
+        kwargs = self._get_llm_kwargs()
+        try:
+            if stream_callback:
+                full_response = ""
+                for chunk in self.llm.generate_stream(
+                    system_prompt=self.system_prompt,
+                    user_prompt=synthesis_prompt,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                    on_retry=status_callback,
+                    **kwargs
+                ):
+                    full_response += chunk
+                    stream_callback(chunk)
+                return self._parse_response(full_response)
+            
+            response = self.llm.generate(
                 system_prompt=self.system_prompt,
                 user_prompt=synthesis_prompt,
                 temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens
-            ):
-                full_response += chunk
-                stream_callback(chunk)
-            return self._parse_response(full_response)
-        
-        response = self.llm.generate(
-            system_prompt=self.system_prompt,
-            user_prompt=synthesis_prompt,
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens
-        )
-        return self._parse_response(response)
+                max_tokens=self.config.max_tokens,
+                on_retry=status_callback,
+                **kwargs
+            )
+            return self._parse_response(response)
+        except Exception as e:
+            raise AgentResponseError(agent=self.__class__.__name__, cause=e)
 
     def chat(self, messages: List[Dict[str, str]]) -> str:
         """Interact with the Consensus Agent regarding its analysis."""
@@ -576,40 +875,71 @@ class ThreeAgentSystem:
                 publish(chunk, agent, "stream")
             return callback
 
+        def get_status_callback(agent: str):
+            def callback(msg: str):
+                publish(msg, agent, "status")
+            return callback
+
         self.logger.info(f"Starting analysis for {company.ticker}")
         
-        publish(f"Agents initiating parallel analysis for {company.ticker}...", "System", "status")
+        publish(f"Agents initiating staggered analysis for {company.ticker}...", "System", "status")
 
         if user_analysis:
             publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst", "status")
 
+        import time
         with ThreadPoolExecutor(max_workers=3) as executor:
-            future_bull = executor.submit(self.bull_agent.analyze, company, news, get_stream_callback("Bull"))
-            future_bear = executor.submit(self.bear_agent.analyze, company, news, get_stream_callback("Bear"))
-            future_quant = executor.submit(self.quant_agent.analyze, company, news, get_stream_callback("Quant"))
+            future_bull = executor.submit(self.bull_agent.analyze, company, news, get_stream_callback("Bull"), get_status_callback("Bull"))
+            time.sleep(1.2) # Stagger requests to avoid rapid 429
+            future_bear = executor.submit(self.bear_agent.analyze, company, news, get_stream_callback("Bear"), get_status_callback("Bear"))
+            time.sleep(1.2)
+            future_quant = executor.submit(self.quant_agent.analyze, company, news, get_stream_callback("Quant"), get_status_callback("Quant"))
             
-            bull_response = future_bull.result()
-            bear_response = future_bear.result()
-            quant_response = future_quant.result()
+            bull_response = None
+            try:
+                bull_response = future_bull.result()
+            except AgentResponseError as e:
+                self.logger.error(f"Bull agent error: {e}")
+                publish(f"Bull agent failed: {e.cause}", "System", "status")
+
+            bear_response = None
+            try:
+                bear_response = future_bear.result()
+            except AgentResponseError as e:
+                self.logger.error(f"Bear agent error: {e}")
+                publish(f"Bear agent failed: {e.cause}", "System", "status")
+            
+            quant_response = None
+            try:
+                quant_response = future_quant.result()
+            except AgentResponseError as e:
+                self.logger.error(f"Quant agent error: {e}")
+                publish(f"Quant agent failed: {e.cause}", "System", "status")
         
         publish(f"Consensus Agent synthesizing debate for final prediction...", "System", "status")
-        consensus_response = self.consensus_agent.synthesize(
-            company, bull_response, bear_response, quant_response, user_analysis, get_stream_callback("Consensus")
-        )
+        try:
+            consensus_response = self.consensus_agent.synthesize(
+                company, bull_response, bear_response, quant_response, user_analysis, get_stream_callback("Consensus"), get_status_callback("Consensus")
+            )
+        except AgentResponseError as e:
+            self.logger.error(f"Consensus agent error: {e}")
+            publish(f"Consensus agent failed: {e.cause}", "System", "status")
+            raise e
         publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "System", "status")
         
         user_summary = f"\n\nANALYST (USER):\n{user_analysis}" if user_analysis else ""
+        bull_desc = f"BULL ({bull_response.direction.value.upper()}, {bull_response.confidence:.0%}):\n{bull_response.reasoning}" if bull_response else "BULL: FAILED"
+        bear_desc = f"BEAR ({bear_response.direction.value.upper()}, {bear_response.confidence:.0%}):\n{bear_response.reasoning}" if bear_response else "BEAR: FAILED"
+        quant_desc = f"QUANT ({quant_response.direction.value.upper()}, {quant_response.confidence:.0%}):\n{quant_response.reasoning}" if quant_response else "QUANT: FAILED"
+        
         debate_summary = f"""
 === AGENTS & USER EARNINGS DEBATE ===
 
-BULL ({bull_response.direction.value.upper()}, {bull_response.confidence:.0%}):
-{bull_response.reasoning}
+{bull_desc}
 
-BEAR ({bear_response.direction.value.upper()}, {bear_response.confidence:.0%}):
-{bear_response.reasoning}
+{bear_desc}
 
-QUANT ({quant_response.direction.value.upper()}, {quant_response.confidence:.0%}):
-{quant_response.reasoning}{user_summary}
+{quant_desc}{user_summary}
 
 CONSENSUS ({consensus_response.direction.value.upper()}, {consensus_response.confidence:.0%}):
 {consensus_response.reasoning}
@@ -626,12 +956,12 @@ CONSENSUS ({consensus_response.direction.value.upper()}, {consensus_response.con
             move_vs_implied=consensus_response.move_vs_implied,
             guidance_expectation=consensus_response.guidance_expectation,
             reasoning_summary=consensus_response.reasoning,
-            bull_factors=bull_response.bull_factors,
-            bear_factors=bear_response.bear_factors,
+            bull_factors=bull_response.bull_factors if bull_response else [],
+            bear_factors=bear_response.bear_factors if bear_response else [],
             agent_votes={
-                "bull": bull_response.direction.value,
-                "bear": bear_response.direction.value,
-                "quant": quant_response.direction.value,
+                "bull": bull_response.direction.value if bull_response else "failed",
+                "bear": bear_response.direction.value if bear_response else "failed",
+                "quant": quant_response.direction.value if quant_response else "failed",
                 "analyst": "user_provided" if user_analysis else "none",
                 "consensus": consensus_response.direction.value,
             },

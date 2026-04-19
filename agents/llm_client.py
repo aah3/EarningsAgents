@@ -45,7 +45,7 @@ class LLMClient:
         except ImportError as e:
             raise ImportError(f"Missing library for {self.provider}. Please install it. Error: {e}")
 
-    def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.3, max_tokens: int = 2048) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.3, max_tokens: int = 2048, on_retry=None, **kwargs) -> str:
         """
         Generates content from the LLM based on system and user prompts.
         Includes basic retry logic for rate limits.
@@ -65,15 +65,17 @@ class LLMClient:
                     time.sleep(1) # Small initial pause
 
                 if self.provider == "gemini":
-                    return self._call_gemini(system_prompt, user_prompt, temperature, max_tokens)
+                    return self._call_gemini(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
                 elif self.provider == "anthropic":
-                    return self._call_anthropic(system_prompt, user_prompt, temperature, max_tokens)
+                    return self._call_anthropic(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
                 elif self.provider == "openai":
-                    return self._call_openai(system_prompt, user_prompt, temperature, max_tokens)
+                    return self._call_openai(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
             except Exception as e:
                 err_msg = str(e)
-                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "rate_limit" in err_msg.lower():
+                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "rate_limit" in err_msg.lower() or "quota" in err_msg.lower():
                     logger.warning(f"Rate limit hit on {self.provider} (attempt {attempt+1}/{max_retries}). Retrying...")
+                    if on_retry:
+                        on_retry(f"API Rate Limit hit. Retrying attempt {attempt+1} of {max_retries}...")
                     continue
                 
                 logger.error(f"Error calling {self.provider} API: {e}")
@@ -81,7 +83,7 @@ class LLMClient:
         
         return "⚠️ Error: Maximum retries exceeded for LLM call."
 
-    def generate_stream(self, system_prompt: str, user_prompt: str, temperature: float = 0.3, max_tokens: int = 2048):
+    def generate_stream(self, system_prompt: str, user_prompt: str, temperature: float = 0.3, max_tokens: int = 2048, on_retry=None, **kwargs):
         """
         Generates content from the LLM based on system and user prompts, yielding chunks as they arrive.
         """
@@ -100,19 +102,21 @@ class LLMClient:
                     time.sleep(1) # Small initial pause
 
                 if self.provider == "gemini":
-                    yield from self._stream_gemini(system_prompt, user_prompt, temperature, max_tokens)
+                    yield from self._stream_gemini(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
                 elif self.provider == "anthropic":
-                    yield from self._stream_anthropic(system_prompt, user_prompt, temperature, max_tokens)
+                    yield from self._stream_anthropic(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
                 elif self.provider == "openai":
-                    yield from self._stream_openai(system_prompt, user_prompt, temperature, max_tokens)
+                    yield from self._stream_openai(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
                 
                 # If successful, exit the retry loop
                 break
                 
             except Exception as e:
                 err_msg = str(e)
-                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "rate_limit" in err_msg.lower():
+                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "rate_limit" in err_msg.lower() or "quota" in err_msg.lower():
                     logger.warning(f"Rate limit hit on {self.provider} streaming (attempt {attempt+1}/{max_retries}). Retrying...")
+                    if on_retry:
+                        on_retry(f"API Rate Limit hit. Retrying attempt {attempt+1} of {max_retries}...")
                     if attempt == max_retries - 1:
                         yield f"\n⚠️ Error: {str(e)}"
                     continue
@@ -121,7 +125,7 @@ class LLMClient:
                 yield f"\n⚠️ Error: {str(e)}"
                 break
 
-    def chat(self, system_prompt: str, messages: List[dict], temperature: float = 0.3, max_tokens: int = 2048) -> str:
+    def chat(self, system_prompt: str, messages: List[dict], temperature: float = 0.3, max_tokens: int = 2048, on_retry=None) -> str:
         """
         Continues a conversation using a list of messages: [{"role": "user"|"model", "content": "..."}]
         """
@@ -146,90 +150,127 @@ class LLMClient:
                     return self._chat_openai(system_prompt, messages, temperature, max_tokens)
             except Exception as e:
                 err_msg = str(e)
-                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "rate_limit" in err_msg.lower():
+                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "rate_limit" in err_msg.lower() or "quota" in err_msg.lower():
                     logger.warning(f"Rate limit hit on {self.provider} (chat attempt {attempt+1}/{max_retries}). Retrying...")
+                    if on_retry:
+                        on_retry(f"API Rate Limit hit in chat. Retrying attempt {attempt+1} of {max_retries}...")
                     continue
                 logger.error(f"Error calling {self.provider} API: {e}")
                 return f"⚠️ Error: {str(e)}"
         
         return "⚠️ Error: Maximum retries exceeded for LLM chat."
 
-    def _call_gemini(self, sys_prompt, user_prompt, temperature, max_tokens):
+    def _call_gemini(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
+        config = {
+            'system_instruction': sys_prompt,
+            'temperature': temperature,
+            'max_output_tokens': max_tokens
+        }
+        if "generation_config" in kwargs:
+            config.update(kwargs["generation_config"])
+            
         response = self.client.models.generate_content(
             model=self.model,
             contents=user_prompt,
-            config={
-                'system_instruction': sys_prompt,
-                'temperature': temperature,
-                'max_output_tokens': max_tokens
-            }
+            config=config
         )
         return response.text
 
-    def _call_anthropic(self, sys_prompt, user_prompt, temperature, max_tokens):
-        message = self.client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=sys_prompt,
-            messages=[
+    def _call_anthropic(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
+        call_kwargs = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "system": sys_prompt,
+            "messages": [
                 {"role": "user", "content": user_prompt}
             ]
-        )
+        }
+        if "tools" in kwargs:
+            call_kwargs["tools"] = kwargs["tools"]
+        if "tool_choice" in kwargs:
+            call_kwargs["tool_choice"] = kwargs["tool_choice"]
+            
+        message = self.client.messages.create(**call_kwargs)
+        
+        # If a tool was forced, return its input as a JSON string
+        if "tools" in kwargs:
+            import json
+            for content in message.content:
+                if content.type == "tool_use":
+                    return json.dumps(content.input)
+                    
         return message.content[0].text
 
-    def _call_openai(self, sys_prompt, user_prompt, temperature, max_tokens):
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+    def _call_openai(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
+        call_kwargs = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        if "response_format" in kwargs:
+            call_kwargs["response_format"] = kwargs["response_format"]
+            
+        response = self.client.chat.completions.create(**call_kwargs)
         return response.choices[0].message.content
 
-    def _stream_gemini(self, sys_prompt, user_prompt, temperature, max_tokens):
-        response = self.client.models.generate_content(
+    def _stream_gemini(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
+        config = {
+            'system_instruction': sys_prompt,
+            'temperature': temperature,
+            'max_output_tokens': max_tokens
+        }
+        if "generation_config" in kwargs:
+            config.update(kwargs["generation_config"])
+            
+        response = self.client.models.generate_content_stream(
             model=self.model,
             contents=user_prompt,
-            config={
-                'system_instruction': sys_prompt,
-                'temperature': temperature,
-                'max_output_tokens': max_tokens
-            },
-            stream=True
+            config=config
         )
         for chunk in response:
             if chunk.text:
                 yield chunk.text
 
-    def _stream_anthropic(self, sys_prompt, user_prompt, temperature, max_tokens):
-        with self.client.messages.stream(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=sys_prompt,
-            messages=[
+    def _stream_anthropic(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
+        call_kwargs = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "system": sys_prompt,
+            "messages": [
                 {"role": "user", "content": user_prompt}
             ]
-        ) as stream:
+        }
+        if "tools" in kwargs:
+            call_kwargs["tools"] = kwargs["tools"]
+        if "tool_choice" in kwargs:
+            call_kwargs["tool_choice"] = kwargs["tool_choice"]
+            
+        with self.client.messages.stream(**call_kwargs) as stream:
             for text in stream.text_stream:
                 if text:
                     yield text
 
-    def _stream_openai(self, sys_prompt, user_prompt, temperature, max_tokens):
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+    def _stream_openai(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
+        call_kwargs = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True
-        )
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True
+        }
+        if "response_format" in kwargs:
+            call_kwargs["response_format"] = kwargs["response_format"]
+            
+        response = self.client.chat.completions.create(**call_kwargs)
         for chunk in response:
             if getattr(chunk.choices[0].delta, "content", None):
                 yield chunk.choices[0].delta.content

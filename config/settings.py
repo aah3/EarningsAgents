@@ -41,6 +41,7 @@ class AgentConfig:
     temperature: float = 0.3
     max_tokens: int = 2048
     use_local: bool = False
+    use_react: bool = False  # when True, analyze() delegates to _react_analyze()
 
 
 @dataclass
