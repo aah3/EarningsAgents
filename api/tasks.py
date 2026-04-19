@@ -98,3 +98,45 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
     except Exception as e:
         logger.error(f"Task failed for {ticker}: {str(e)}")
         return {"status": "FAILURE", "error": str(e)}
+
+from scoring_service import PredictionScorer
+from data.yahoo_finance import YahooFinanceDataSource, DataSourceConfig
+
+@celery_app.task(bind=True, name="tasks.score_predictions_task")
+def score_predictions_task(self):
+    logger.info("Starting score_predictions_task")
+    config = DataSourceConfig(rate_limit_calls=100, rate_limit_period=60)
+    yahoo = YahooFinanceDataSource(config)
+    yahoo.connect()
+    scorer = PredictionScorer(yahoo)
+    
+    scored = 0
+    skipped = 0
+    errors = 0
+    
+    with Session(engine) as session:
+        statement = select(Prediction).where(Prediction.report_date < datetime.utcnow()).where(Prediction.actual_direction == None)
+        unscored_predictions = session.exec(statement).all()
+        
+        for p in unscored_predictions:
+            try:
+                result = scorer.score_prediction(p)
+                if result.get("scored") is True:
+                    p.actual_direction = result.get("actual_direction")
+                    p.actual_eps = result.get("actual_eps")
+                    p.actual_price_move_pct = result.get("actual_price_move_pct")
+                    p.accuracy_score = result.get("accuracy_score")
+                    p.scored_at = result.get("scored_at")
+                    session.add(p)
+                    session.commit()
+                    scored += 1
+                else:
+                    logger.warning(f"Skipped scoring {p.ticker}: {result.get('reason')}")
+                    skipped += 1
+            except Exception as e:
+                logger.error(f"Error scoring {p.ticker}: {e}")
+                errors += 1
+                
+    summary = {"scored": scored, "skipped": skipped, "errors": errors}
+    logger.info(f"Finished score_predictions_task: {summary}")
+    return summary

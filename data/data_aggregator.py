@@ -25,6 +25,7 @@ try:
         HistoricalEarning,
         EstimateRevision,
         EarningsCallTranscript,
+        ReportTime,
     )
     from .yahoo_finance import YahooFinanceDataSource, OptionChainSummary, OptionContract
     from .sec_edgar import SECEdgarDataSource, SECFiling, CompanyFact
@@ -44,6 +45,7 @@ except (ImportError, ValueError):
         HistoricalEarning,
         EstimateRevision,
         EarningsCallTranscript,
+        ReportTime,
     )
     from yahoo_finance import YahooFinanceDataSource, OptionChainSummary, OptionContract
     from sec_edgar import SECEdgarDataSource, SECFiling, CompanyFact
@@ -217,6 +219,24 @@ class DataAggregator:
             return obj.__dict__
         return str(obj)
     
+    def _chain(self, providers: list, empty_default=None):
+        """
+        Try each (source, method_name, *args) tuple in order.
+        Returns the first non-None, non-empty result.
+        Falls back to empty_default if all providers fail or return empty.
+        """
+        for entry in providers:
+            source, method_name, *args = entry
+            if source is None:
+                continue
+            try:
+                result = getattr(source, method_name)(*args)
+                if result is not None and result != [] and result != {}:
+                    return result
+            except Exception as e:
+                self.logger.warning(f"{type(source).__name__}.{method_name} failed: {e}")
+        return empty_default
+
     def get_company_data(
         self,
         ticker: str,
@@ -240,41 +260,38 @@ class DataAggregator:
         
         self.logger.info(f"Aggregating data for {ticker}")
         
-        # Get company info (Yahoo)
-        company_info = None
-        if self.yahoo:
-            company_info = self.yahoo.get_company_info(ticker)
-        
-        if not company_info:
-            # Fallback to Alpha Vantage if Yahoo fails
-            if self.alphavantage:
-                company_info = self.alphavantage.get_company_info(ticker)
-        
+        # Get company info
+        company_info = self._chain([
+            (self.yahoo,        'get_company_info',  ticker),
+            (self.alphavantage, 'get_company_info',  ticker),
+        ])
         if not company_info:
             raise ValueError(f"Could not find company info for {ticker}")
+            
+        # Enrich report_time and fiscal fields from Yahoo calendar
+        calendar_event = None
+        if self.yahoo and hasattr(self.yahoo, 'get_single_ticker_calendar'):
+            try:
+                calendar_event = self.yahoo.get_single_ticker_calendar(ticker)
+            except Exception as e:
+                self.logger.warning(f"Could not fetch calendar for {ticker}: {e}")
         
-        # Get consensus estimates (Yahoo primary, Alpha Vantage fallback)
-        consensus = None
-        if self.yahoo:
-            consensus = self.yahoo.get_consensus_estimates(ticker)
-        
-        if not consensus and self.alphavantage:
-            consensus = self.alphavantage.get_consensus_estimates(ticker)
-        
+        # Get consensus estimates 
+        consensus = self._chain([
+            (self.yahoo,        'get_consensus_estimates', ticker),
+            (self.alphavantage, 'get_consensus_estimates', ticker),
+        ])
         if not consensus:
-            # Create a dummy consensus to avoid errors
             consensus = ConsensusEstimate(
-                eps_mean=0.0, eps_median=0.0, eps_high=0.0, eps_low=0.0, eps_std=0.0,
-                num_analysts=0, as_of_date=date.today()
+                eps_mean=0.0, eps_median=0.0, eps_high=0.0, eps_low=0.0,
+                eps_std=0.0, num_analysts=0, as_of_date=date.today()
             )
         
         # Get historical earnings
-        historical_list = []
-        if self.yahoo:
-            historical_list = self.yahoo.get_historical_earnings(ticker)
-        elif self.alphavantage:
-            historical_list = self.alphavantage.get_historical_earnings(ticker)
-            
+        historical_list = self._chain([
+            (self.yahoo,        'get_historical_earnings', ticker),
+            (self.alphavantage, 'get_historical_earnings', ticker),
+        ], empty_default=[])
         historical = [self._to_dict(h) for h in historical_list]
         
         # Calculate beat rate & avg surprise
@@ -295,13 +312,11 @@ class DataAggregator:
             price_data = self.alphavantage.get_price_data(ticker)
         
         # Get estimate revisions
-        revisions = []
-        if self.yahoo and hasattr(self.yahoo, 'get_estimate_revisions'):
-            rev_list = self.yahoo.get_estimate_revisions(ticker, 90)
-            revisions = [self._to_dict(r) for r in rev_list]
-        elif self.alphavantage:
-            rev_list = self.alphavantage.get_estimate_revisions(ticker, 90)
-            revisions = [self._to_dict(r) for r in rev_list]
+        rev_list = self._chain([
+            (self.yahoo,        'get_estimate_revisions', ticker, 90),
+            (self.alphavantage, 'get_estimate_revisions', ticker, 90),
+        ], empty_default=[])
+        revisions = [self._to_dict(r) for r in rev_list]
         
         # Get analyst recommendations (Yahoo)
         recommendations = []
@@ -354,8 +369,9 @@ class DataAggregator:
         recent_transcripts = []
         if self.sec:
             try:
-                # We'll just fetch the most recent transcript without a specific date
-                transcripts_obj = self.get_earnings_transcripts(ticker)
+                fq = calendar_event.fiscal_quarter if calendar_event and calendar_event.fiscal_quarter else None
+                fy = calendar_event.fiscal_year if calendar_event and calendar_event.fiscal_year else None
+                transcripts_obj = self.get_earnings_transcripts(ticker, year=fy, quarter=fq)
                 
                 for t in transcripts_obj[:1]:  # Just take the latest one to preserve context
                     # Trim transcript to ~10,000 chars to avoid blowing up the LLM context window
@@ -399,6 +415,9 @@ class DataAggregator:
             industry=company_info.industry,
             market_cap=company_info.market_cap,
             report_date=report_date,
+            report_time=calendar_event.report_time if calendar_event else ReportTime.UNKNOWN,
+            fiscal_quarter=calendar_event.fiscal_quarter or "" if calendar_event else "",
+            fiscal_year=calendar_event.fiscal_year or 0 if calendar_event else 0,
             consensus_eps=consensus.eps_mean,
             consensus_revenue=consensus.revenue_mean if consensus.revenue_mean is not None else 0.0,
             num_analysts=consensus.num_analysts,

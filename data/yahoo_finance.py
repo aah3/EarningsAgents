@@ -1379,10 +1379,23 @@ class YahooFinanceDataSource(BaseDataSource):
                     info = tick.info
                     consensus_eps = safe_float(info.get('forwardEps'))
                     
+                    # Derive fiscal quarter from report date month
+                    month = report_date.month
+                    if month <= 3:
+                        fq, fy = "Q4", report_date.year - 1   # Q4 of prior fiscal year
+                    elif month <= 6:
+                        fq, fy = "Q1", report_date.year
+                    elif month <= 9:
+                        fq, fy = "Q2", report_date.year
+                    else:
+                        fq, fy = "Q3", report_date.year
+                    
                     events.append(EarningsEvent(
                         ticker=normalize_ticker(ticker),
                         report_date=report_date,
                         report_time=report_time,
+                        fiscal_quarter=fq,
+                        fiscal_year=fy,
                         consensus_eps=consensus_eps,
                     ))
             except Exception as e:
@@ -1390,6 +1403,60 @@ class YahooFinanceDataSource(BaseDataSource):
                 continue
         
         return events
+
+    def get_single_ticker_calendar(self, ticker: str) -> Optional[EarningsEvent]:
+        """Fetch calendar data for a single ticker without date filtering."""
+        try:
+            tick = self._get_ticker(ticker)
+            calendar = tick.calendar
+            
+            if calendar is None or (hasattr(calendar, 'empty') and calendar.empty) or not calendar:
+                return None
+                
+            earnings_date = calendar.get('Earnings Date')
+            if earnings_date is None:
+                return None
+                
+            if isinstance(earnings_date, list):
+                earnings_date = earnings_date[0]
+                
+            if isinstance(earnings_date, str):
+                earnings_date = datetime.fromisoformat(earnings_date)
+                
+            report_date = earnings_date.date() if isinstance(earnings_date, datetime) else earnings_date
+            
+            report_time = ReportTime.UNKNOWN
+            hour = earnings_date.hour if isinstance(earnings_date, datetime) else 0
+            
+            if hour < 12:
+                report_time = ReportTime.BMO
+            elif hour >= 16:
+                report_time = ReportTime.AMC
+                
+            month = report_date.month
+            if month <= 3:
+                fq, fy = "Q4", report_date.year - 1
+            elif month <= 6:
+                fq, fy = "Q1", report_date.year
+            elif month <= 9:
+                fq, fy = "Q2", report_date.year
+            else:
+                fq, fy = "Q3", report_date.year
+                
+            info = tick.info
+            consensus_eps = safe_float(info.get('forwardEps'))
+            
+            return EarningsEvent(
+                ticker=normalize_ticker(ticker),
+                report_date=report_date,
+                report_time=report_time,
+                fiscal_quarter=fq,
+                fiscal_year=fy,
+                consensus_eps=consensus_eps,
+            )
+        except Exception as e:
+            self.logger.warning(f"Could not fetch calendar for {ticker}: {e}")
+            return None
 
 
 # ============================================================================

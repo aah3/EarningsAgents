@@ -1,5 +1,6 @@
 import os
 from celery import Celery
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,6 +25,12 @@ celery_app.conf.update(
     enable_utc=True,
     # Windows compatibility fixes
     worker_pool_restarts=True,
+    beat_schedule={
+        "score-predictions-daily": {
+            "task": "tasks.score_predictions_task",
+            "schedule": crontab(hour=6, minute=0),  # 6:00 AM UTC daily
+        }
+    }
 )
 
 if __name__ == "__main__":
