@@ -586,7 +586,7 @@ Stop calling tools once you have enough information to form a confident predicti
                     }
                 }
                 messages.append(
-                    {"role": "user", "content": json.dumps(tool_result_msg)}
+                    {"role": "user", "content": json.dumps(tool_result_msg, default=str)}
                 )
                 continue
 
@@ -1097,7 +1097,7 @@ class ThreeAgentSystem:
                                 else {"error": tool_result.error},
                             }
                         }
-                        messages.append({"role": "user", "content": json.dumps(tool_result_msg)})
+                        messages.append({"role": "user", "content": json.dumps(tool_result_msg, default=str)})
                         continue
 
                     raise AgentResponseError(
@@ -1147,9 +1147,9 @@ class ThreeAgentSystem:
         import time
         with ThreadPoolExecutor(max_workers=3) as executor:
             future_bull  = executor.submit(run_agent, self.bull_agent,  "Bull")
-            time.sleep(1.2)
+            time.sleep(2.0)
             future_bear  = executor.submit(run_agent, self.bear_agent,  "Bear")
-            time.sleep(1.2)
+            time.sleep(2.0)
             future_quant = executor.submit(run_agent, self.quant_agent, "Quant")
 
             bull_response = None
@@ -1297,223 +1297,69 @@ class ThreeAgentSystem:
             rebuttal_summary=rebuttal_summary,
         )
 
-        from concurrent.futures import ThreadPoolExecutor
 
-        prediction_date = prediction_date or date.today()
-
-        import redis
-        import json
-        import os
-        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=5)
-
-        def publish(msg: str, agent: str = "System", msg_type: str = "status"):
-            if task_id:
-                try:
-                    r.publish(
-                        f"task_updates:{task_id}",
-                        json.dumps({"status": "RUNNING", "message": msg, "agent": agent, "type": msg_type})
-                    )
-                except Exception as e:
-                    self.logger.warning(f"Failed to publish to redis: {e}")
-
-        # --- callbacks used by single-shot path only ---
-        def get_stream_callback(agent: str):
-            def callback(chunk: str):
-                publish(chunk, agent, "stream")
-            return callback
-
-        def get_status_callback(agent: str):
-            def callback(msg: str):
-                publish(msg, agent, "status")
-            return callback
-
-        # --- ReAct-aware agent wrapper ---
-        react_mode = self.config.use_react
-        react_max_turns = getattr(self.config, "react_max_turns", 6)
-
-        def run_agent(agent, agent_name: str) -> AgentResponse:
-            """Run a single agent, publishing progress for both execution modes."""
-            if react_mode:
-                # Wrap the registry dispatch so every tool call/result is
-                # broadcast to Redis in real time.
-                from .agent_tools import AgentToolRegistry
-
-                registry = AgentToolRegistry(company, news)
-                original_dispatch = registry.dispatch
-
-                def traced_dispatch(tool_name, tool_args):
-                    publish(f"Calling tool: {tool_name}", agent_name, "react_tool")
-                    result = original_dispatch(tool_name, tool_args)
-                    status = "error" if result.error else "ok"
-                    publish(f"Tool {tool_name} → {status}", agent_name, "react_tool_result")
-                    return result
-
-                registry.dispatch = traced_dispatch
-
-                # Rebuild prompt with patched registry
-                tool_descriptions = registry.get_tool_descriptions()
-                react_system_prompt = agent._build_react_system_prompt(tool_descriptions)
-
-                report_date_str = (
-                    company.report_date.isoformat() if company.report_date else "unknown"
-                )
-                initial_user_message = (
-                    f"Ticker: {company.ticker}\n"
-                    f"Company: {company.company_name}\n"
-                    f"Report Date: {report_date_str}\n"
-                    f"Consensus EPS Estimate: ${company.consensus_eps:.2f}\n\n"
-                    "Analyze this company's earnings outlook. Use the available tools to "
-                    "gather the data you need, then return your final_answer."
-                )
-                messages = [{"role": "user", "content": initial_user_message}]
-
-                for turn in range(react_max_turns):
-                    publish(f"ReAct turn {turn + 1}/{react_max_turns}", agent_name, "react_turn")
-                    response = agent.llm.chat(
-                        system_prompt=react_system_prompt,
-                        messages=messages,
-                        temperature=agent.config.temperature,
-                        max_tokens=agent.config.max_tokens,
-                    )
-                    messages.append({"role": "assistant", "content": response})
-
-                    try:
-                        parsed = json.loads(response)
-                    except json.JSONDecodeError as exc:
-                        raise AgentResponseError(agent=agent.__class__.__name__, cause=exc)
-
-                    if "final_answer" in parsed:
-                        publish(f"Final answer reached on turn {turn + 1}", agent_name, "react_done")
-                        return agent._parse_response(json.dumps(parsed["final_answer"]))
-
-                    if "tool" in parsed:
-                        tool_name = parsed["tool"]
-                        tool_args = parsed.get("args", {}) or {}
-                        tool_result = traced_dispatch(tool_name, tool_args)
-                        tool_result_msg = {
-                            "tool_result": {
-                                "tool": tool_name,
-                                "data": tool_result.result if tool_result.error is None
-                                else {"error": tool_result.error},
-                            }
-                        }
-                        messages.append({"role": "user", "content": json.dumps(tool_result_msg)})
-                        continue
-
-                    raise AgentResponseError(
-                        agent=agent.__class__.__name__,
-                        cause=Exception("Unexpected response format"),
-                    )
-
-                raise AgentResponseError(
-                    agent=agent.__class__.__name__,
-                    cause=Exception("ReAct loop exceeded max_turns without producing final_answer"),
-                )
-            else:
-                # Single-shot path with streaming callbacks
-                return agent.analyze(
-                    company,
-                    news,
-                    stream_callback=get_stream_callback(agent_name),
-                    status_callback=get_status_callback(agent_name),
-                    use_react=False,
-                )
-
-        self.logger.info(f"Starting analysis for {company.ticker}")
-        mode_label = "ReAct tool-loop" if react_mode else "single-shot"
-        publish(
-            f"Agents initiating {mode_label} analysis for {company.ticker}...",
-            "System",
-            "status",
+if __name__ == "__main__":
+    # Test script for debugging agents directly
+    import os
+    import sys
+    from datetime import date, datetime
+    
+    # Ensure we can import from the root directory
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
+    from config.settings import load_config, CompanyData, NewsArticle, ReportTime, PredictionDirection
+    
+    # Configure logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger("AgentDebugger")
+    
+    # 1. Load Config
+    config = load_config()
+    # Force ReAct mode for testing if desired
+    # config.agent.use_react = True 
+    
+    logger.info(f"Using Provider: {config.agent.provider} | Model: {config.agent.model_name}")
+    
+    # 2. Mock Data
+    mock_company = CompanyData(
+        ticker="META",
+        company_name="Meta Platforms, Inc.",
+        sector="Communication Services",
+        industry="Internet Content & Information",
+        market_cap=1.2e12,
+        report_date=date(2026, 4, 29),
+        report_time=ReportTime.AMC,
+        consensus_eps=4.32,
+        consensus_revenue=36.1e9
+    )
+    
+    mock_news = [
+        NewsArticle(
+            headline="Meta focusing on AI infrastructure and efficiency",
+            source="Financial Times",
+            published_at=datetime.now(),
+            body="Meta is reducing work force, thus controlling expenses to allocate more resources to AI infrastructure."
         )
-
-        if user_analysis:
-            publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst", "status")
-
-        import time
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            future_bull = executor.submit(run_agent, self.bull_agent, "Bull")
-            time.sleep(1.2)  # Stagger requests to avoid rapid 429
-            future_bear = executor.submit(run_agent, self.bear_agent, "Bear")
-            time.sleep(1.2)
-            future_quant = executor.submit(run_agent, self.quant_agent, "Quant")
-
-            bull_response = None
-            try:
-                bull_response = future_bull.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Bull agent error: {e}")
-                publish(f"Bull agent failed: {e.cause}", "System", "status")
-
-            bear_response = None
-            try:
-                bear_response = future_bear.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Bear agent error: {e}")
-                publish(f"Bear agent failed: {e.cause}", "System", "status")
-
-            quant_response = None
-            try:
-                quant_response = future_quant.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Quant agent error: {e}")
-                publish(f"Quant agent failed: {e.cause}", "System", "status")
-
-        publish("Consensus Agent synthesizing debate for final prediction...", "System", "status")
-        try:
-            consensus_response = self.consensus_agent.synthesize(
-                company,
-                bull_response,
-                bear_response,
-                quant_response,
-                user_analysis,
-                get_stream_callback("Consensus"),
-                get_status_callback("Consensus"),
-            )
-        except AgentResponseError as e:
-            self.logger.error(f"Consensus agent error: {e}")
-            publish(f"Consensus agent failed: {e.cause}", "System", "status")
-            raise e
-        publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "System", "status")
-
-        user_summary = f"\n\nANALYST (USER):\n{user_analysis}" if user_analysis else ""
-        bull_desc = f"BULL ({bull_response.direction.value.upper()}, {bull_response.confidence:.0%}):\n{bull_response.reasoning}" if bull_response else "BULL: FAILED"
-        bear_desc = f"BEAR ({bear_response.direction.value.upper()}, {bear_response.confidence:.0%}):\n{bear_response.reasoning}" if bear_response else "BEAR: FAILED"
-        quant_desc = f"QUANT ({quant_response.direction.value.upper()}, {quant_response.confidence:.0%}):\n{quant_response.reasoning}" if quant_response else "QUANT: FAILED"
-
-        react_label = "[ReAct tool-loop]" if react_mode else "[single-shot]"
-        debate_summary = f"""
-=== AGENTS & USER EARNINGS DEBATE {react_label} ===
-
-{bull_desc}
-
-{bear_desc}
-
-{quant_desc}{user_summary}
-
-CONSENSUS ({consensus_response.direction.value.upper()}, {consensus_response.confidence:.0%}):
-{consensus_response.reasoning}
-"""
-
-        return EarningsPrediction(
-            ticker=company.ticker,
-            company_name=company.company_name,
-            report_date=company.report_date,
-            prediction_date=prediction_date,
-            direction=consensus_response.direction,
-            confidence=consensus_response.confidence,
-            expected_price_move=consensus_response.expected_price_move,
-            move_vs_implied=consensus_response.move_vs_implied,
-            guidance_expectation=consensus_response.guidance_expectation,
-            reasoning_summary=consensus_response.reasoning,
-            bull_factors=bull_response.bull_factors if bull_response else [],
-            bear_factors=bear_response.bear_factors if bear_response else [],
-            agent_votes={
-                "bull": bull_response.direction.value if bull_response else "failed",
-                "bear": bear_response.direction.value if bear_response else "failed",
-                "quant": quant_response.direction.value if quant_response else "failed",
-                "analyst": "user_provided" if user_analysis else "none",
-                "consensus": consensus_response.direction.value,
-            },
-            debate_summary=debate_summary,
+    ]
+    
+    # 3. Run System
+    system = ThreeAgentSystem(config.agent)
+    system.initialize()
+    
+    logger.info("Starting prediction run...")
+    try:
+        prediction = system.predict(
+            company=mock_company,
+            news=mock_news,
+            user_analysis="META is reducing work force, thus controlling expenses to allocate more resources to AI infrastructure. This should help the company medium to long term."
         )
+        
+        print("\n" + "="*50)
+        print(f"PREDICTION FOR {prediction.ticker}")
+        print(f"Direction: {prediction.direction.value.upper()}")
+        print(f"Confidence: {prediction.confidence*100:.1f}%")
+        print(f"Reasoning: {prediction.reasoning_summary[:200]}...")
+        print("="*50 + "\n")
+        
+    except Exception as e:
+        logger.error(f"Prediction failed: {e}")
