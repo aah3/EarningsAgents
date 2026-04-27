@@ -41,7 +41,9 @@ class AgentConfig:
     temperature: float = 0.3
     max_tokens: int = 2048
     use_local: bool = False
-    use_react: bool = False  # when True, analyze() delegates to _react_analyze()
+    use_react: bool = False           # when True, analyze() delegates to _react_analyze()
+    react_max_turns: int = 6          # maximum tool-call turns per ReAct loop
+    enable_rebuttals: bool = False    # when True, ThreeAgentSystem runs a rebuttal pass
 
 
 @dataclass
@@ -141,24 +143,27 @@ class EarningsPrediction:
     company_name: str
     report_date: date
     prediction_date: date
-    
+
     # Prediction
     direction: PredictionDirection
     confidence: float  # 0 to 1
-    
+
     # Extended predictions
     expected_price_move: str = ""
     move_vs_implied: str = ""
     guidance_expectation: str = ""
-    
+
     # Reasoning
     reasoning_summary: str = ""
     bull_factors: List[str] = field(default_factory=list)
     bear_factors: List[str] = field(default_factory=list)
-    
+
     # Multi-agent votes
     agent_votes: Optional[Dict[str, str]] = None
     debate_summary: Optional[str] = None
+
+    # Rebuttal cross-examination transcript (populated when enable_rebuttals=True)
+    rebuttal_summary: Optional[str] = None
 
 
 def load_config() -> PipelineConfig:
@@ -191,7 +196,10 @@ def load_config() -> PipelineConfig:
         agent=AgentConfig(
             provider=provider,
             model_name=os.getenv("LLM_MODEL_NAME") or "gemini-2.5-flash",
-            api_key=agent_api_key
+            api_key=agent_api_key,
+            use_react=os.getenv("USE_REACT", "false").lower() in ("1", "true", "yes"),
+            react_max_turns=int(os.getenv("USE_REACT_MAX_TURNS", "6")),
+            enable_rebuttals=os.getenv("ENABLE_REBUTTALS", "false").lower() in ("1", "true", "yes"),
         ),
         redis_url=os.getenv("REDIS_URL") or "redis://localhost:6379/0"
     )

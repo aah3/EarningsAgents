@@ -61,3 +61,8 @@ data/yahoo_finance_v0.py
 {config,data,agents,output}/
 var_swaps.py
 options_screener.py
+
+# Docker build artifacts
+celerybeat-schedule
+celerybeat.pid
+*.pid

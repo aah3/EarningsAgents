@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+myenv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# Local dev outputs
+api_output/
+worker_output/
+# Secrets — never bake into images
+.env
+*.env
+
+# Node (frontend is a separate build context)
+web/node_modules/
+web/.next/
+
+# Git / IDE
+.git/
+.gitignore
+*.md
+.idea/
+.vscode/
+
+# Test/scratch files
+smoke_test*.py
+test_*.py
+tests/
+*.txt
+!requirements.txt
+!alembic.ini
+*.docx

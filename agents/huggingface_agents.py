@@ -200,6 +200,7 @@ RULES:
 - If estimate revisions are strongly directional: Follow them
 - If historical pattern is very consistent: Respect it
 - If User (Analyst) analysis provides verified unique insight, incorporate it into final reasoning
+- When rebuttals are provided, give extra weight to whichever side successfully refuted the other's weakest argument
 
 INSTRUCTIONS:
 First, provide a brief paragraph explaining your thoughts and reasoning (your "thinking process").
@@ -214,6 +215,52 @@ Then, output your final decision in the following exact JSON format, enclosed in
     "bull_factors": ["<accepted bull points>"],
     "bear_factors": ["<accepted bear points>"],
     "key_signals": {"deciding_factor": "<what tipped decision>", "bull_strength": "<1-10>", "bear_strength": "<1-10>"}
+}"""
+
+
+# Rebuttal prompts — each agent receives the opposing thesis and must respond
+BULL_REBUTTAL_PROMPT = """You are a BULL analyst who has just read the Bear analyst's full case against this company.
+
+YOUR MISSION: Critically examine the Bear case and, where it is factually weak or overstated,
+provide a specific, evidence-backed counter-argument. Do NOT simply re-state your original thesis.
+
+INSTRUCTIONS:
+- Acknowledge any Bear points you genuinely cannot refute.
+- Challenge Bear points that rely on speculation, outdated data, or ignore positive signals.
+- Output your rebuttal in the following exact JSON format, enclosed in a ```json``` code block:
+{
+    "direction": "BEAT",
+    "confidence": <60-95>,
+    "expected_price_move": "positive" | "negative" | "neutral",
+    "move_vs_implied": "inside implied move" | "exceeds implied move",
+    "guidance_expectation": "positive" | "negative" | "neutral",
+    "reasoning": "<2-3 sentence rebuttal focused on weaknesses in the Bear case>",
+    "bull_factors": ["<strongest surviving bull points after Bear cross-examination>"],
+    "bear_factors": ["<Bear risks you concede are valid>"],
+    "key_signals": {"estimate_momentum": "<detail>", "beat_rate": "<detail>"}
+}"""
+
+
+BEAR_REBUTTAL_PROMPT = """You are a BEAR analyst who has just read the Bull analyst's full case for this company.
+
+YOUR MISSION: Critically examine the Bull case and, where it is optimistic, unsubstantiated, or
+overlooks key risks, provide a specific, evidence-backed counter-argument. Do NOT simply re-state
+your original thesis.
+
+INSTRUCTIONS:
+- Acknowledge any Bull points that are genuinely strong and hard to refute.
+- Challenge Bull points that rely on momentum alone, ignore macro risks, or project unrealistically.
+- Output your rebuttal in the following exact JSON format, enclosed in a ```json``` code block:
+{
+    "direction": "MISS",
+    "confidence": <60-95>,
+    "expected_price_move": "positive" | "negative" | "neutral",
+    "move_vs_implied": "inside implied move" | "exceeds implied move",
+    "guidance_expectation": "positive" | "negative" | "neutral",
+    "reasoning": "<2-3 sentence rebuttal focused on weaknesses in the Bull case>",
+    "bull_factors": ["<Bull strengths you concede are valid>"],
+    "bear_factors": ["<strongest surviving bear risks after Bull cross-examination>"],
+    "key_signals": {"estimate_risk": "<detail>", "headwinds": "<detail>"}
 }"""
 
 
@@ -563,7 +610,7 @@ Stop calling tools once you have enough information to form a confident predicti
         news: List[NewsArticle],
         stream_callback=None,
         status_callback=None,
-        use_react: bool = False,
+        use_react: Optional[bool] = None,
     ) -> AgentResponse:
         """Analyze company and return prediction.
 
@@ -577,14 +624,21 @@ Stop calling tools once you have enough information to form a confident predicti
             Token-level streaming callback (single-shot path only).
         status_callback : callable, optional
             Status/retry callback (single-shot path only).
-        use_react : bool
+        use_react : bool or None
             When True, delegate to _react_analyze() which runs the full
             ReAct tool-use loop. stream_callback and status_callback are
-            ignored in this mode. Defaults to False.
+            ignored in this mode.
+            When None (default), the value is read from ``self.config.use_react``,
+            allowing the flag to be set once at configuration time rather than
+            at every call site.
         """
+        # Resolve: explicit override > config default
+        _use_react = self.config.use_react if use_react is None else use_react
+        max_turns = getattr(self.config, "react_max_turns", 6)
+
         # --- ReAct path ---
-        if use_react:
-            return self._react_analyze(company, news)
+        if _use_react:
+            return self._react_analyze(company, news, max_turns=max_turns)
 
         # --- Existing single-shot path (unchanged) ---
         prompt = self._format_prompt(company, news)
@@ -682,10 +736,76 @@ Stop calling tools once you have enough information to form a confident predicti
         except Exception as e:
             raise AgentResponseError(agent=self.__class__.__name__, cause=e)
 
+    def rebuttal_analyze(
+        self,
+        company: CompanyData,
+        news: List[NewsArticle],
+        opposing_response: "AgentResponse",
+        rebuttal_system_prompt: str,
+        stream_callback=None,
+        status_callback=None,
+    ) -> "AgentResponse":
+        """Run a rebuttal pass given the full text of the opposing agent's thesis.
 
-# ============================================================================
-# SPECIALIZED AGENTS
-# ============================================================================
+        Builds a prompt that presents the original company context *and* the
+        opposing thesis, then asks the agent to specifically counter it.
+
+        Parameters
+        ----------
+        company : CompanyData
+        news : List[NewsArticle]
+        opposing_response : AgentResponse
+            The fully-parsed response from the opposing agent.
+        rebuttal_system_prompt : str
+            Role-specific rebuttal system prompt (BULL_REBUTTAL_PROMPT or
+            BEAR_REBUTTAL_PROMPT).
+        stream_callback, status_callback : callable, optional
+        """
+        base_context = self._format_prompt(company, news)
+
+        opposing_desc = (
+            f"Direction: {opposing_response.direction.value.upper()}\n"
+            f"Confidence: {opposing_response.confidence:.0f}%\n"
+            f"Reasoning: {opposing_response.reasoning}\n"
+            f"Key bull factors: {', '.join(opposing_response.bull_factors[:5])}\n"
+            f"Key bear factors: {', '.join(opposing_response.bear_factors[:5])}"
+        )
+
+        rebuttal_prompt = (
+            base_context
+            + "\n\n---\n## OPPOSING ANALYST THESIS — CROSS-EXAMINE THIS CAREFULLY\n\n"
+            + opposing_desc
+            + "\n\n---\nNow provide your rebuttal in the required JSON format."
+        )
+
+        kwargs = self._get_llm_kwargs()
+        try:
+            if stream_callback:
+                full_response = ""
+                for chunk in self.llm.generate_stream(
+                    system_prompt=rebuttal_system_prompt,
+                    user_prompt=rebuttal_prompt,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                    on_retry=status_callback,
+                    **kwargs,
+                ):
+                    full_response += chunk
+                    stream_callback(chunk)
+                return self._parse_response(full_response)
+
+            response = self.llm.generate(
+                system_prompt=rebuttal_system_prompt,
+                user_prompt=rebuttal_prompt,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+                on_retry=status_callback,
+                **kwargs,
+            )
+            return self._parse_response(response)
+        except Exception as e:
+            raise AgentResponseError(agent=self.__class__.__name__, cause=e)
+
 
 class BullAgent(BaseAgent):
     """Bull Agent - Advocates for earnings BEAT."""
@@ -707,10 +827,10 @@ class QuantAgent(BaseAgent):
 
 class ConsensusAgent(BaseAgent):
     """Consensus Agent - Synthesizes debate and makes final call."""
-    
+
     def __init__(self, config: AgentConfig):
         super().__init__(config, CONSENSUS_PROMPT)
-    
+
     def synthesize(
         self,
         company: CompanyData,
@@ -719,9 +839,11 @@ class ConsensusAgent(BaseAgent):
         quant_response: Optional[AgentResponse] = None,
         user_analysis: Optional[str] = None,
         stream_callback=None,
-        status_callback=None
+        status_callback=None,
+        bull_rebuttal: Optional[AgentResponse] = None,
+        bear_rebuttal: Optional[AgentResponse] = None,
     ) -> AgentResponse:
-        """Synthesize the three agent responses into final prediction."""
+        """Synthesize agent responses (and optional rebuttals) into a final prediction."""
         successful_agents = []
         if bull_response:
             successful_agents.append("BULL")
@@ -729,52 +851,58 @@ class ConsensusAgent(BaseAgent):
             successful_agents.append("BEAR")
         if quant_response:
             successful_agents.append("QUANT")
-            
-        absent_agents = [agent for agent in ["BULL", "BEAR", "QUANT"] if agent not in successful_agents]
+
+        absent_agents = [a for a in ["BULL", "BEAR", "QUANT"] if a not in successful_agents]
         if absent_agents:
             self.logger.warning(f"Consensus proceeding without {', '.join(absent_agents)}.")
-            
+
         if len(successful_agents) < 2:
-            raise ConsensusError(f"Cannot form consensus. Fewer than 2 agents succeeded. Absent: {', '.join(absent_agents)}")
-            
+            raise ConsensusError(
+                f"Cannot form consensus. Fewer than 2 agents succeeded. Absent: {', '.join(absent_agents)}"
+            )
+
+        def _fmt(label: str, resp: Optional[AgentResponse], factors_key: str) -> str:
+            if resp is None:
+                return f"\n### {label}\n- Status: FAILED TO RESPOND - EXCLUDE FROM CONSIDERATION\n"
+            factors = getattr(resp, factors_key, [])[:3]
+            return (
+                f"\n### {label}\n"
+                f"- Direction: {resp.direction.value.upper()}\n"
+                f"- Confidence: {resp.confidence:.0f}%\n"
+                f"- Reasoning: {resp.reasoning}\n"
+                f"- Key Factors: {', '.join(factors)}\n"
+            )
+
+        bull_section  = _fmt("BULL AGENT — INITIAL THESIS", bull_response, "bull_factors")
+        bear_section  = _fmt("BEAR AGENT — INITIAL THESIS", bear_response, "bear_factors")
+        quant_section = _fmt("QUANT AGENT ANALYSIS",        quant_response, "bull_factors")
+
+        rebuttal_section = ""
+        if bull_rebuttal or bear_rebuttal:
+            rebuttal_section = "\n---\n## REBUTTAL ROUND\n"
+            if bull_rebuttal:
+                rebuttal_section += _fmt(
+                    "BULL REBUTTAL (response to Bear thesis)", bull_rebuttal, "bull_factors"
+                )
+            if bear_rebuttal:
+                rebuttal_section += _fmt(
+                    "BEAR REBUTTAL (response to Bull thesis)", bear_rebuttal, "bear_factors"
+                )
+
         user_analysis_section = ""
         if user_analysis:
-            user_analysis_section = f"""
-### ANALYST (USER PROVIDED) ANALYSIS
-- Analysis: {user_analysis}
-"""
+            user_analysis_section = (
+                f"\n### ANALYST (USER PROVIDED) ANALYSIS\n- Analysis: {user_analysis}\n"
+            )
 
-        bull_section = f"""
-### BULL AGENT ANALYSIS
-- Direction: {bull_response.direction.value.upper()}
-- Confidence: {bull_response.confidence:.0%}
-- Reasoning: {bull_response.reasoning}
-- Key Factors: {', '.join(bull_response.bull_factors[:3])}
-""" if bull_response else "\n### BULL AGENT ANALYSIS\n- Status: FAILED TO RESPOND - EXCLUDE FROM CONSIDERATION\n"
+        synthesis_prompt = (
+            f"## Synthesis Request for {company.ticker}\n"
+            f"{bull_section}{bear_section}{quant_section}"
+            f"{rebuttal_section}{user_analysis_section}"
+            f"\n---\nBased on this {'multi-round debate' if rebuttal_section else 'debate'}, "
+            "provide your FINAL consensus prediction. Weigh the evidence and make a decisive call."
+        )
 
-        bear_section = f"""
-### BEAR AGENT ANALYSIS
-- Direction: {bear_response.direction.value.upper()}
-- Confidence: {bear_response.confidence:.0%}
-- Reasoning: {bear_response.reasoning}
-- Key Factors: {', '.join(bear_response.bear_factors[:3])}
-""" if bear_response else "\n### BEAR AGENT ANALYSIS\n- Status: FAILED TO RESPOND - EXCLUDE FROM CONSIDERATION\n"
-
-        quant_section = f"""
-### QUANT AGENT ANALYSIS
-- Direction: {quant_response.direction.value.upper()}
-- Confidence: {quant_response.confidence:.0%}
-- Reasoning: {quant_response.reasoning}
-- Key Signals: {json.dumps(quant_response.key_signals)}
-""" if quant_response else "\n### QUANT AGENT ANALYSIS\n- Status: FAILED TO RESPOND - EXCLUDE FROM CONSIDERATION\n"
-
-        synthesis_prompt = f"""
-## Synthesis Request for {company.ticker}
-{bull_section}{bear_section}{quant_section}{user_analysis_section}
----
-Based on this debate, provide your FINAL consensus prediction.
-Weigh the evidence and make a decisive call.
-"""
         kwargs = self._get_llm_kwargs()
         try:
             if stream_callback:
@@ -785,23 +913,24 @@ Weigh the evidence and make a decisive call.
                     temperature=self.config.temperature,
                     max_tokens=self.config.max_tokens,
                     on_retry=status_callback,
-                    **kwargs
+                    **kwargs,
                 ):
                     full_response += chunk
                     stream_callback(chunk)
                 return self._parse_response(full_response)
-            
+
             response = self.llm.generate(
                 system_prompt=self.system_prompt,
                 user_prompt=synthesis_prompt,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
                 on_retry=status_callback,
-                **kwargs
+                **kwargs,
             )
             return self._parse_response(response)
         except Exception as e:
             raise AgentResponseError(agent=self.__class__.__name__, cause=e)
+
 
     def chat(self, messages: List[Dict[str, str]]) -> str:
         """Interact with the Consensus Agent regarding its analysis."""
@@ -853,11 +982,30 @@ class ThreeAgentSystem:
         task_id: Optional[str] = None,
         user_analysis: Optional[str] = None
     ) -> EarningsPrediction:
-        """Run full three-agent prediction."""
+        """Run full three-agent prediction with optional rebuttal pass.
+
+        Execution flow
+        --------------
+        Pass 1 (always):
+            Bull, Bear, and Quant run in parallel to produce initial theses.
+
+        Pass 2 (when ``self.config.enable_rebuttals`` is True):
+            - Bull re-runs against Bear's thesis  (Bull rebuttal)
+            - Bear re-runs against Bull's thesis  (Bear rebuttal)
+            - Quant serves as statistical referee concurrently with Pass 2.
+
+        Consensus:
+            ConsensusAgent receives the full multi-round transcript
+            (initial theses + rebuttals, if any) for its final synthesis.
+
+        All intermediate events are published to Redis when task_id is set.
+        ReAct tool-loop mode composes with the rebuttal pass — they are
+        independent flags that can both be enabled simultaneously.
+        """
         from concurrent.futures import ThreadPoolExecutor
-        
+
         prediction_date = prediction_date or date.today()
-        
+
         import redis
         import json
         import os
@@ -866,10 +1014,14 @@ class ThreeAgentSystem:
         def publish(msg: str, agent: str = "System", msg_type: str = "status"):
             if task_id:
                 try:
-                    r.publish(f"task_updates:{task_id}", json.dumps({"status": "RUNNING", "message": msg, "agent": agent, "type": msg_type}))
-                except Exception as e:
-                    self.logger.warning(f"Failed to publish to redis: {e}")
+                    r.publish(
+                        f"task_updates:{task_id}",
+                        json.dumps({"status": "RUNNING", "message": msg, "agent": agent, "type": msg_type})
+                    )
+                except Exception as exc:
+                    self.logger.warning(f"Failed to publish to redis: {exc}")
 
+        # --- streaming callbacks (single-shot path) ---
         def get_stream_callback(agent: str):
             def callback(chunk: str):
                 publish(chunk, agent, "stream")
@@ -880,21 +1032,126 @@ class ThreeAgentSystem:
                 publish(msg, agent, "status")
             return callback
 
+        # --- ReAct-aware agent wrapper (unchanged from Phase 1) ---
+        react_mode = self.config.use_react
+        react_max_turns = getattr(self.config, "react_max_turns", 6)
+        do_rebuttals = getattr(self.config, "enable_rebuttals", False)
+
+        def run_agent(agent, agent_name: str) -> AgentResponse:
+            if react_mode:
+                from .agent_tools import AgentToolRegistry
+                registry = AgentToolRegistry(company, news)
+                original_dispatch = registry.dispatch
+
+                def traced_dispatch(tool_name, tool_args):
+                    publish(f"Calling tool: {tool_name}", agent_name, "react_tool")
+                    result = original_dispatch(tool_name, tool_args)
+                    status = "error" if result.error else "ok"
+                    publish(f"Tool {tool_name} → {status}", agent_name, "react_tool_result")
+                    return result
+
+                registry.dispatch = traced_dispatch
+                tool_descriptions = registry.get_tool_descriptions()
+                react_system_prompt = agent._build_react_system_prompt(tool_descriptions)
+
+                report_date_str = (
+                    company.report_date.isoformat() if company.report_date else "unknown"
+                )
+                initial_user_message = (
+                    f"Ticker: {company.ticker}\n"
+                    f"Company: {company.company_name}\n"
+                    f"Report Date: {report_date_str}\n"
+                    f"Consensus EPS Estimate: ${company.consensus_eps:.2f}\n\n"
+                    "Analyze this company's earnings outlook. Use the available tools to "
+                    "gather the data you need, then return your final_answer."
+                )
+                messages = [{"role": "user", "content": initial_user_message}]
+
+                for turn in range(react_max_turns):
+                    publish(f"ReAct turn {turn + 1}/{react_max_turns}", agent_name, "react_turn")
+                    response = agent.llm.chat(
+                        system_prompt=react_system_prompt,
+                        messages=messages,
+                        temperature=agent.config.temperature,
+                        max_tokens=agent.config.max_tokens,
+                    )
+                    messages.append({"role": "assistant", "content": response})
+
+                    try:
+                        parsed = json.loads(response)
+                    except json.JSONDecodeError as exc:
+                        raise AgentResponseError(agent=agent.__class__.__name__, cause=exc)
+
+                    if "final_answer" in parsed:
+                        publish(f"Final answer reached on turn {turn + 1}", agent_name, "react_done")
+                        return agent._parse_response(json.dumps(parsed["final_answer"]))
+
+                    if "tool" in parsed:
+                        tool_name = parsed["tool"]
+                        tool_args = parsed.get("args", {}) or {}
+                        tool_result = traced_dispatch(tool_name, tool_args)
+                        tool_result_msg = {
+                            "tool_result": {
+                                "tool": tool_name,
+                                "data": tool_result.result if tool_result.error is None
+                                else {"error": tool_result.error},
+                            }
+                        }
+                        messages.append({"role": "user", "content": json.dumps(tool_result_msg)})
+                        continue
+
+                    raise AgentResponseError(
+                        agent=agent.__class__.__name__,
+                        cause=Exception("Unexpected response format"),
+                    )
+
+                raise AgentResponseError(
+                    agent=agent.__class__.__name__,
+                    cause=Exception("ReAct loop exceeded max_turns without producing final_answer"),
+                )
+            else:
+                return agent.analyze(
+                    company,
+                    news,
+                    stream_callback=get_stream_callback(agent_name),
+                    status_callback=get_status_callback(agent_name),
+                    use_react=False,
+                )
+
+        def run_rebuttal(agent, agent_name: str, opposing: AgentResponse, rebuttal_prompt: str) -> AgentResponse:
+            """Run a rebuttal pass for *agent* against *opposing*'s thesis."""
+            return agent.rebuttal_analyze(
+                company,
+                news,
+                opposing,
+                rebuttal_prompt,
+                stream_callback=get_stream_callback(agent_name),
+                status_callback=get_status_callback(agent_name),
+            )
+
+        # ================================================================
+        # PASS 1 — Initial theses (Bull + Bear + Quant in parallel)
+        # ================================================================
         self.logger.info(f"Starting analysis for {company.ticker}")
-        
-        publish(f"Agents initiating staggered analysis for {company.ticker}...", "System", "status")
+        react_label = "ReAct tool-loop" if react_mode else "single-shot"
+        rebuttal_label = " + rebuttal" if do_rebuttals else ""
+        publish(
+            f"Pass 1: {react_label}{rebuttal_label} analysis for {company.ticker}...",
+            "System",
+            "status",
+        )
 
         if user_analysis:
             publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst", "status")
 
         import time
         with ThreadPoolExecutor(max_workers=3) as executor:
-            future_bull = executor.submit(self.bull_agent.analyze, company, news, get_stream_callback("Bull"), get_status_callback("Bull"))
-            time.sleep(1.2) # Stagger requests to avoid rapid 429
-            future_bear = executor.submit(self.bear_agent.analyze, company, news, get_stream_callback("Bear"), get_status_callback("Bear"))
+            future_bull  = executor.submit(run_agent, self.bull_agent,  "Bull")
             time.sleep(1.2)
-            future_quant = executor.submit(self.quant_agent.analyze, company, news, get_stream_callback("Quant"), get_status_callback("Quant"))
-            
+            future_bear  = executor.submit(run_agent, self.bear_agent,  "Bear")
+            time.sleep(1.2)
+            future_quant = executor.submit(run_agent, self.quant_agent, "Quant")
+
             bull_response = None
             try:
                 bull_response = future_bull.result()
@@ -908,32 +1165,325 @@ class ThreeAgentSystem:
             except AgentResponseError as e:
                 self.logger.error(f"Bear agent error: {e}")
                 publish(f"Bear agent failed: {e.cause}", "System", "status")
-            
+
             quant_response = None
             try:
                 quant_response = future_quant.result()
             except AgentResponseError as e:
                 self.logger.error(f"Quant agent error: {e}")
                 publish(f"Quant agent failed: {e.cause}", "System", "status")
-        
-        publish(f"Consensus Agent synthesizing debate for final prediction...", "System", "status")
+
+        # ================================================================
+        # PASS 2 — Rebuttal cross-examination (optional)
+        # ================================================================
+        bull_rebuttal: Optional[AgentResponse] = None
+        bear_rebuttal: Optional[AgentResponse] = None
+
+        if do_rebuttals and bull_response and bear_response:
+            publish("Pass 2: Cross-examination rebuttal round starting...", "System", "status")
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future_bull_rebuttal = executor.submit(
+                    run_rebuttal,
+                    self.bull_agent, "Bull-Rebuttal",
+                    bear_response, BULL_REBUTTAL_PROMPT,
+                )
+                time.sleep(1.2)
+                future_bear_rebuttal = executor.submit(
+                    run_rebuttal,
+                    self.bear_agent, "Bear-Rebuttal",
+                    bull_response, BEAR_REBUTTAL_PROMPT,
+                )
+
+                try:
+                    bull_rebuttal = future_bull_rebuttal.result()
+                    publish("Bull rebuttal complete.", "Bull-Rebuttal", "status")
+                except AgentResponseError as e:
+                    self.logger.error(f"Bull rebuttal error: {e}")
+                    publish(f"Bull rebuttal failed: {e.cause}", "System", "status")
+
+                try:
+                    bear_rebuttal = future_bear_rebuttal.result()
+                    publish("Bear rebuttal complete.", "Bear-Rebuttal", "status")
+                except AgentResponseError as e:
+                    self.logger.error(f"Bear rebuttal error: {e}")
+                    publish(f"Bear rebuttal failed: {e.cause}", "System", "status")
+        elif do_rebuttals:
+            publish(
+                "Rebuttal pass skipped: both Bull and Bear required for cross-examination.",
+                "System",
+                "status",
+            )
+
+        # ================================================================
+        # CONSENSUS — receives full multi-round transcript
+        # ================================================================
+        publish("Consensus Agent synthesizing debate for final prediction...", "System", "status")
         try:
             consensus_response = self.consensus_agent.synthesize(
-                company, bull_response, bear_response, quant_response, user_analysis, get_stream_callback("Consensus"), get_status_callback("Consensus")
+                company,
+                bull_response,
+                bear_response,
+                quant_response,
+                user_analysis,
+                get_stream_callback("Consensus"),
+                get_status_callback("Consensus"),
+                bull_rebuttal=bull_rebuttal,
+                bear_rebuttal=bear_rebuttal,
             )
         except AgentResponseError as e:
             self.logger.error(f"Consensus agent error: {e}")
             publish(f"Consensus agent failed: {e.cause}", "System", "status")
             raise e
         publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "System", "status")
-        
+
+        # ================================================================
+        # Build debate_summary & rebuttal_summary
+        # ================================================================
+        def _agent_desc(label: str, resp: Optional[AgentResponse]) -> str:
+            if resp is None:
+                return f"{label}: FAILED"
+            return (
+                f"{label} ({resp.direction.value.upper()}, {resp.confidence:.0f}%):\n"
+                f"{resp.reasoning}"
+            )
+
+        user_summary = f"\n\nANALYST (USER):\n{user_analysis}" if user_analysis else ""
+        mode_tag = f"[{react_label}{rebuttal_label}]"
+
+        debate_summary = (
+            f"=== AGENTS & USER EARNINGS DEBATE {mode_tag} ===\n\n"
+            f"{_agent_desc('BULL', bull_response)}\n\n"
+            f"{_agent_desc('BEAR', bear_response)}\n\n"
+            f"{_agent_desc('QUANT', quant_response)}"
+            f"{user_summary}\n\n"
+            f"{_agent_desc('CONSENSUS', consensus_response)}\n"
+        )
+
+        rebuttal_summary: Optional[str] = None
+        if bull_rebuttal or bear_rebuttal:
+            rebuttal_summary = "=== REBUTTAL ROUND ===\n\n"
+            if bull_rebuttal:
+                rebuttal_summary += (
+                    f"BULL REBUTTAL ({bull_rebuttal.direction.value.upper()}, "
+                    f"{bull_rebuttal.confidence:.0f}%):  {bull_rebuttal.reasoning}\n\n"
+                )
+            if bear_rebuttal:
+                rebuttal_summary += (
+                    f"BEAR REBUTTAL ({bear_rebuttal.direction.value.upper()}, "
+                    f"{bear_rebuttal.confidence:.0f}%):  {bear_rebuttal.reasoning}\n"
+                )
+
+        return EarningsPrediction(
+            ticker=company.ticker,
+            company_name=company.company_name,
+            report_date=company.report_date,
+            prediction_date=prediction_date,
+            direction=consensus_response.direction,
+            confidence=consensus_response.confidence,
+            expected_price_move=consensus_response.expected_price_move,
+            move_vs_implied=consensus_response.move_vs_implied,
+            guidance_expectation=consensus_response.guidance_expectation,
+            reasoning_summary=consensus_response.reasoning,
+            bull_factors=bull_response.bull_factors if bull_response else [],
+            bear_factors=bear_response.bear_factors if bear_response else [],
+            agent_votes={
+                "bull":     bull_response.direction.value  if bull_response  else "failed",
+                "bear":     bear_response.direction.value  if bear_response  else "failed",
+                "quant":    quant_response.direction.value if quant_response else "failed",
+                "analyst":  "user_provided" if user_analysis else "none",
+                "consensus": consensus_response.direction.value,
+            },
+            debate_summary=debate_summary,
+            rebuttal_summary=rebuttal_summary,
+        )
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        prediction_date = prediction_date or date.today()
+
+        import redis
+        import json
+        import os
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=5)
+
+        def publish(msg: str, agent: str = "System", msg_type: str = "status"):
+            if task_id:
+                try:
+                    r.publish(
+                        f"task_updates:{task_id}",
+                        json.dumps({"status": "RUNNING", "message": msg, "agent": agent, "type": msg_type})
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to publish to redis: {e}")
+
+        # --- callbacks used by single-shot path only ---
+        def get_stream_callback(agent: str):
+            def callback(chunk: str):
+                publish(chunk, agent, "stream")
+            return callback
+
+        def get_status_callback(agent: str):
+            def callback(msg: str):
+                publish(msg, agent, "status")
+            return callback
+
+        # --- ReAct-aware agent wrapper ---
+        react_mode = self.config.use_react
+        react_max_turns = getattr(self.config, "react_max_turns", 6)
+
+        def run_agent(agent, agent_name: str) -> AgentResponse:
+            """Run a single agent, publishing progress for both execution modes."""
+            if react_mode:
+                # Wrap the registry dispatch so every tool call/result is
+                # broadcast to Redis in real time.
+                from .agent_tools import AgentToolRegistry
+
+                registry = AgentToolRegistry(company, news)
+                original_dispatch = registry.dispatch
+
+                def traced_dispatch(tool_name, tool_args):
+                    publish(f"Calling tool: {tool_name}", agent_name, "react_tool")
+                    result = original_dispatch(tool_name, tool_args)
+                    status = "error" if result.error else "ok"
+                    publish(f"Tool {tool_name} → {status}", agent_name, "react_tool_result")
+                    return result
+
+                registry.dispatch = traced_dispatch
+
+                # Rebuild prompt with patched registry
+                tool_descriptions = registry.get_tool_descriptions()
+                react_system_prompt = agent._build_react_system_prompt(tool_descriptions)
+
+                report_date_str = (
+                    company.report_date.isoformat() if company.report_date else "unknown"
+                )
+                initial_user_message = (
+                    f"Ticker: {company.ticker}\n"
+                    f"Company: {company.company_name}\n"
+                    f"Report Date: {report_date_str}\n"
+                    f"Consensus EPS Estimate: ${company.consensus_eps:.2f}\n\n"
+                    "Analyze this company's earnings outlook. Use the available tools to "
+                    "gather the data you need, then return your final_answer."
+                )
+                messages = [{"role": "user", "content": initial_user_message}]
+
+                for turn in range(react_max_turns):
+                    publish(f"ReAct turn {turn + 1}/{react_max_turns}", agent_name, "react_turn")
+                    response = agent.llm.chat(
+                        system_prompt=react_system_prompt,
+                        messages=messages,
+                        temperature=agent.config.temperature,
+                        max_tokens=agent.config.max_tokens,
+                    )
+                    messages.append({"role": "assistant", "content": response})
+
+                    try:
+                        parsed = json.loads(response)
+                    except json.JSONDecodeError as exc:
+                        raise AgentResponseError(agent=agent.__class__.__name__, cause=exc)
+
+                    if "final_answer" in parsed:
+                        publish(f"Final answer reached on turn {turn + 1}", agent_name, "react_done")
+                        return agent._parse_response(json.dumps(parsed["final_answer"]))
+
+                    if "tool" in parsed:
+                        tool_name = parsed["tool"]
+                        tool_args = parsed.get("args", {}) or {}
+                        tool_result = traced_dispatch(tool_name, tool_args)
+                        tool_result_msg = {
+                            "tool_result": {
+                                "tool": tool_name,
+                                "data": tool_result.result if tool_result.error is None
+                                else {"error": tool_result.error},
+                            }
+                        }
+                        messages.append({"role": "user", "content": json.dumps(tool_result_msg)})
+                        continue
+
+                    raise AgentResponseError(
+                        agent=agent.__class__.__name__,
+                        cause=Exception("Unexpected response format"),
+                    )
+
+                raise AgentResponseError(
+                    agent=agent.__class__.__name__,
+                    cause=Exception("ReAct loop exceeded max_turns without producing final_answer"),
+                )
+            else:
+                # Single-shot path with streaming callbacks
+                return agent.analyze(
+                    company,
+                    news,
+                    stream_callback=get_stream_callback(agent_name),
+                    status_callback=get_status_callback(agent_name),
+                    use_react=False,
+                )
+
+        self.logger.info(f"Starting analysis for {company.ticker}")
+        mode_label = "ReAct tool-loop" if react_mode else "single-shot"
+        publish(
+            f"Agents initiating {mode_label} analysis for {company.ticker}...",
+            "System",
+            "status",
+        )
+
+        if user_analysis:
+            publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst", "status")
+
+        import time
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_bull = executor.submit(run_agent, self.bull_agent, "Bull")
+            time.sleep(1.2)  # Stagger requests to avoid rapid 429
+            future_bear = executor.submit(run_agent, self.bear_agent, "Bear")
+            time.sleep(1.2)
+            future_quant = executor.submit(run_agent, self.quant_agent, "Quant")
+
+            bull_response = None
+            try:
+                bull_response = future_bull.result()
+            except AgentResponseError as e:
+                self.logger.error(f"Bull agent error: {e}")
+                publish(f"Bull agent failed: {e.cause}", "System", "status")
+
+            bear_response = None
+            try:
+                bear_response = future_bear.result()
+            except AgentResponseError as e:
+                self.logger.error(f"Bear agent error: {e}")
+                publish(f"Bear agent failed: {e.cause}", "System", "status")
+
+            quant_response = None
+            try:
+                quant_response = future_quant.result()
+            except AgentResponseError as e:
+                self.logger.error(f"Quant agent error: {e}")
+                publish(f"Quant agent failed: {e.cause}", "System", "status")
+
+        publish("Consensus Agent synthesizing debate for final prediction...", "System", "status")
+        try:
+            consensus_response = self.consensus_agent.synthesize(
+                company,
+                bull_response,
+                bear_response,
+                quant_response,
+                user_analysis,
+                get_stream_callback("Consensus"),
+                get_status_callback("Consensus"),
+            )
+        except AgentResponseError as e:
+            self.logger.error(f"Consensus agent error: {e}")
+            publish(f"Consensus agent failed: {e.cause}", "System", "status")
+            raise e
+        publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "System", "status")
+
         user_summary = f"\n\nANALYST (USER):\n{user_analysis}" if user_analysis else ""
         bull_desc = f"BULL ({bull_response.direction.value.upper()}, {bull_response.confidence:.0%}):\n{bull_response.reasoning}" if bull_response else "BULL: FAILED"
         bear_desc = f"BEAR ({bear_response.direction.value.upper()}, {bear_response.confidence:.0%}):\n{bear_response.reasoning}" if bear_response else "BEAR: FAILED"
         quant_desc = f"QUANT ({quant_response.direction.value.upper()}, {quant_response.confidence:.0%}):\n{quant_response.reasoning}" if quant_response else "QUANT: FAILED"
-        
+
+        react_label = "[ReAct tool-loop]" if react_mode else "[single-shot]"
         debate_summary = f"""
-=== AGENTS & USER EARNINGS DEBATE ===
+=== AGENTS & USER EARNINGS DEBATE {react_label} ===
 
 {bull_desc}
 
@@ -944,7 +1494,7 @@ class ThreeAgentSystem:
 CONSENSUS ({consensus_response.direction.value.upper()}, {consensus_response.confidence:.0%}):
 {consensus_response.reasoning}
 """
-        
+
         return EarningsPrediction(
             ticker=company.ticker,
             company_name=company.company_name,

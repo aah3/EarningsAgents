@@ -1,0 +1,23 @@
+# ── Celery Beat Scheduler ─────────────────────────────────────────────────────
+# Fires periodic tasks according to the schedule defined in api/celery_app.py.
+# Only ONE beat container should ever run — running multiple beats causes
+# duplicate task submissions.
+
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq-dev \
+        gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# --schedule stores the beat state in /tmp/celerybeat-schedule (ephemeral).
+# If you need persistent beat state across restarts, mount a volume at /beat
+# and change the --schedule path accordingly.
+CMD ["celery", "-A", "api.celery_app", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]

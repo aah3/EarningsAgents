@@ -11,6 +11,7 @@ const navItems = [
     { name: "Batch Analysis", href: "/dashboard/batch", icon: "⚡" },
     { name: "Calendar", href: "/dashboard/calendar", icon: "📅" },
     { name: "History", href: "/dashboard/history", icon: "📜" },
+    { name: "Performance", href: "/dashboard/performance", icon: "🎯" },
     { name: "Settings", href: "/dashboard/settings", icon: "⚙️" },
 ];
 

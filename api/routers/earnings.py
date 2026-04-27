@@ -352,6 +352,112 @@ async def predict_batch(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/metrics")
+async def get_performance_metrics(
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Return aggregate evaluation metrics for the authenticated user's predictions.
+
+    Only predictions that have been scored (actual_direction is not None) are
+    included in win-rate / Brier calculations.  Unscored predictions are
+    still counted in totals.
+    """
+    try:
+        user = get_or_create_user(session, clerk_id)
+
+        all_preds = session.exec(
+            select(Prediction).where(Prediction.user_id == user.id)
+            .order_by(Prediction.prediction_date)
+        ).all()
+
+        total = len(all_preds)
+        scored = [p for p in all_preds if p.actual_direction is not None]
+        n_scored = len(scored)
+
+        win_rate = 0.0
+        avg_brier = 0.0
+        beat_correct = miss_correct = beat_total = miss_total = 0
+        brier_over_time = []
+        confidence_raw: dict[str, list] = {}
+
+        for p in scored:
+            correct = p.direction.lower() == p.actual_direction.lower()
+            if correct:
+                if p.direction.upper() == "BEAT":
+                    beat_correct += 1
+                else:
+                    miss_correct += 1
+            if p.direction.upper() == "BEAT":
+                beat_total += 1
+            else:
+                miss_total += 1
+
+            brier = p.accuracy_score if p.accuracy_score is not None else (p.confidence - (1.0 if correct else 0.0)) ** 2
+            avg_brier += brier
+            brier_over_time.append({
+                "date": p.prediction_date.isoformat() if hasattr(p.prediction_date, "isoformat") else str(p.prediction_date),
+                "brier": round(brier, 4),
+                "ticker": p.ticker,
+            })
+
+            # Confidence calibration bucket (10%-wide)
+            bucket_lo = int(p.confidence * 100 // 10) * 10
+            bucket_key = f"{bucket_lo}-{bucket_lo + 10}%"
+            if bucket_key not in confidence_raw:
+                confidence_raw[bucket_key] = {"predicted": bucket_lo + 5, "wins": 0, "total": 0}
+            confidence_raw[bucket_key]["wins"] += int(correct)
+            confidence_raw[bucket_key]["total"] += 1
+
+        win_rate = sum(1 for p in scored if p.direction.lower() == p.actual_direction.lower()) / n_scored if n_scored else 0.0
+        avg_brier = avg_brier / n_scored if n_scored else 0.0
+
+        confidence_buckets = [
+            {
+                "bucket": k,
+                "predicted": v["predicted"],
+                "actual_win_rate": round(v["wins"] / v["total"], 3) if v["total"] else 0.0,
+                "count": v["total"],
+            }
+            for k, v in sorted(confidence_raw.items())
+        ]
+
+        # Direction breakdown (all predictions)
+        direction_breakdown: dict[str, int] = {}
+        for p in all_preds:
+            direction_breakdown[p.direction.upper()] = direction_breakdown.get(p.direction.upper(), 0) + 1
+
+        # Agent vote breakdown (from agent_votes JSON where available)
+        agent_vote_breakdown: dict[str, dict[str, int]] = {}
+        for p in all_preds:
+            if p.agent_votes:
+                for agent, vote in p.agent_votes.items():
+                    if agent not in agent_vote_breakdown:
+                        agent_vote_breakdown[agent] = {}
+                    agent_vote_breakdown[agent][vote.upper()] = agent_vote_breakdown[agent].get(vote.upper(), 0) + 1
+
+        avg_confidence = sum(p.confidence for p in all_preds) / total if total else 0.0
+
+        return {
+            "total_predictions": total,
+            "scored_predictions": n_scored,
+            "win_rate": round(win_rate, 4),
+            "avg_confidence": round(avg_confidence, 4),
+            "avg_brier_score": round(avg_brier, 4),
+            "beat_predictions": beat_total,
+            "miss_predictions": miss_total,
+            "beat_correct": beat_correct,
+            "miss_correct": miss_correct,
+            "direction_breakdown": direction_breakdown,
+            "agent_vote_breakdown": agent_vote_breakdown,
+            "brier_over_time": brier_over_time,
+            "confidence_buckets": confidence_buckets,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/health")
 async def health():
     return {"status": "Earnings router is up"}

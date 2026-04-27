@@ -1,0 +1,133 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# EarningsAgents — docker-compose.yml
+#
+# Services:
+#   api      — FastAPI / Uvicorn  (port 8000)
+#   worker   — Celery worker      (scale: docker compose up --scale worker=N)
+#   beat     — Celery Beat        (EXACTLY ONE replica — never scale this)
+#   web      — Next.js frontend   (port 3000)
+#
+# External managed services supplied via .env:
+#   Redis    — REDIS_URL      (Upstash rediss:// or a local redis container)
+#   Postgres — DATABASE_URL   (Supabase / Neon / RDS)
+#
+# Quick start:
+#   cp .env.example .env          # fill in every value
+#   docker compose up --build -d
+#   docker compose logs -f api worker beat
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────────────
+  # Runs Alembic migrations on boot, then starts Uvicorn.
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: earningsagents-api:latest
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 25s
+
+  # ── Celery Worker ────────────────────────────────────────────────────────────
+  # Executes analyze_ticker_task and score_predictions_task.
+  # Add replicas at deploy time: docker compose up --scale worker=3
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: earningsagents-worker:latest
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import celery; c=celery.Celery(broker='${REDIS_URL}'); c.control.inspect(timeout=5).active()"
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+
+  # ── Celery Beat Scheduler ────────────────────────────────────────────────────
+  # Dispatches periodic tasks defined in api/celery_app.py.
+  # ⚠️  Run exactly ONE instance of beat at all times.
+  #     Multiple beat processes will fire every task N times per interval.
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.beat
+    image: earningsagents-beat:latest
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      worker:
+        condition: service_started
+
+  # ── Next.js Frontend ─────────────────────────────────────────────────────────
+  # Multi-stage build; uses output:'standalone' from next.config.ts.
+  # Public env vars (NEXT_PUBLIC_*) are baked in at build time via ARG.
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+    image: earningsagents-web:latest
+    env_file:
+      - ./web/.env.local
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── PostgreSQL Database ──────────────────────────────────────────────────────
+  # Local database used for docker-compose environment to bypass IPv6/Supabase 
+  # network restrictions.
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: earnings_agents
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

@@ -1,0 +1,25 @@
+# ── FastAPI Backend ────────────────────────────────────────────────────────────
+# Serves the REST API (main_api.py) and WebSocket task streams.
+# Separate from the Celery worker so each service can scale independently.
+
+FROM python:3.11-slim
+
+# System deps (psycopg2 needs libpq, yfinance/pandas need build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq-dev \
+        gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies first for layer-cache efficiency
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application source
+COPY . .
+
+# Run database migrations then start Uvicorn
+CMD ["sh", "-c", "python -m alembic upgrade head && uvicorn main_api:app --host 0.0.0.0 --port 8000"]
+
+EXPOSE 8000

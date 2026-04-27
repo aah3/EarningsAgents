@@ -2,15 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { api, Prediction } from "@/lib/api";
+import { api, Prediction, PredictionMetrics } from "@/lib/api";
 import AnalysisResult from "@/components/AnalysisResult";
 
-const stats = [
-    { label: "Total Analyses", value: "1,284", icon: "🔍", color: "var(--accent-cyan)", subtext: "+14% this week" },
-    { label: "Success Rate", value: "78.4%", icon: "🎯", color: "var(--bull-green)", subtext: "Top 1% of models" },
-    { label: "Active Monitors", value: "12", icon: "🔔", color: "var(--quant-blue)", subtext: "3 alerts triggered" },
-    { label: "Avg Confidence", value: "84%", icon: "📊", color: "var(--consensus-purple)", subtext: "Across all sectors" },
-];
+
 
 interface WSMessage {
     status: string;
@@ -18,6 +13,7 @@ interface WSMessage {
     agent?: string;
     type?: string;
 }
+
 
 export default function DashboardPage() {
     const { getToken } = useAuth();
@@ -35,6 +31,8 @@ export default function DashboardPage() {
         Consensus: string;
     }>({ Bull: "", Bear: "", Quant: "", Consensus: "" });
     const [history, setHistory] = useState<Prediction[]>([]);
+    const [metrics, setMetrics] = useState<PredictionMetrics | null>(null);
+
 
     const terminalEndRef = useRef<HTMLDivElement>(null);
 
@@ -59,8 +57,12 @@ export default function DashboardPage() {
             try {
                 const token = await getToken();
                 if (token) {
-                    const data = await api.getPredictionHistory(token);
-                    setHistory(data.slice(0, 5)); // show top 5
+                    const [data, m] = await Promise.all([
+                        api.getPredictionHistory(token),
+                        api.getMetrics(token).catch(() => null),
+                    ]);
+                    setHistory(data.slice(0, 5));
+                    if (m) setMetrics(m);
                 }
             } catch (err) {
                 console.error("Failed to load history", err);
@@ -68,6 +70,7 @@ export default function DashboardPage() {
         }
         loadHistory();
     }, [getToken]);
+
 
     const handleRunAnalysis = async () => {
         if (!ticker || !reportDate) {
@@ -259,21 +262,51 @@ export default function DashboardPage() {
                 )}
             </div>
 
-            {/* Dense Stats Summary */}
+            {/* Live Stats Strip */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                {stats.map((stat) => (
+                {[
+                    {
+                        label: "Total Analyses",
+                        value: metrics ? String(metrics.total_predictions) : "—",
+                        icon: "🔍",
+                        color: "var(--accent-cyan)",
+                        subtext: metrics ? `${metrics.scored_predictions} scored` : "Loading...",
+                    },
+                    {
+                        label: "Win Rate",
+                        value: metrics && metrics.scored_predictions > 0 ? `${(metrics.win_rate * 100).toFixed(1)}%` : "—",
+                        icon: "🎯",
+                        color: "var(--bull-green)",
+                        subtext: metrics && metrics.scored_predictions > 0 ? `${metrics.scored_predictions} evaluated` : "Not yet scored",
+                    },
+                    {
+                        label: "Avg Brier Score",
+                        value: metrics && metrics.scored_predictions > 0 ? metrics.avg_brier_score.toFixed(3) : "—",
+                        icon: "📐",
+                        color: "var(--quant-blue)",
+                        subtext: "Lower = better",
+                    },
+                    {
+                        label: "Avg Confidence",
+                        value: metrics ? `${(metrics.avg_confidence * 100).toFixed(0)}%` : "—",
+                        icon: "📊",
+                        color: "var(--consensus-purple)",
+                        subtext: "Across all predictions",
+                    },
+                ].map((stat) => (
                     <div key={stat.label} className="p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center gap-4 hover:bg-[#11161d] transition-colors">
                         <div className="text-3xl opacity-80">{stat.icon}</div>
                         <div>
                             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{stat.label}</p>
                             <div className="flex items-baseline gap-2">
                                 <p className="text-2xl font-black text-white tracking-tight">{stat.value}</p>
-                                <p className="text-[10px] font-bold" style={{ color: stat.color }}>{stat.subtext.split(' ')[0]}</p>
+                                <p className="text-[10px] font-bold" style={{ color: stat.color }}>{stat.subtext.split(" ")[0]}</p>
                             </div>
                         </div>
                     </div>
                 ))}
             </div>
+
 
             {/* Main Content Area (Full Width) */}
             <div className="min-h-[600px] flex flex-col">

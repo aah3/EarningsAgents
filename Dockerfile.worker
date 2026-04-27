@@ -1,0 +1,23 @@
+# ── Celery Worker ─────────────────────────────────────────────────────────────
+# Executes heavy background tasks (analyze_ticker_task, score_predictions_task).
+# Uses the 'solo' pool on Windows-style hosts; switch to 'prefork' on Linux prod.
+# Scale horizontally by increasing --concurrency or deploying multiple replicas.
+
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq-dev \
+        gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# -A: Celery app module
+# --loglevel: set to INFO for production; DEBUG shows every task message
+# --concurrency: tune to available CPU cores (1 is safe for LLM-bound workloads)
+CMD ["celery", "-A", "api.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--pool=prefork"]

@@ -33,7 +33,8 @@ class Prediction(SQLModel, table=True):
     bear_factors: List[str] = Field(sa_column=Column(JSON))
     
     debate_summary: Optional[str] = Field(default=None)
-    
+    rebuttal_summary: Optional[str] = Field(default=None)  # Bull/Bear cross-examination transcript
+
     # Outcome tracking (populated by the scoring task after earnings are reported)
     actual_direction: Optional[str] = Field(default=None)          # "beat", "miss", or "meet"
     actual_eps: Optional[float] = Field(default=None)              # Reported EPS
