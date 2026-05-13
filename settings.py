@@ -1,6 +1,7 @@
 """
+settings.py  –  Flat-layout project root copy.
+
 Simplified Configuration for Earnings Prediction POC.
-Uses only Hugging Face agents and Bloomberg BQL data.
 """
 
 from dataclasses import dataclass, field
@@ -25,14 +26,6 @@ class ReportTime(Enum):
 
 
 @dataclass
-class BloombergConfig:
-    """Bloomberg BQL connection settings."""
-    timeout: int = 30
-    max_retries: int = 3
-    rate_limit_per_minute: int = 100
-
-
-@dataclass
 class AgentConfig:
     """Agent configuration for LLMs."""
     provider: str = "gemini"  # or "anthropic", "openai"
@@ -41,9 +34,11 @@ class AgentConfig:
     temperature: float = 0.3
     max_tokens: int = 2048
     use_local: bool = False
+    # ReAct tool-loop settings  (FIX 1)
     use_react: bool = False           # when True, analyze() delegates to _react_analyze()
     react_max_turns: int = 6          # maximum tool-call turns per ReAct loop
     enable_rebuttals: bool = False    # when True, ThreeAgentSystem runs a rebuttal pass
+    sec_user_agent: str = "EarningsAgents/1.0 (contact@example.com)"
 
 
 @dataclass
@@ -64,25 +59,23 @@ class PipelineConfig:
     benchmark: str = "SPX"
     start_date: date = field(default_factory=lambda: date(2024, 1, 1))
     end_date: date = field(default_factory=lambda: date(2024, 12, 31))
-    
+
     # Component configs
     yahoo: DataSourceConfig = field(default_factory=lambda: DataSourceConfig(rate_limit_calls=2000))
     newsapi: DataSourceConfig = field(default_factory=DataSourceConfig)
     alphavantage: DataSourceConfig = field(default_factory=DataSourceConfig)
     sec: DataSourceConfig = field(default_factory=lambda: DataSourceConfig(enabled=False))
-    
-    # Bloomberg is legacy or optional now
-    bloomberg: BloombergConfig = field(default_factory=BloombergConfig)
-    
+
+
     agent: AgentConfig = field(default_factory=AgentConfig)
-    
+
     # Multi-agent settings
     enable_debate: bool = True
     debate_rounds: int = 2
-    
+
     # Output settings
     output_dir: Path = field(default_factory=lambda: Path("./output"))
-    
+
     # News settings
     news_lookback_days: int = 30
     max_news_articles: int = 50
@@ -97,32 +90,33 @@ class CompanyData:
     sector: str
     industry: str
     market_cap: float
-    
+
     # Earnings info
     report_date: date
     report_time: ReportTime = ReportTime.UNKNOWN
     fiscal_quarter: str = ""
     fiscal_year: int = 0
-    
+
     # Consensus estimates
     consensus_eps: float = 0.0
     consensus_revenue: float = 0.0
     num_analysts: int = 0
-    
+
     # Historical
     historical_eps: List[Dict[str, Any]] = field(default_factory=list)
     beat_rate_4q: Optional[float] = None
     avg_surprise_4q: Optional[float] = None
-    
+
     # Price data
     current_price: Optional[float] = None
     price_change_5d: Optional[float] = None
     price_change_21d: Optional[float] = None
-    
+
     # Additional signals
     short_interest: Optional[float] = None
     estimate_revisions: List[Dict[str, Any]] = field(default_factory=list)
     options_features: Optional[Dict[str, Any]] = None
+    analyst_recommendations: List[Dict[str, Any]] = field(default_factory=list)
 
     # SEC XBRL company facts (keyed by metric name; values may be dicts or raw scalars)
     company_facts: Optional[Dict[str, Any]] = None
@@ -152,7 +146,7 @@ class EarningsPrediction:
 
     # Prediction
     direction: PredictionDirection
-    confidence: float  # 0 to 1
+    confidence: float  # 0 to 100
 
     # Extended predictions
     expected_price_move: str = ""
@@ -168,7 +162,7 @@ class EarningsPrediction:
     agent_votes: Optional[Dict[str, str]] = None
     debate_summary: Optional[str] = None
 
-    # Rebuttal cross-examination transcript (populated when enable_rebuttals=True)
+    # Rebuttal cross-examination transcript  (FIX 2)
     rebuttal_summary: Optional[str] = None
 
 
@@ -176,14 +170,11 @@ def load_config() -> PipelineConfig:
     """Load configuration from environment variables."""
     import os
     from dotenv import load_dotenv, find_dotenv
-    # Explicitly find .env by walking up from this file's location so the
-    # correct .env is loaded regardless of the debugger's CWD.
     dotenv_path = find_dotenv(usecwd=False)
-    load_dotenv(dotenv_path, override=False)  # shell env vars take priority over .env
-    
+    load_dotenv(dotenv_path, override=False)
+
     provider = os.getenv("LLM_PROVIDER", "gemini").split("#")[0].strip().lower()
-    
-    # Select the appropriate API key based on the provider
+
     if provider == "gemini":
         agent_api_key = os.getenv("GEMINI_API_KEY")
     elif provider == "anthropic":
@@ -196,11 +187,11 @@ def load_config() -> PipelineConfig:
     return PipelineConfig(
         newsapi=DataSourceConfig(
             api_key=os.getenv("NEWSAPI_API_KEY"),
-            enabled=os.getenv("NEWSAPI_API_KEY") is not None
+            enabled=os.getenv("NEWSAPI_API_KEY") is not None,
         ),
         alphavantage=DataSourceConfig(
             api_key=os.getenv("ALPHAVANTAGE_API_KEY"),
-            enabled=os.getenv("ALPHAVANTAGE_API_KEY") is not None
+            enabled=os.getenv("ALPHAVANTAGE_API_KEY") is not None,
         ),
         agent=AgentConfig(
             provider=provider,
@@ -209,6 +200,7 @@ def load_config() -> PipelineConfig:
             use_react=os.getenv("USE_REACT", "false").lower() in ("1", "true", "yes"),
             react_max_turns=int(os.getenv("USE_REACT_MAX_TURNS", "6")),
             enable_rebuttals=os.getenv("ENABLE_REBUTTALS", "false").lower() in ("1", "true", "yes"),
+            sec_user_agent=os.getenv("SEC_USER_AGENT", "EarningsAgents/1.0 (contact@example.com)"),
         ),
-        redis_url=os.getenv("REDIS_URL") or "redis://localhost:6379/0"
+        redis_url=os.getenv("REDIS_URL") or "redis://localhost:6379/0",
     )

@@ -1,4 +1,4 @@
-from config.settings import CompanyData as SettingsCompanyData, ReportTime
+from settings import CompanyData as SettingsCompanyData, ReportTime
 from data.base import CompanyData as BaseCompanyData, EarningsEvent
 from data.yahoo_finance import YahooFinanceDataSource
 from data.data_aggregator import DataAggregator

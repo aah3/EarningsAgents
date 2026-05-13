@@ -2,7 +2,7 @@ import os
 import logging
 from datetime import date
 from agents.huggingface_agents import ThreeAgentSystem
-from config.settings import AgentConfig, CompanyData, ReportTime, PredictionDirection, NewsArticle
+from settings import AgentConfig, CompanyData, ReportTime, PredictionDirection, NewsArticle
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

@@ -1,7 +1,7 @@
 import logging
 from datetime import date
 from pipeline import EarningsPipeline
-from config.settings import load_config
+from settings import load_config
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

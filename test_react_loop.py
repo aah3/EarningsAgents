@@ -7,7 +7,7 @@ No LLM calls, no external API calls.
 
 from datetime import date
 
-from config.settings import CompanyData, ReportTime
+from settings import CompanyData, ReportTime
 from agents.agent_tools import AgentToolRegistry
 
 

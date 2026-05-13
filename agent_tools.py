@@ -1,8 +1,10 @@
 """
-agents/agent_tools.py
+agent_tools.py  –  Flat-layout project root copy.
 
 Tool registry for ReAct-loop agents. Each callable reads from pre-loaded
 CompanyData and NewsArticle objects — no external API calls are made here.
+
+FIX 3: import is now `from settings import ...` (flat layout), no config/ package.
 """
 
 from __future__ import annotations
@@ -11,10 +13,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-try:
-    from settings import CompanyData, NewsArticle          # flat-layout (normal case)
-except ImportError:
-    from config.settings import CompanyData, NewsArticle   # legacy package layout fallback
+from settings import CompanyData, NewsArticle  # FIX 3 – flat layout, no sub-package
 
 
 # ---------------------------------------------------------------------------
@@ -45,9 +44,15 @@ class AgentToolRegistry:
         Already-fetched news articles.
     """
 
-    def __init__(self, company: CompanyData, news: List[NewsArticle]) -> None:
+    def __init__(
+        self,
+        company: CompanyData,
+        news: List[NewsArticle],
+        sec_source=None,
+    ) -> None:
         self.company = company
         self.news = news
+        self.sec_source = sec_source
 
     # ------------------------------------------------------------------
     # Helpers
@@ -116,7 +121,6 @@ class AgentToolRegistry:
                 val = opts.get(key)
                 if not self._is_missing(val):
                     signals[key] = val
-            # Also pass through any other non-None/NaN fields present
             for key, val in opts.items():
                 if key not in signals and not self._is_missing(val):
                     signals[key] = val
@@ -135,7 +139,6 @@ class AgentToolRegistry:
                     error="No transcripts available",
                 )
             latest = transcripts[0]
-            # Support both plain strings and dict-style objects
             if isinstance(latest, str):
                 snippet = latest[:max_chars]
                 meta: Dict[str, Any] = {"snippet": snippet, "truncated": len(latest) > max_chars}
@@ -154,6 +157,104 @@ class AgentToolRegistry:
             return ToolResult(tool_name="get_sec_transcript", result=meta)
         except Exception as exc:
             return ToolResult(tool_name="get_sec_transcript", result=None, error=str(exc))
+
+    def get_sec_transcript_by_period(
+        self,
+        fiscal_year: Optional[int] = None,
+        fiscal_quarter: Optional[str] = None,
+        max_chars: int = 4000,
+    ) -> ToolResult:
+        """
+        Fetch an earnings call transcript for a specific fiscal period directly
+        from SEC EDGAR. Requires sec_source to be set on the registry.
+
+        Parameters
+        ----------
+        fiscal_year : int, optional
+            Fiscal year to query (e.g. 2025). Defaults to report_date.year - 1.
+        fiscal_quarter : str, optional
+            One of "Q1", "Q2", "Q3", "Q4". If omitted, returns the most recent
+            transcript for the given fiscal year.
+        max_chars : int
+            Maximum characters of transcript text to return (default 4000).
+        """
+        try:
+            if self.sec_source is None:
+                return ToolResult(
+                    tool_name="get_sec_transcript_by_period",
+                    result=None,
+                    error=(
+                        "SEC EDGAR source not available — "
+                        "use get_sec_transcript for pre-loaded transcript."
+                    ),
+                )
+
+            # Resolve defaults
+            if fiscal_year is None:
+                if self.company.fiscal_year and self.company.fiscal_year > 0:
+                    fiscal_year = self.company.fiscal_year
+                else:
+                    report_year = (
+                        self.company.report_date.year
+                        if self.company.report_date else
+                        __import__("datetime").date.today().year
+                    )
+                    fiscal_year = report_year - 1
+
+            # Validate fiscal_quarter
+            valid_quarters = {"Q1", "Q2", "Q3", "Q4", None}
+            if fiscal_quarter not in valid_quarters:
+                return ToolResult(
+                    tool_name="get_sec_transcript_by_period",
+                    result=None,
+                    error=(
+                        f"Invalid fiscal_quarter {fiscal_quarter!r}. "
+                        "Must be one of Q1, Q2, Q3, Q4 or omitted."
+                    ),
+                )
+
+            transcripts = self.sec_source.get_earnings_transcripts(
+                self.company.ticker,
+                year=fiscal_year,
+                quarter=fiscal_quarter,
+            )
+
+            if not transcripts:
+                return ToolResult(
+                    tool_name="get_sec_transcript_by_period",
+                    result=None,
+                    error=(
+                        f"No transcript found for {self.company.ticker} "
+                        f"FY{fiscal_year}"
+                        + (f" {fiscal_quarter}" if fiscal_quarter else "")
+                        + "."
+                    ),
+                )
+
+            t = transcripts[0]
+            text = t.full_text or ""
+            snippet = text[:max_chars]
+
+            return ToolResult(
+                tool_name="get_sec_transcript_by_period",
+                result={
+                    "ticker": t.ticker,
+                    "fiscal_year": t.fiscal_year,
+                    "fiscal_quarter": t.fiscal_quarter,
+                    "filing_date": t.date.isoformat(),
+                    "snippet": snippet,
+                    "truncated": len(text) > max_chars,
+                    "source": "SEC_EDGAR",
+                    "url": t.url,
+                },
+            )
+
+        except Exception as exc:
+            return ToolResult(
+                tool_name="get_sec_transcript_by_period",
+                result=None,
+                error=str(exc),
+            )
 
     def get_sec_facts(self) -> ToolResult:
         """Return company facts dict, formatting large numbers as $XB / $XM."""
@@ -238,6 +339,7 @@ class AgentToolRegistry:
         "get_estimate_revisions": "get_estimate_revisions",
         "get_options_signals": "get_options_signals",
         "get_sec_transcript": "get_sec_transcript",
+        "get_sec_transcript_by_period": "get_sec_transcript_by_period",
         "get_sec_facts": "get_sec_facts",
         "get_news_sentiment": "get_news_sentiment",
         "get_price_momentum": "get_price_momentum",
@@ -248,19 +350,8 @@ class AgentToolRegistry:
         """
         Route *tool_name* to the corresponding method.
 
-        Parameters
-        ----------
-        tool_name : str
-            One of the 8 registered tool names.
-        tool_args : dict
-            Keyword arguments forwarded to the method (currently only
-            ``get_sec_transcript`` accepts ``max_chars``).
-
-        Returns
-        -------
-        ToolResult
-            Result from the matched tool, or a ToolResult with an error
-            message when the tool name is not recognised.
+        Returns a ToolResult with an error message for unknown tool names
+        (never raises).
         """
         method_name = self._TOOL_MAP.get(tool_name)
         if method_name is None:
@@ -280,12 +371,7 @@ class AgentToolRegistry:
     # ------------------------------------------------------------------
 
     def get_tool_descriptions(self) -> List[Dict[str, str]]:
-        """
-        Return a list of tool descriptor dicts for prompt injection.
-
-        Each dict has ``"name"`` and ``"description"`` keys describing
-        what the tool does and any optional arguments.
-        """
+        """Return a list of tool descriptor dicts for prompt injection."""
         return [
             {
                 "name": "get_earnings_history",
@@ -316,6 +402,19 @@ class AgentToolRegistry:
                     "Returns a snippet from the most recent earnings call transcript. "
                     "Optional argument: max_chars (int, default 3000) — maximum "
                     "number of characters to return."
+                ),
+            },
+            {
+                "name": "get_sec_transcript_by_period",
+                "description": (
+                    "Fetches an earnings call transcript directly from SEC EDGAR for a "
+                    "specific fiscal period. Use this when you need a transcript for a "
+                    "particular quarter, not just whatever was pre-loaded. "
+                    "Optional arguments: "
+                    "fiscal_year (int, e.g. 2025 — defaults to report year minus 1), "
+                    "fiscal_quarter (str, one of 'Q1'/'Q2'/'Q3'/'Q4' — omit for most recent), "
+                    "max_chars (int, default 4000). "
+                    "Returns error if SEC EDGAR source is not available."
                 ),
             },
             {

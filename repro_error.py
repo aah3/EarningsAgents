@@ -6,7 +6,7 @@ from datetime import date
 # Add project root to path
 sys.path.append(os.getcwd())
 
-from config.settings import DataSourceConfig
+from settings import DataSourceConfig
 from data.news_sources import AlphaVantageNewsDataSource
 
 def test_repro():

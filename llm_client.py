@@ -1,21 +1,25 @@
+"""
+llm_client.py  –  Flat-layout project root copy.
+
+Unified LLM interface for Google Gemini, Anthropic Claude, and OpenAI GPT.
+
+FIX 8 applied: _stream_anthropic falls back to _call_anthropic when
+tool_choice is forced, because tool_use response blocks contain no text
+tokens and stream.text_stream yields nothing.
+"""
+
 import os
 import logging
 import time
 import threading
 from typing import Optional, List, Any
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 class _ProviderRateLimiter:
-    """Thread-safe minimum-interval rate limiter shared across all LLMClient instances.
+    """Thread-safe minimum-interval rate limiter shared across all LLMClient instances."""
 
-    Ensures we never fire more than N calls per minute to a provider,
-    regardless of how many parallel threads are running ReAct loops.
-    """
-    # Conservative limits (calls/min).  Gemini free tier is 10-15 RPM;
-    # we use 10 to leave headroom for retries.
     _DEFAULT_RPM = {
         "gemini":    10,
         "openai":    50,
@@ -24,8 +28,8 @@ class _ProviderRateLimiter:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._last: dict = {}  # provider -> last call monotonic time
-        self._global_pause_until: dict = {}  # provider -> paused until this monotonic time
+        self._last: dict = {}
+        self._global_pause_until: dict = {}
 
     def wait(self, provider: str) -> None:
         """Block until it is safe to make one more call for *provider*."""
@@ -33,13 +37,10 @@ class _ProviderRateLimiter:
         min_interval = 60.0 / rpm
         with self._lock:
             now = time.monotonic()
-            
-            # Enforce global pause if we recently hit a 429
             pause_until = self._global_pause_until.get(provider, 0.0)
             if now < pause_until:
                 time.sleep(pause_until - now)
                 now = time.monotonic()
-
             elapsed = now - self._last.get(provider, 0.0)
             gap = min_interval - elapsed
             if gap > 0:
@@ -50,20 +51,20 @@ class _ProviderRateLimiter:
         """Called when a 429 is hit; halts ALL threads for this provider."""
         with self._lock:
             new_pause = time.monotonic() + penalty_seconds
-            # Only extend the pause, don't shorten it if another thread already reported
             if new_pause > self._global_pause_until.get(provider, 0.0):
                 self._global_pause_until[provider] = new_pause
-                logger.warning(f"Global rate limit pause triggered for {provider} ({penalty_seconds}s)")
+                logger.warning(
+                    f"Global rate limit pause triggered for {provider} ({penalty_seconds}s)"
+                )
 
 
 # Module-level singleton — shared by every LLMClient instance / thread.
 _rate_limiter = _ProviderRateLimiter()
 
+
 class LLMClient:
-    """
-    A unified interface for LLM analysis using Google Gemini, Anthropic, or OpenAI.
-    """
-    
+    """Unified interface for LLM analysis using Google Gemini, Anthropic, or OpenAI."""
+
     def __init__(self, api_key: str, provider: str = "gemini", model: Optional[str] = None):
         self.api_key = api_key
         self.provider = provider.lower()
@@ -75,50 +76,45 @@ class LLMClient:
         if not self.api_key:
             logger.warning(f"No API key provided for LLM provider: {self.provider}")
             return None
-
         try:
             if self.provider == "gemini":
                 from google import genai
                 self.model = self.model or "gemini-flash-latest"
                 return genai.Client(api_key=self.api_key)
-            
             elif self.provider == "anthropic":
                 from anthropic import Anthropic
                 self.model = self.model or "claude-3-5-sonnet-20241022"
                 return Anthropic(api_key=self.api_key)
-            
             elif self.provider == "openai":
                 from openai import OpenAI
                 self.model = self.model or "gpt-4o"
                 return OpenAI(api_key=self.api_key)
-            
             else:
                 raise ValueError(f"Unsupported provider: {self.provider}")
-                
         except ImportError as e:
-            raise ImportError(f"Missing library for {self.provider}. Please install it. Error: {e}")
+            raise ImportError(
+                f"Missing library for {self.provider}. Please install it. Error: {e}"
+            )
+
+    # -------------------------------------------------------------------------
+    # Public API
+    # -------------------------------------------------------------------------
 
     def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.3,
                  max_tokens: int = 2048, on_retry=None, **kwargs) -> str:
-        """
-        Generates content from the LLM based on system and user prompts.
-        Includes basic retry logic for rate limits.
-        Raises RuntimeError if the client is not initialized or retries are exhausted.
-        """
+        """Generate a response (non-streaming). Retries on rate limits."""
         if not self.client:
             raise RuntimeError(
                 f"LLM client not initialized. Check API key for provider '{self.provider}'."
             )
-
         max_retries = 3
-        base_delay = 5  # seconds
+        base_delay = 5
         last_exc: Exception = RuntimeError("Unknown error")
 
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
                     time.sleep(base_delay * (2 ** (attempt - 1)))
-
                 if self.provider == "gemini":
                     return self._call_gemini(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
                 elif self.provider == "anthropic":
@@ -138,24 +134,21 @@ class LLMClient:
                         on_retry(f"API Rate Limit hit. Retrying attempt {attempt+1} of {max_retries}...")
                     last_exc = e
                     continue
-
                 logger.error(f"Error calling {self.provider} API: {e}")
                 raise
 
         raise RuntimeError(
-            f"Maximum retries ({max_retries}) exceeded for {self.provider} generate(). Last error: {last_exc}"
+            f"Maximum retries ({max_retries}) exceeded for {self.provider} generate(). "
+            f"Last error: {last_exc}"
         ) from last_exc
 
     def generate_stream(self, system_prompt: str, user_prompt: str, temperature: float = 0.3,
                         max_tokens: int = 2048, on_retry=None, **kwargs):
-        """
-        Generates content from the LLM based on system and user prompts, yielding chunks as they arrive.
-        """
+        """Generate a streaming response, yielding text chunks."""
         if not self.client:
             raise RuntimeError(
                 f"LLM client not initialized. Check API key for provider '{self.provider}'."
             )
-
         max_retries = 3
         base_delay = 5
 
@@ -164,18 +157,14 @@ class LLMClient:
                 if attempt > 0:
                     time.sleep(base_delay * (2 ** (attempt - 1)))
                 else:
-                    time.sleep(1)  # Small initial pause
-
+                    time.sleep(1)
                 if self.provider == "gemini":
                     yield from self._stream_gemini(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
                 elif self.provider == "anthropic":
                     yield from self._stream_anthropic(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
                 elif self.provider == "openai":
                     yield from self._stream_openai(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
-
-                # If successful, exit the retry loop
                 break
-
             except Exception as e:
                 err_msg = str(e)
                 if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg
@@ -189,24 +178,20 @@ class LLMClient:
                         on_retry(f"API Rate Limit hit. Retrying attempt {attempt+1} of {max_retries}...")
                     if attempt == max_retries - 1:
                         raise RuntimeError(
-                            f"Maximum retries ({max_retries}) exceeded for {self.provider} stream(). Last error: {e}"
+                            f"Maximum retries ({max_retries}) exceeded for {self.provider} stream(). "
+                            f"Last error: {e}"
                         ) from e
                     continue
-
                 logger.error(f"Error streaming {self.provider} API: {e}")
                 raise
 
     def chat(self, system_prompt: str, messages: List[dict], temperature: float = 0.3,
              max_tokens: int = 2048, on_retry=None) -> str:
-        """
-        Continues a conversation using a list of messages: [{"role": "user"|"model", "content": "..."}]
-        Raises RuntimeError if the client is not initialized or retries are exhausted.
-        """
+        """Continue a multi-turn conversation."""
         if not self.client:
             raise RuntimeError(
                 f"LLM client not initialized. Check API key for provider '{self.provider}'."
             )
-
         max_retries = 3
         base_delay = 5
         last_exc: Exception = RuntimeError("Unknown error")
@@ -215,7 +200,6 @@ class LLMClient:
             try:
                 if attempt > 0:
                     time.sleep(base_delay * (2 ** (attempt - 1)))
-
                 if self.provider == "gemini":
                     return self._chat_gemini(system_prompt, messages, temperature, max_tokens)
                 elif self.provider == "anthropic":
@@ -239,11 +223,12 @@ class LLMClient:
                 raise
 
         raise RuntimeError(
-            f"Maximum retries ({max_retries}) exceeded for {self.provider} chat(). Last error: {last_exc}"
+            f"Maximum retries ({max_retries}) exceeded for {self.provider} chat(). "
+            f"Last error: {last_exc}"
         ) from last_exc
 
     # -------------------------------------------------------------------------
-    # Provider-specific call implementations
+    # Provider-specific implementations
     # -------------------------------------------------------------------------
 
     def _call_gemini(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
@@ -279,16 +264,12 @@ class LLMClient:
             call_kwargs["tools"] = kwargs["tools"]
         if "tool_choice" in kwargs:
             call_kwargs["tool_choice"] = kwargs["tool_choice"]
-
         message = self.client.messages.create(**call_kwargs)
-
-        # If a tool was forced, return its input as a JSON string
         if "tools" in kwargs:
             import json
             for content in message.content:
                 if content.type == "tool_use":
                     return json.dumps(content.input)
-
         return message.content[0].text
 
     def _call_openai(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
@@ -326,10 +307,11 @@ class LLMClient:
                 yield chunk.text
 
     def _stream_anthropic(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
-        _rate_limiter.wait("anthropic")
-        # When tool_choice is forced (structured output via tool-use), the response is a
-        # tool_use block with no text tokens — streaming yields nothing useful.
+        # FIX 8 — When tool_choice is forced, the Anthropic response is a tool_use
+        # block with no text tokens; stream.text_stream yields nothing and the caller
+        # receives an empty string that fails json.loads("").
         # Fall back to a single non-streaming call and yield the result once.
+        _rate_limiter.wait("anthropic")
         if "tools" in kwargs and "tool_choice" in kwargs:
             result = self._call_anthropic(sys_prompt, user_prompt, temperature, max_tokens, **kwargs)
             yield result
@@ -421,97 +403,3 @@ class LLMClient:
             max_tokens=max_tokens,
         )
         return response.choices[0].message.content
-
-
-# ============================================================================
-# QUICK SMOKE-TEST  -  python agents/llm_client.py
-# ============================================================================
-
-if __name__ == "__main__":
-    import os
-    import sys
-    import time
-
-    # Ensure project root is on path
-    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if _root not in sys.path:
-        sys.path.insert(0, _root)
-
-    # Load .env from project root regardless of CWD
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv(usecwd=False), override=True)  # .env wins over stale shell vars
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-    )
-
-    # Strip inline comments (e.g. 'openai  # gemini | openai | ...') before use
-    provider = os.getenv("LLM_PROVIDER", "gemini").split("#")[0].strip().lower()
-    model    = os.getenv("LLM_MODEL_NAME") or None
-    key_map  = {
-        "gemini":    os.getenv("GEMINI_API_KEY"),
-        "openai":    os.getenv("OPENAI_API_KEY"),
-        "anthropic": os.getenv("ANTHROPIC_API_KEY"),
-    }
-    api_key = key_map.get(provider)
-
-    SEP = "=" * 60
-    print("")
-    print(SEP)
-    print("  LLMClient smoke-test")
-    print(f"  Provider : {provider}")
-    print(f"  Model    : {model or '(default)'}")
-    print(f"  API key  : {'[OK]' if api_key else '[MISSING]'}")
-    print(SEP)
-    print("")
-
-    if not api_key:
-        print(f"[WARNING] No API key found for provider '{provider}'.")
-        print(f"          Set {provider.upper()}_API_KEY in your .env or environment.")
-        print("          Skipping live API tests.")
-        sys.exit(0)
-
-    client = LLMClient(api_key=api_key, provider=provider, model=model)
-
-    SYS  = "You are a concise assistant. Reply in one sentence only."
-    USER = "What is the capital of France?"
-
-    # -- Test 1: generate() --------------------------------------------------
-    print("-- Test 1: generate() -----------------------------------------")
-    t0 = time.perf_counter()
-    result = client.generate(system_prompt=SYS, user_prompt=USER, max_tokens=64)
-    elapsed = time.perf_counter() - t0
-    print(f"   Response ({elapsed:.2f}s): {result!r}")
-    print("")
-
-    # -- Test 2: generate_stream() -------------------------------------------
-    print("-- Test 2: generate_stream() ----------------------------------")
-    t0 = time.perf_counter()
-    chunks = []
-    print("   Chunks: ", end="", flush=True)
-    for chunk in client.generate_stream(system_prompt=SYS, user_prompt=USER, max_tokens=64):
-        print(".", end="", flush=True)
-        chunks.append(chunk)
-    elapsed = time.perf_counter() - t0
-    full = "".join(chunks)
-    print(f"\n   Full ({elapsed:.2f}s): {full!r}")
-    print("")
-
-    # -- Test 3: chat() ------------------------------------------------------
-    print("-- Test 3: chat() ---------------------------------------------")
-    msgs = [
-        {"role": "user",      "content": "What is 2 + 2?"},
-        {"role": "assistant", "content": "4"},
-        {"role": "user",      "content": "And 4 + 4?"},
-    ]
-    t0 = time.perf_counter()
-    result = client.chat(system_prompt=SYS, messages=msgs, max_tokens=32)
-    elapsed = time.perf_counter() - t0
-    print(f"   Response ({elapsed:.2f}s): {result!r}")
-    print("")
-
-    print(SEP)
-    print("  All tests passed [PASS]")
-    print(SEP)
-    print("")

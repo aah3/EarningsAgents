@@ -1,6 +1,6 @@
 import os
 from datetime import date
-from config.settings import load_config, CompanyData
+from settings import load_config, CompanyData
 from agents.huggingface_agents import ThreeAgentSystem
 
 def test_user_analysis():

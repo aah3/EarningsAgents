@@ -9,7 +9,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from pipeline import EarningsPipeline
-from config.settings import load_config
+from settings import load_config
 from database.db import Session, engine
 from database.models import User, Prediction
 from sqlmodel import select

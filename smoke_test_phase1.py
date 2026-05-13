@@ -17,7 +17,7 @@ from datetime import date
 
 # ─── 1. Config field ────────────────────────────────────────────────────────
 
-from config.settings import AgentConfig, PipelineConfig, load_config
+from settings import AgentConfig, PipelineConfig, load_config
 
 cfg = AgentConfig()
 assert hasattr(cfg, "react_max_turns"), "AgentConfig is missing react_max_turns"
@@ -72,7 +72,7 @@ print("[PASS] ThreeAgentSystem carries use_react and react_max_turns from config
 
 # ─── 5. AgentToolRegistry dispatch still works ──────────────────────────────
 
-from config.settings import CompanyData, ReportTime
+from settings import CompanyData, ReportTime
 from agents.agent_tools import AgentToolRegistry
 
 company = CompanyData(

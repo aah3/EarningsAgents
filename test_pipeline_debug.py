@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import date
 from pipeline import EarningsPipeline
-from config.settings import load_config
+from settings import load_config
 
 if __name__ == "__main__":
     try:

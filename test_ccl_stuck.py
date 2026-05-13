@@ -2,7 +2,7 @@ import sys
 import logging
 from datetime import date
 from pipeline import EarningsPipeline
-from config.settings import load_config
+from settings import load_config
 
 logging.basicConfig(level=logging.DEBUG)
 

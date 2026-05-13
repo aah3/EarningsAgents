@@ -23,7 +23,7 @@ from datetime import date
 
 # ─── 1. AgentConfig field ───────────────────────────────────────────────────
 
-from config.settings import AgentConfig, load_config, EarningsPrediction, PredictionDirection
+from settings import AgentConfig, load_config, EarningsPrediction, PredictionDirection
 
 cfg = AgentConfig()
 assert hasattr(cfg, "enable_rebuttals"), "AgentConfig is missing enable_rebuttals"

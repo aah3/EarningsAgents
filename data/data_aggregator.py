@@ -68,6 +68,22 @@ try:
 except (ImportError, ValueError):
     from finviz_source import FinvizDataSource
 
+try:
+    from .resolvers import ReportTimeResolver, FiscalPeriodResolver
+except (ImportError, ValueError):
+    from resolvers import ReportTimeResolver, FiscalPeriodResolver
+
+try:
+    from .provider_chain import ProviderChain
+except (ImportError, ValueError):
+    try:
+        from provider_chain import ProviderChain
+    except (ImportError, ValueError):
+        import sys, os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from provider_chain import ProviderChain
+
+
 
 class DataAggregator:
     """
@@ -219,23 +235,7 @@ class DataAggregator:
             return obj.__dict__
         return str(obj)
     
-    def _chain(self, providers: list, empty_default=None):
-        """
-        Try each (source, method_name, *args) tuple in order.
-        Returns the first non-None, non-empty result.
-        Falls back to empty_default if all providers fail or return empty.
-        """
-        for entry in providers:
-            source, method_name, *args = entry
-            if source is None:
-                continue
-            try:
-                result = getattr(source, method_name)(*args)
-                if result is not None and result != [] and result != {}:
-                    return result
-            except Exception as e:
-                self.logger.warning(f"{type(source).__name__}.{method_name} failed: {e}")
-        return empty_default
+
 
     def get_company_data(
         self,
@@ -260,13 +260,16 @@ class DataAggregator:
         
         self.logger.info(f"Aggregating data for {ticker}")
         
+        chain = ProviderChain(self.logger)
+        
         # Get company info
-        company_info = self._chain([
-            (self.yahoo,        'get_company_info',  ticker),
-            (self.alphavantage, 'get_company_info',  ticker),
+        result = chain.fetch("company_info", [
+            ("yahoo",         lambda: self.yahoo.get_company_info(ticker) if self.yahoo else None),
+            ("alpha_vantage", lambda: self.alphavantage.get_company_info(ticker) if self.alphavantage else None),
         ])
+        company_info = result.value
         if not company_info:
-            raise ValueError(f"Could not find company info for {ticker}")
+            raise ValueError(f"Could not find company info for {ticker} — tried: {result.attempted}")
             
         # Enrich report_time and fiscal fields from Yahoo calendar
         calendar_event = None
@@ -277,21 +280,21 @@ class DataAggregator:
                 self.logger.warning(f"Could not fetch calendar for {ticker}: {e}")
         
         # Get consensus estimates 
-        consensus = self._chain([
-            (self.yahoo,        'get_consensus_estimates', ticker),
-            (self.alphavantage, 'get_consensus_estimates', ticker),
+        result = chain.fetch("consensus_estimates", [
+            ("yahoo",         lambda: self.yahoo.get_consensus_estimates(ticker) if self.yahoo else None),
+            ("alpha_vantage", lambda: self.alphavantage.get_consensus_estimates(ticker) if self.alphavantage else None),
         ])
-        if not consensus:
-            consensus = ConsensusEstimate(
-                eps_mean=0.0, eps_median=0.0, eps_high=0.0, eps_low=0.0,
-                eps_std=0.0, num_analysts=0, as_of_date=date.today()
-            )
+        consensus = result.value or ConsensusEstimate(
+            eps_mean=0.0, eps_median=0.0, eps_high=0.0, eps_low=0.0,
+            eps_std=0.0, num_analysts=0, as_of_date=date.today()
+        )
         
         # Get historical earnings
-        historical_list = self._chain([
-            (self.yahoo,        'get_historical_earnings', ticker),
-            (self.alphavantage, 'get_historical_earnings', ticker),
-        ], empty_default=[])
+        result = chain.fetch("historical_earnings", [
+            ("yahoo",         lambda: self.yahoo.get_historical_earnings(ticker) if self.yahoo else None),
+            ("alpha_vantage", lambda: self.alphavantage.get_historical_earnings(ticker) if self.alphavantage else None),
+        ])
+        historical_list = result.value or []
         historical = [self._to_dict(h) for h in historical_list]
         
         # Calculate beat rate & avg surprise
@@ -305,24 +308,28 @@ class DataAggregator:
             avg_surprise = sum(getattr(h, 'surprise_pct', 0) if not isinstance(h, dict) else h.get('surprise_pct', 0) for h in recent) / len(recent) if recent else 0.0
         
         # Get price data (Yahoo)
-        price_data = None
-        if self.yahoo:
-            price_data = self.yahoo.get_price_data(ticker)
-        elif self.alphavantage:
-            price_data = self.alphavantage.get_price_data(ticker)
+        result = chain.fetch("price_data", [
+            ("yahoo",         lambda: self.yahoo.get_price_data(ticker) if self.yahoo else None),
+            ("alpha_vantage", lambda: self.alphavantage.get_price_data(ticker) if self.alphavantage else None),
+        ])
+        price_data = result.value
         
         # Get estimate revisions
-        rev_list = self._chain([
-            (self.yahoo,        'get_estimate_revisions', ticker, 90),
-            (self.alphavantage, 'get_estimate_revisions', ticker, 90),
-        ], empty_default=[])
+        result = chain.fetch("estimate_revisions", [
+            ("yahoo",         lambda: self.yahoo.get_estimate_revisions(ticker, 90)
+                                      if self.yahoo and hasattr(self.yahoo, "get_estimate_revisions") else None),
+            ("alpha_vantage", lambda: self.alphavantage.get_estimate_revisions(ticker, 90)
+                                      if self.alphavantage else None),
+        ])
+        rev_list = result.value or []
         revisions = [self._to_dict(r) for r in rev_list]
         
         # Get analyst recommendations (Yahoo)
-        recommendations = []
-        if self.yahoo:
-            rec_list = self.yahoo.get_analyst_recommendations(ticker, 90)
-            recommendations = [self._to_dict(r) for r in rec_list]
+        result = chain.fetch("analyst_recommendations", [
+            ("yahoo", lambda: self.yahoo.get_analyst_recommendations(ticker, 90) if self.yahoo else None),
+        ])
+        rec_list = result.value or []
+        recommendations = [self._to_dict(r) for r in rec_list]
             
         # Get options features
         options_features = None
@@ -435,6 +442,33 @@ class DataAggregator:
             company_facts=company_facts,
         )
         
+        # ── Resolve data quality fields ──────────────────────────────────────────
+        rt_resolver = ReportTimeResolver(
+            yahoo_source=self.yahoo,
+            finviz_source=self.finviz,
+        )
+        rt_result = rt_resolver.resolve(ticker, report_date)
+        company_data.report_time = rt_result.value
+        if rt_result.confidence == "low":
+            self.logger.warning(
+                f"{ticker}: report_time resolved via {rt_result.source} "
+                f"with low confidence → {rt_result.value}"
+            )
+
+        fp_resolver = FiscalPeriodResolver(
+            alphavantage_source=self.alphavantage,
+            yahoo_source=self.yahoo,
+            sec_source=self.sec,
+        )
+        fp_result = fp_resolver.resolve(ticker, report_date)
+        company_data.fiscal_quarter = fp_result.fiscal_quarter
+        company_data.fiscal_year = fp_result.fiscal_year
+        if fp_result.confidence == "low":
+            self.logger.warning(
+                f"{ticker}: fiscal period resolved via {fp_result.source} "
+                f"with low confidence → {fp_result.fiscal_quarter} FY{fp_result.fiscal_year}"
+            )
+
         return company_data
     
     def get_news_with_sentiment(

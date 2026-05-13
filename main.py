@@ -21,7 +21,7 @@ import logging
 from datetime import date, datetime
 from pathlib import Path
 
-from config.settings import PipelineConfig, AgentConfig, DataSourceConfig
+from settings import PipelineConfig, AgentConfig, DataSourceConfig
 from pipeline import EarningsPipeline
 
 

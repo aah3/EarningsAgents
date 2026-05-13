@@ -1,5 +1,5 @@
 import logging
-from config.settings import DataSourceConfig
+from settings import DataSourceConfig
 from data.sec_edgar import SECEdgarDataSource
 import re
 

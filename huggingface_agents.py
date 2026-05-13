@@ -13,42 +13,20 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import date, datetime
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-# ── Path bootstrap (allows `python agents/huggingface_agents.py` to work) ──────
-# This file lives in agents/; the project root is one level up.
-# Adding both directories ensures all sibling imports resolve correctly.
-_AGENTS_DIR   = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.dirname(_AGENTS_DIR)
-for _p in (_PROJECT_ROOT, _AGENTS_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-try:
-    from settings import (                     # project-root flat shim (test path)
-        AgentConfig,
-        CompanyData,
-        NewsArticle,
-        EarningsPrediction,
-        PredictionDirection,
-    )
-except ImportError:
-    from config.settings import (              # legacy package layout fallback
-        AgentConfig,
-        CompanyData,
-        NewsArticle,
-        EarningsPrediction,
-        PredictionDirection,
-    )
-try:
-    from llm_client import LLMClient           # flat-layout / project-root shim
-except ImportError:
-    try:
-        from agents.llm_client import LLMClient    # when imported as a package
-    except ImportError:
-        from .llm_client import LLMClient          # relative package import
+# Flat-layout root copy: settings, llm_client, and agent_tools are all siblings.
+from settings import (       # FIX 4 — direct flat import, no sub-package
+    AgentConfig,
+    CompanyData,
+    NewsArticle,
+    EarningsPrediction,
+    PredictionDirection,
+)
+from llm_client import LLMClient   # FIX 5 — direct flat import
 
 
 # ============================================================================
@@ -306,6 +284,7 @@ class BaseAgent:
             provider=config.provider,
             model=config.model_name
         )
+        self.sec_source = None   # set externally when SEC EDGAR is available
     
     def initialize(self) -> bool:
         """Initialize the agent."""
@@ -586,13 +565,10 @@ Stop calling tools once you have enough information to form a confident predicti
         AgentResponse
             Parsed and validated agent prediction.
         """
-        try:
-            from agent_tools import AgentToolRegistry           # flat-layout (normal case)
-        except ImportError:
-            from agents.agent_tools import AgentToolRegistry    # legacy package layout fallback
+        from agent_tools import AgentToolRegistry   # FIX 5 — flat layout
 
         # 1. Build registry and tool descriptions
-        registry = AgentToolRegistry(company, news)
+        registry = AgentToolRegistry(company, news, sec_source=self.sec_source)
         tool_descriptions = registry.get_tool_descriptions()
 
         # 2. Build ReAct system prompt
@@ -1046,6 +1022,7 @@ class ThreeAgentSystem:
         self.bear_agent = BearAgent(config)
         self.quant_agent = QuantAgent(config)
         self.consensus_agent = ConsensusAgent(config)
+        self.sec_source = None
     
     def initialize(self) -> None:
         """Initialize all agents."""
@@ -1123,11 +1100,8 @@ class ThreeAgentSystem:
 
         def run_agent(agent, agent_name: str) -> AgentResponse:
             if react_mode:
-                try:
-                    from agent_tools import AgentToolRegistry           # flat-layout (normal case)
-                except ImportError:
-                    from agents.agent_tools import AgentToolRegistry    # legacy package layout fallback
-                registry = AgentToolRegistry(company, news)
+                from agent_tools import AgentToolRegistry   # FIX 5 — flat layout
+                registry = AgentToolRegistry(company, news, sec_source=self.sec_source)
                 original_dispatch = registry.dispatch
 
                 def traced_dispatch(tool_name, tool_args):
@@ -1271,7 +1245,6 @@ class ThreeAgentSystem:
                     self.bull_agent, "Bull-Rebuttal",
                     bear_response, BULL_REBUTTAL_PROMPT,
                 )
-                time.sleep(1.2)
                 future_bear_rebuttal = executor.submit(
                     run_rebuttal,
                     self.bear_agent, "Bear-Rebuttal",
@@ -1385,10 +1358,7 @@ class ThreeAgentSystem:
 if __name__ == "__main__":
     # Test script for debugging agents directly.
     # Run from the project root:  python agents/huggingface_agents.py
-    try:
-        from settings import load_config, CompanyData, NewsArticle, ReportTime, PredictionDirection
-    except ImportError:
-        from config.settings import load_config, CompanyData, NewsArticle, ReportTime, PredictionDirection
+    from settings import load_config, CompanyData, NewsArticle, ReportTime, PredictionDirection
     
     # Configure logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

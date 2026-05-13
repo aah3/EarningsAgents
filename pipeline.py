@@ -2,7 +2,6 @@
 Main Pipeline for Earnings Prediction POC.
 
 Orchestrates:
-- Bloomberg data fetching
 - Three-agent analysis (Bull, Bear, Quant + Consensus)
 - Output writing
 """
@@ -11,7 +10,7 @@ from datetime import date, timedelta
 from typing import List, Dict, Any, Optional
 import logging
 
-from config.settings import (
+from settings import (
     PipelineConfig,
     CompanyData,
     NewsArticle,
@@ -77,6 +76,11 @@ class EarningsPipeline:
         self.logger.info("Initializing Hugging Face agents...")
         self.agent_system = ThreeAgentSystem(self.config.agent)
         self.agent_system.initialize()
+        
+        # Wire SEC EDGAR source into agent system when available
+        self.agent_system.sec_source = getattr(self.aggregator, "sec", None)
+        sec_status = "enabled" if self.agent_system.sec_source else "disabled"
+        self.logger.info(f"SEC EDGAR tool-calling: {sec_status}")
         
         # Initialize output writer
         self.output_writer = OutputWriter(str(self.config.output_dir))

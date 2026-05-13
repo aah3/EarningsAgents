@@ -2,7 +2,7 @@ import json
 import logging
 logging.basicConfig(level=logging.ERROR)
 from data.sec_edgar import SECEdgarDataSource
-from config.settings import DataSourceConfig
+from settings import DataSourceConfig
 
 sec = SECEdgarDataSource(DataSourceConfig(rate_limit_calls=10, rate_limit_period=1), 'Test/1.0 (test@example.com)')
 sec.connect()
