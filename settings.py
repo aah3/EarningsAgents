@@ -171,7 +171,7 @@ def load_config() -> PipelineConfig:
     import os
     from dotenv import load_dotenv, find_dotenv
     dotenv_path = find_dotenv(usecwd=False)
-    load_dotenv(dotenv_path, override=False)
+    load_dotenv(dotenv_path, override=True)
 
     provider = os.getenv("LLM_PROVIDER", "gemini").split("#")[0].strip().lower()
 

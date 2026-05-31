@@ -4,7 +4,7 @@ import argparse
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 def test_gemini(api_key, model=None):
     try:

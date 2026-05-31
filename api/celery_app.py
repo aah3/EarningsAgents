@@ -3,7 +3,7 @@ from celery import Celery
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 # ─── Broker / Backend ────────────────────────────────────────────────────────
 
