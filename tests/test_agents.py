@@ -1,13 +1,12 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from datetime import date
-from config.settings import AgentConfig, CompanyData, PredictionDirection, EarningsPrediction
+from config.settings import AgentConfig, CompanyData, EarningsPrediction
 
 from agents.huggingface_agents import (
     BaseAgent, BullAgent, BearAgent, QuantAgent, ConsensusAgent, ThreeAgentSystem,
-    AgentResponse, AgentResponseError, ConsensusError
+    AgentResponse, AgentResponseError, ConsensusError, LLMClient, PredictionDirection
 )
-from agents.llm_client import LLMClient
 
 @pytest.fixture
 def base_config():

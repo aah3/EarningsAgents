@@ -447,3 +447,31 @@ def safe_int(value: Any, default: int = 0) -> int:
         return int(value) if value is not None else default
     except (ValueError, TypeError):
         return default
+
+
+def create_retry_session(
+    max_retries: int = 3,
+    backoff_factor: float = 0.5,
+    status_forcelist: tuple = (429, 500, 502, 503, 504)
+) -> "requests.Session":
+    """
+    Create a requests Session with HTTP retry middleware for transient status codes.
+    """
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util import Retry
+
+    session = requests.Session()
+    
+    retry_strategy = Retry(
+        total=max_retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+        raise_on_status=False  # Allow raise_for_status() to handle failures downstream
+    )
+    
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    return session

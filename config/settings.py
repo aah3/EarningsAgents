@@ -36,7 +36,7 @@ class BloombergConfig:
 class AgentConfig:
     """Agent configuration for LLMs."""
     provider: str = "gemini"  # or "anthropic", "openai"
-    model_name: str = "gemini-2.0-flash"
+    model_name: str = "gemini-flash-latest"
     api_key: Optional[str] = None
     temperature: float = 0.3
     max_tokens: int = 2048
@@ -204,7 +204,7 @@ def load_config() -> PipelineConfig:
         ),
         agent=AgentConfig(
             provider=provider,
-            model_name=os.getenv("LLM_MODEL_NAME") or "gemini-2.5-flash",
+            model_name=os.getenv("LLM_MODEL_NAME") or "gemini-flash-latest",
             api_key=agent_api_key,
             use_react=os.getenv("USE_REACT", "false").lower() in ("1", "true", "yes"),
             react_max_turns=int(os.getenv("USE_REACT_MAX_TURNS", "6")),

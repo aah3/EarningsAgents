@@ -70,11 +70,13 @@ class ReportTimeResolver:
         return ReportTimeResult(value=ReportTime.UNKNOWN, source="inferred", confidence="low")
 
     def _scrape_finviz_report_time(self, ticker: str) -> Optional['ReportTime']:
-        import requests
+        from data.base import create_retry_session
         import re
         headers = {'User-Agent': 'Mozilla/5.0'}
+        session = None
         try:
-            resp = requests.get(f"https://finviz.com/quote.ashx?t={ticker}", headers=headers, timeout=5)
+            session = create_retry_session(max_retries=3)
+            resp = session.get(f"https://finviz.com/quote.ashx?t={ticker}", headers=headers, timeout=5)
             if resp.status_code == 200:
                 match = re.search(r'Earnings.*?class="snapshot-td2".*?>(.*?)<', resp.text, re.IGNORECASE)
                 if match:
@@ -85,6 +87,9 @@ class ReportTimeResolver:
                         return ReportTime.BMO
         except Exception:
             pass
+        finally:
+            if session:
+                session.close()
         return None
 
 

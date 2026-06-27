@@ -84,7 +84,14 @@ class NewsAPIDataSource:
             if not self.config.api_key:
                 raise ValueError("NewsAPI requires an API key")
             
-            self.session = requests.Session()
+            try:
+                from .base import create_retry_session
+            except (ImportError, ValueError):
+                from base import create_retry_session
+
+            self.session = create_retry_session(
+                max_retries=getattr(self.config, 'max_retries', 3)
+            )
             self.session.headers.update({
                 'Authorization': f'Bearer {self.config.api_key}'
             })
@@ -283,7 +290,14 @@ class AlphaVantageNewsDataSource:
             if not self.config.api_key:
                 raise ValueError("Alpha Vantage requires an API key")
             
-            self.session = requests.Session()
+            try:
+                from .base import create_retry_session
+            except (ImportError, ValueError):
+                from base import create_retry_session
+
+            self.session = create_retry_session(
+                max_retries=getattr(self.config, 'max_retries', 3)
+            )
             self._connected = True
             self.logger.info("Alpha Vantage News initialized")
             return True

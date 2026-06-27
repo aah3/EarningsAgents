@@ -131,9 +131,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+    # Reference: https://aistudio.google.com/
     # Powershell
     # python test_gemini.py
     # python test_gemini.py --provider deepseek
     # python test_gemini.py --provider anthropic
     # python test_gemini.py --provider gemini --model gemini-2.5-flash
+    # python test_gemini.py --provider gemini --model gemini-3.1-flash-lite
 

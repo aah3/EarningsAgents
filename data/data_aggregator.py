@@ -532,7 +532,7 @@ class DataAggregator:
                 self.logger.warning(f"NewsAPI failed: {e}")
         
         # Sort by date (most recent first)
-        all_articles.sort(key=lambda x: x.published_at, reverse=True)
+        all_articles.sort(key=lambda x: x.published_at.replace(tzinfo=None) if x.published_at.tzinfo else x.published_at, reverse=True)
         
         return all_articles[:max_articles]
     

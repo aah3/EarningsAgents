@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import date, datetime
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
@@ -49,6 +50,104 @@ except ImportError:
         from agents.llm_client import LLMClient    # when imported as a package
     except ImportError:
         from .llm_client import LLMClient          # relative package import
+
+
+# ============================================================================
+# UTILITIES
+# ============================================================================
+
+def clean_json_response(response: str) -> str:
+    """Extract and sanitize JSON from response string, with robust error correction."""
+    if not response:
+        return ""
+    s = response.strip()
+    # Strip markdown code blocks if present
+    if "```" in s:
+        import re
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", s, re.DOTALL)
+        if match:
+            s = match.group(1).strip()
+            
+    # Locate outermost braces if start/end are not braces
+    if not (s.startswith("{") and s.endswith("}")):
+        first_brace = s.find("{")
+        last_brace = s.rfind("}")
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            s = s[first_brace:last_brace + 1].strip()
+
+    # Try loading JSON. If it works, return as is.
+    try:
+        import json
+        json.loads(s)
+        return s
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt repairs
+    import re
+    
+    # 1. Remove trailing commas in objects and arrays
+    s = re.sub(r',\s*\}', '}', s)
+    s = re.sub(r',\s*\]', ']', s)
+    
+    # 2. Escape unescaped control characters and fix nested double quotes inside string values.
+    in_string = False
+    escape = False
+    repaired_chars = []
+    i = 0
+    n = len(s)
+    while i < n:
+        char = s[i]
+        if escape:
+            repaired_chars.append(char)
+            escape = False
+            i += 1
+            continue
+        if char == '\\':
+            repaired_chars.append(char)
+            escape = True
+            i += 1
+            continue
+        if char == '"':
+            is_closing_or_opening = True
+            if in_string:
+                # Look ahead for optional whitespace then structural chars
+                j = i + 1
+                while j < n and s[j].isspace():
+                    j += 1
+                if j < n and s[j] not in (',', '}', ']', ':'):
+                    is_closing_or_opening = False
+            else:
+                # Look behind for structural chars
+                j = i - 1
+                while j >= 0 and s[j].isspace():
+                    j -= 1
+                if j >= 0 and s[j] not in ('{', '[', ':', ','):
+                    is_closing_or_opening = False
+            
+            if is_closing_or_opening:
+                in_string = not in_string
+                repaired_chars.append(char)
+            else:
+                repaired_chars.append('\\"')
+            i += 1
+            continue
+            
+        if in_string:
+            if char == '\n':
+                repaired_chars.append('\\n')
+            elif char == '\t':
+                repaired_chars.append('\\t')
+            elif char == '\r':
+                repaired_chars.append('\\r')
+            else:
+                repaired_chars.append(char)
+        else:
+            repaired_chars.append(char)
+        i += 1
+        
+    s = "".join(repaired_chars)
+    return s
 
 
 # ============================================================================
@@ -627,7 +726,7 @@ Stop calling tools once you have enough information to form a confident predicti
 
             # Parse the response — must be valid JSON
             try:
-                parsed = json.loads(response)
+                parsed = json.loads(clean_json_response(response))
             except json.JSONDecodeError as exc:
                 raise AgentResponseError(
                     agent=self.__class__.__name__,
@@ -757,7 +856,7 @@ Stop calling tools once you have enough information to form a confident predicti
     def _parse_response(self, response: str) -> AgentResponse:
         """Parse JSON response from model directly into typed AgentResponse."""
         try:
-            data = json.loads(response)
+            data = json.loads(clean_json_response(response))
 
             # --- 1. Validate required top-level keys ---
             required_keys = AGENT_RESPONSE_SCHEMA["required"]
@@ -818,7 +917,10 @@ Stop calling tools once you have enough information to form a confident predicti
         except AgentResponseError:
             raise
         except Exception as e:
-            raise AgentResponseError(agent=self.__class__.__name__, cause=e)
+            raise AgentResponseError(
+                agent=self.__class__.__name__,
+                cause=Exception(f"{e}. Raw response (first 300 chars): {response[:300]!r}")
+            )
 
     def rebuttal_analyze(
         self,
@@ -1039,7 +1141,7 @@ class ThreeAgentSystem:
     
     def __init__(self, config: AgentConfig, enable_rebuttals: bool = False):
         self.config = config
-        self.enable_rebuttals = enable_rebuttals
+        self.enable_rebuttals = enable_rebuttals or getattr(config, "enable_rebuttals", False)
         self.logger = logging.getLogger(self.__class__.__name__)
         
         self.bull_agent = BullAgent(config)
@@ -1067,6 +1169,50 @@ class ThreeAgentSystem:
         user_analysis: Optional[str] = None
     ) -> EarningsPrediction:
         """Run full three-agent prediction with optional rebuttal pass.
+        This wrapper runs the async implementation on the event loop, ensuring
+        compatibility with running event loops (FastAPI) and Celery worker threads.
+        """
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            from concurrent.futures import Future
+            import threading
+            
+            future = Future()
+            def run_in_thread():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result = new_loop.run_until_complete(
+                        self._predict_async(company, news, prediction_date, task_id, user_analysis)
+                    )
+                    future.set_result(result)
+                except Exception as e:
+                    future.set_exception(e)
+                finally:
+                    new_loop.close()
+                    
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            return future.result()
+        else:
+            return asyncio.run(
+                self._predict_async(company, news, prediction_date, task_id, user_analysis)
+            )
+
+    async def _predict_async(
+        self,
+        company: CompanyData,
+        news: List[NewsArticle],
+        prediction_date: Optional[date] = None,
+        task_id: Optional[str] = None,
+        user_analysis: Optional[str] = None
+    ) -> EarningsPrediction:
+        """Run full three-agent prediction asynchronously.
 
         Execution flow
         --------------
@@ -1086,13 +1232,12 @@ class ThreeAgentSystem:
         ReAct tool-loop mode composes with the rebuttal pass — they are
         independent flags that can both be enabled simultaneously.
         """
-        from concurrent.futures import ThreadPoolExecutor
-
         prediction_date = prediction_date or date.today()
 
         import redis
         import json
         import os
+        import asyncio
         r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=5)
 
         def publish(msg: str, agent: str = "System", msg_type: str = "status"):
@@ -1165,7 +1310,7 @@ class ThreeAgentSystem:
                     messages.append({"role": "assistant", "content": response})
 
                     try:
-                        parsed = json.loads(response)
+                        parsed = json.loads(clean_json_response(response))
                     except json.JSONDecodeError as exc:
                         raise AgentResponseError(agent=agent.__class__.__name__, cause=exc)
 
@@ -1231,31 +1376,31 @@ class ThreeAgentSystem:
         if user_analysis:
             publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst", "status")
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            future_bull  = executor.submit(run_agent, self.bull_agent,  "Bull")
-            future_bear  = executor.submit(run_agent, self.bear_agent,  "Bear")
-            future_quant = executor.submit(run_agent, self.quant_agent, "Quant")
+        loop = asyncio.get_running_loop()
 
-            bull_response = None
-            try:
-                bull_response = future_bull.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Bull agent error: {e}")
-                publish(f"Bull agent failed: {e.cause}", "System", "status")
+        # Run agent executions concurrently in threadpool executors via asyncio
+        tasks = [
+            loop.run_in_executor(None, lambda: run_agent(self.bull_agent, "Bull")),
+            loop.run_in_executor(None, lambda: run_agent(self.bear_agent, "Bear")),
+            loop.run_in_executor(None, lambda: run_agent(self.quant_agent, "Quant"))
+        ]
 
-            bear_response = None
-            try:
-                bear_response = future_bear.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Bear agent error: {e}")
-                publish(f"Bear agent failed: {e.cause}", "System", "status")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            quant_response = None
-            try:
-                quant_response = future_quant.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Quant agent error: {e}")
-                publish(f"Quant agent failed: {e.cause}", "System", "status")
+        bull_response = results[0] if not isinstance(results[0], Exception) else None
+        if isinstance(results[0], Exception):
+            self.logger.error(f"Bull agent error: {results[0]}")
+            publish(f"Bull agent failed: {getattr(results[0], 'cause', results[0])}", "System", "status")
+
+        bear_response = results[1] if not isinstance(results[1], Exception) else None
+        if isinstance(results[1], Exception):
+            self.logger.error(f"Bear agent error: {results[1]}")
+            publish(f"Bear agent failed: {getattr(results[1], 'cause', results[1])}", "System", "status")
+
+        quant_response = results[2] if not isinstance(results[2], Exception) else None
+        if isinstance(results[2], Exception):
+            self.logger.error(f"Quant agent error: {results[2]}")
+            publish(f"Quant agent failed: {getattr(results[2], 'cause', results[2])}", "System", "status")
 
         # ================================================================
         # PASS 2 — Rebuttal cross-examination (optional)
@@ -1265,32 +1410,35 @@ class ThreeAgentSystem:
 
         if do_rebuttals and bull_response and bear_response:
             publish("Pass 2: Cross-examination rebuttal round starting...", "System", "status")
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                future_bull_rebuttal = executor.submit(
-                    run_rebuttal,
-                    self.bull_agent, "Bull-Rebuttal",
-                    bear_response, BULL_REBUTTAL_PROMPT,
-                )
-                time.sleep(1.2)
-                future_bear_rebuttal = executor.submit(
-                    run_rebuttal,
-                    self.bear_agent, "Bear-Rebuttal",
-                    bull_response, BEAR_REBUTTAL_PROMPT,
+            
+            async def run_rebuttal_delayed(agent, agent_name, opposing, rebuttal_prompt, delay):
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                return await loop.run_in_executor(
+                    None,
+                    lambda: run_rebuttal(agent, agent_name, opposing, rebuttal_prompt)
                 )
 
-                try:
-                    bull_rebuttal = future_bull_rebuttal.result()
-                    publish("Bull rebuttal complete.", "Bull-Rebuttal", "status")
-                except AgentResponseError as e:
-                    self.logger.error(f"Bull rebuttal error: {e}")
-                    publish(f"Bull rebuttal failed: {e.cause}", "System", "status")
+            rebuttal_tasks = [
+                run_rebuttal_delayed(self.bull_agent, "Bull-Rebuttal", bear_response, BULL_REBUTTAL_PROMPT, 0.0),
+                run_rebuttal_delayed(self.bear_agent, "Bear-Rebuttal", bull_response, BEAR_REBUTTAL_PROMPT, 1.2)
+            ]
 
-                try:
-                    bear_rebuttal = future_bear_rebuttal.result()
-                    publish("Bear rebuttal complete.", "Bear-Rebuttal", "status")
-                except AgentResponseError as e:
-                    self.logger.error(f"Bear rebuttal error: {e}")
-                    publish(f"Bear rebuttal failed: {e.cause}", "System", "status")
+            rebuttal_results = await asyncio.gather(*rebuttal_tasks, return_exceptions=True)
+
+            bull_rebuttal = rebuttal_results[0] if not isinstance(rebuttal_results[0], Exception) else None
+            if isinstance(rebuttal_results[0], Exception):
+                self.logger.error(f"Bull rebuttal error: {rebuttal_results[0]}")
+                publish(f"Bull rebuttal failed: {getattr(rebuttal_results[0], 'cause', rebuttal_results[0])}", "System", "status")
+            else:
+                publish("Bull rebuttal complete.", "Bull-Rebuttal", "status")
+
+            bear_rebuttal = rebuttal_results[1] if not isinstance(rebuttal_results[1], Exception) else None
+            if isinstance(rebuttal_results[1], Exception):
+                self.logger.error(f"Bear rebuttal error: {rebuttal_results[1]}")
+                publish(f"Bear rebuttal failed: {getattr(rebuttal_results[1], 'cause', rebuttal_results[1])}", "System", "status")
+            else:
+                publish("Bear rebuttal complete.", "Bear-Rebuttal", "status")
         elif do_rebuttals:
             publish(
                 "Rebuttal pass skipped: both Bull and Bear required for cross-examination.",
@@ -1303,20 +1451,23 @@ class ThreeAgentSystem:
         # ================================================================
         publish("Consensus Agent synthesizing debate for final prediction...", "System", "status")
         try:
-            consensus_response = self.consensus_agent.synthesize(
-                company,
-                bull_response,
-                bear_response,
-                quant_response,
-                user_analysis,
-                get_stream_callback("Consensus"),
-                get_status_callback("Consensus"),
-                bull_rebuttal=bull_rebuttal,
-                bear_rebuttal=bear_rebuttal,
+            consensus_response = await loop.run_in_executor(
+                None,
+                lambda: self.consensus_agent.synthesize(
+                    company,
+                    bull_response=bull_response,
+                    bear_response=bear_response,
+                    quant_response=quant_response,
+                    user_analysis=user_analysis,
+                    stream_callback=get_stream_callback("Consensus"),
+                    status_callback=get_status_callback("Consensus"),
+                    bull_rebuttal=bull_rebuttal,
+                    bear_rebuttal=bear_rebuttal,
+                )
             )
-        except AgentResponseError as e:
+        except Exception as e:
             self.logger.error(f"Consensus agent error: {e}")
-            publish(f"Consensus agent failed: {e.cause}", "System", "status")
+            publish(f"Consensus agent failed: {getattr(e, 'cause', e)}", "System", "status")
             raise e
         publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "System", "status")
 

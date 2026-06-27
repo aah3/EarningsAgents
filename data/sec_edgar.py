@@ -140,7 +140,14 @@ class SECEdgarDataSource(BaseDataSource):
         try:
             import requests
             
-            self.session = requests.Session()
+            try:
+                from .base import create_retry_session
+            except (ImportError, ValueError):
+                from base import create_retry_session
+
+            self.session = create_retry_session(
+                max_retries=getattr(self.config, 'max_retries', 3)
+            )
             self.session.headers.update({
                 'User-Agent': self.user_agent,
                 'Accept-Encoding': 'gzip, deflate'
