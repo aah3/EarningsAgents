@@ -1514,7 +1514,7 @@ class ThreeAgentSystem:
             report_date=company.report_date,
             prediction_date=prediction_date,
             direction=consensus_response.direction,
-            confidence=consensus_response.confidence,
+            confidence=consensus_response.confidence / 100.0 if consensus_response.confidence > 1.0 else consensus_response.confidence,
             expected_price_move=consensus_response.expected_price_move,
             move_vs_implied=consensus_response.move_vs_implied,
             guidance_expectation=consensus_response.guidance_expectation,
@@ -1530,6 +1530,7 @@ class ThreeAgentSystem:
             },
             debate_summary=debate_summary,
             rebuttal_summary=rebuttal_summary,
+            options_features=company.options_features,
         )
 
 
@@ -1589,7 +1590,7 @@ if __name__ == "__main__":
         print("\n" + "="*50)
         print(f"PREDICTION FOR {prediction.ticker}")
         print(f"Direction: {prediction.direction.value.upper()}")
-        print(f"Confidence: {prediction.confidence:.1f}%")
+        print(f"Confidence: {prediction.confidence * 100:.1f}%")
         print(f"Reasoning: {prediction.reasoning_summary[:200]}...")
         print("="*50 + "\n")
         

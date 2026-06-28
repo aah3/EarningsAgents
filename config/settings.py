@@ -39,7 +39,7 @@ class AgentConfig:
     model_name: str = "gemini-flash-latest"
     api_key: Optional[str] = None
     temperature: float = 0.3
-    max_tokens: int = 2048
+    max_tokens: int = 8192
     use_local: bool = False
     use_react: bool = False           # when True, analyze() delegates to _react_analyze()
     react_max_turns: int = 6          # maximum tool-call turns per ReAct loop
@@ -170,6 +170,7 @@ class EarningsPrediction:
 
     # Rebuttal cross-examination transcript (populated when enable_rebuttals=True)
     rebuttal_summary: Optional[str] = None
+    options_features: Optional[Dict[str, Any]] = None
 
 
 def load_config() -> PipelineConfig:

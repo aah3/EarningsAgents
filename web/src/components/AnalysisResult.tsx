@@ -125,6 +125,51 @@ ${userText}`
                 </div>
             </div>
 
+            {result.options_features && (
+                <div className="mb-10 p-6 rounded-2xl border border-accent/20 bg-accent/5 shadow-inner">
+                    <div className="flex items-center gap-3 mb-5">
+                        <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center border border-accent/30">
+                            <span className="text-accent font-black text-lg">⚡</span>
+                        </div>
+                        <p className="text-xs font-black text-accent uppercase tracking-[0.2em]">Options Market Signals</p>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="p-4 bg-black/40 rounded-xl border border-white/5 flex flex-col justify-center text-center">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Implied Move</span>
+                            <span className="text-lg font-black text-white">
+                                {result.options_features.implied_move_pct 
+                                    ? `${(result.options_features.implied_move_pct * 100).toFixed(1)}%` 
+                                    : "N/A"}
+                            </span>
+                        </div>
+                        <div className="p-4 bg-black/40 rounded-xl border border-white/5 flex flex-col justify-center text-center">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Put/Call Vol Ratio</span>
+                            <span className="text-lg font-black text-white">
+                                {result.options_features.put_call_volume_ratio 
+                                    ? result.options_features.put_call_volume_ratio.toFixed(2) 
+                                    : "N/A"}
+                            </span>
+                        </div>
+                        <div className="p-4 bg-black/40 rounded-xl border border-white/5 flex flex-col justify-center text-center">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Implied Vol (ATM IV)</span>
+                            <span className="text-lg font-black text-white">
+                                {result.options_features.atm_iv_call 
+                                    ? `${(result.options_features.atm_iv_call * 100).toFixed(1)}%` 
+                                    : "N/A"}
+                            </span>
+                        </div>
+                        <div className="p-4 bg-black/40 rounded-xl border border-white/5 flex flex-col justify-center text-center">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">IV Skew (Puts - Calls)</span>
+                            <span className="text-lg font-black text-white">
+                                {result.options_features.iv_skew 
+                                    ? `${(result.options_features.iv_skew * 100).toFixed(1)}%` 
+                                    : "N/A"}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="flex flex-col gap-8 mb-10">
                 <div className="p-6 bg-[#0a1a10] rounded-2xl border border-bull/20 shadow-inner">
                     <div className="flex items-center gap-3 mb-5">

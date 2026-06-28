@@ -2,7 +2,7 @@ import os
 from sqlmodel import create_engine, SQLModel, Session
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 # Default to a local SQLite for immediate testing if no PG URL is provided
 DATABASE_URL = os.getenv("DATABASE_URL") or "sqlite:///./earnings_agents.db"

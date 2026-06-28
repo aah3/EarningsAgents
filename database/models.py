@@ -35,6 +35,10 @@ class Prediction(SQLModel, table=True):
     debate_summary: Optional[str] = Field(default=None)
     rebuttal_summary: Optional[str] = Field(default=None)  # Bull/Bear cross-examination transcript
 
+    # Store votes and options features as JSON
+    agent_votes: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    options_features: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+
     # Outcome tracking (populated by the scoring task after earnings are reported)
     actual_direction: Optional[str] = Field(default=None)          # "beat", "miss", or "meet"
     actual_eps: Optional[float] = Field(default=None)              # Reported EPS

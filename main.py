@@ -94,7 +94,7 @@ def cmd_single(args, pipeline: EarningsPipeline):
     print(f"{'='*60}")
     print(f"Company: {prediction.company_name}")
     print(f"Prediction: {prediction.direction.value.upper()}")
-    print(f"Confidence: {prediction.confidence:.1f}%")
+    print(f"Confidence: {prediction.confidence * 100:.1f}%")
     print(f"\nReasoning: {prediction.reasoning_summary}")
     
     if prediction.agent_votes:

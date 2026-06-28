@@ -17,6 +17,7 @@ export interface Prediction {
     debate_summary?: string;
     rebuttal_summary?: string;
     agent_votes?: Record<string, string>;
+    options_features?: Record<string, any>;
     // Evaluation fields (populated by scoring task after earnings are reported)
     actual_direction?: string;
     actual_eps?: number;

@@ -93,6 +93,8 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                 bear_factors=result.get("bear_factors", []),
                 debate_summary=result.get("debate_summary"),
                 rebuttal_summary=result.get("rebuttal_summary"),
+                agent_votes=result.get("agent_votes"),
+                options_features=result.get("options_features"),
             )
             
             session.add(db_prediction)
