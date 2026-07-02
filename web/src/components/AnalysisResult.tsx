@@ -10,6 +10,21 @@ export default function AnalysisResult({ result }: { result: Prediction }) {
     const [chatInput, setChatInput] = useState("");
     const [chatLoading, setChatLoading] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const [downloading, setDownloading] = useState(false);
+
+    const handleDownload = async (format: 'md' | 'pdf') => {
+        if (!result.id) return;
+        setDownloading(true);
+        try {
+            const token = await getToken() || undefined;
+            await api.downloadReport(result.id, format, result.ticker, token);
+        } catch (err: any) {
+            alert(`Failed to download report: ${err.message}`);
+        } finally {
+            setDownloading(false);
+        }
+    };
+
 
     const parseDebate = (summary?: string) => {
         if (!summary) return { bull: null, bear: null, quant: null, user: null };
@@ -102,12 +117,31 @@ ${userText}`
                     </div>
                     <p className="text-gray-400 font-bold tracking-wide uppercase text-xs">{result.company_name}</p>
                 </div>
-                <div className="text-right">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">AI Confidence</div>
+                <div className="flex flex-col items-end gap-2 text-right">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">AI Confidence</div>
                     <div className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-500">
                         {(result.confidence * 100).toFixed(0)}%
                     </div>
+                    {result.id && (
+                        <div className="flex gap-2 mt-1">
+                            <button
+                                onClick={() => handleDownload('md')}
+                                disabled={downloading}
+                                className="text-[9px] px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg font-bold text-gray-300 hover:text-accent hover:border-accent hover:bg-white/10 uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                                <span className="text-[10px]">📝</span> MD
+                            </button>
+                            <button
+                                onClick={() => handleDownload('pdf')}
+                                disabled={downloading}
+                                className="text-[9px] px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg font-bold text-gray-300 hover:text-accent hover:border-accent hover:bg-white/10 uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                                <span className="text-[10px]">📕</span> PDF
+                            </button>
+                        </div>
+                    )}
                 </div>
+
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">

@@ -82,11 +82,14 @@ class PipelineConfig:
     
     # Output settings
     output_dir: Path = field(default_factory=lambda: Path("./output"))
+    reports_dir: Path = field(default_factory=lambda: Path("./reports"))
+    save_report: bool = True
     
     # News settings
     news_lookback_days: int = 30
     max_news_articles: int = 50
     redis_url: str = "redis://localhost:6379/0"
+
 
 
 @dataclass

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Response
 from datetime import date, datetime
 from typing import List, Optional
 from pydantic import BaseModel
@@ -458,6 +458,61 @@ async def get_performance_metrics(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/{prediction_id}/report")
+def download_prediction_report(
+    prediction_id: int,
+    format: str = Query("md", pattern="^(md|pdf)$"),
+    session: Session = Depends(get_session),
+    pipeline: EarningsPipeline = Depends(get_pipeline)
+):
+    """
+    Generate and download the earnings debate report for a prediction in either MD or PDF format.
+    """
+    prediction = session.get(Prediction, prediction_id)
+    if not prediction:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+        
+    llm_info = {
+        "provider": pipeline.config.agent.provider,
+        "model_name": pipeline.config.agent.model_name,
+        "enable_rebuttals": pipeline.config.agent.enable_rebuttals
+    }
+    
+    db_sync_status = f"SUCCESSFUL (Record Saved with ID: {prediction.id})"
+    
+    if format == "md":
+        from output.report_generator import generate_markdown_report
+        md_content = generate_markdown_report(prediction, db_sync_status=db_sync_status, llm_info=llm_info)
+        
+        headers = {
+            "Content-Disposition": f"attachment; filename={prediction.ticker}_{prediction.report_date.strftime('%Y-%m-%d')}_report.md"
+        }
+        return Response(content=md_content, media_type="text/markdown", headers=headers)
+        
+    elif format == "pdf":
+        from output.report_generator import FPDF_AVAILABLE
+        if not FPDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF generation is currently unavailable on the server.")
+            
+        from output.report_generator import generate_pdf_report
+        import tempfile
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir) / f"report.pdf"
+            try:
+                generate_pdf_report(prediction, temp_path, db_sync_status=db_sync_status, llm_info=llm_info)
+                pdf_bytes = temp_path.read_bytes()
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+                
+        headers = {
+            "Content-Disposition": f"attachment; filename={prediction.ticker}_{prediction.report_date.strftime('%Y-%m-%d')}_report.pdf"
+        }
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+
 @router.get("/health")
+
 async def health():
     return {"status": "Earnings router is up"}

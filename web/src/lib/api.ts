@@ -168,6 +168,31 @@ export const api = {
     async getMetrics(token: string): Promise<PredictionMetrics> {
         const url = `${API_BASE_URL}/earnings/metrics`;
         return this.fetchWithAuth(url, token);
+    },
+
+    async downloadReport(predictionId: number, format: 'md' | 'pdf', ticker: string, token?: string): Promise<void> {
+        const url = `${API_BASE_URL}/earnings/${predictionId}/report?format=${format}`;
+        const headers = new Headers();
+        if (token) {
+            headers.set("Authorization", `Bearer ${token}`);
+        }
+        
+        const res = await fetch(url, { headers });
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ detail: "Failed to download report" }));
+            throw new Error(error.detail || "Failed to download report");
+        }
+        
+        const blob = await res.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.setAttribute('download', `${ticker}_earnings_debate_report.${format}`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
     }
 };
+
 

@@ -135,6 +135,12 @@ def main():
                        help='Output format')
     parser.add_argument('--output-dir', default='./output',
                        help='Output directory')
+    parser.add_argument('--reports-dir', default='./reports',
+                       help='Reports export directory')
+    parser.add_argument('--save-report', action='store_true', default=True,
+                       help='Generate and save report in MD and PDF')
+    parser.add_argument('--no-save-report', action='store_false', dest='save_report',
+                       help='Do not generate/save report')
     
     # Data source API keys
     parser.add_argument('--newsapi-key', help='NewsAPI.org API key')
@@ -203,6 +209,9 @@ def main():
         config.benchmark = args.benchmark
     if any(arg.startswith('--output-dir') for arg in sys.argv):
         config.output_dir = Path(args.output_dir)
+    if any(arg.startswith('--reports-dir') for arg in sys.argv):
+        config.reports_dir = Path(args.reports_dir)
+    config.save_report = args.save_report
     
     # Create and run pipeline
     pipeline = EarningsPipeline(config)

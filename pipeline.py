@@ -142,6 +142,11 @@ class EarningsPipeline:
                 except Exception as e:
                     self.logger.warning(f"Failed to publish to redis: {e}")
 
+        import time
+        from pathlib import Path
+        from output.report_generator import export_report
+        
+        start_time = time.time()
         prediction_date = prediction_date or date.today()
         
         self.logger.info(f"Generating prediction for {ticker} (reports {report_date})")
@@ -171,7 +176,29 @@ class EarningsPipeline:
         
         publish(f"Debate concluded. Finalizing decision...")
         
+        elapsed_time = time.time() - start_time
+        
+        # Automatically export report if save_report config is enabled
+        if getattr(self.config, "save_report", True):
+            try:
+                reports_dir = getattr(self.config, "reports_dir", Path("./reports"))
+                llm_info = {
+                    "provider": self.config.agent.provider,
+                    "model_name": self.config.agent.model_name,
+                    "enable_rebuttals": self.config.agent.enable_rebuttals
+                }
+                export_report(
+                    prediction=prediction,
+                    reports_dir=reports_dir,
+                    elapsed_time=elapsed_time,
+                    db_sync_status="PENDING", # DB sync happens after predict_single in API/CLI
+                    llm_info=llm_info
+                )
+            except Exception as re:
+                self.logger.error(f"Failed to auto-export report: {re}", exc_info=True)
+                
         return prediction
+
     
     def predict_batch(
         self,

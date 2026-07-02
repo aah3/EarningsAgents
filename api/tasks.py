@@ -99,9 +99,30 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
             
             session.add(db_prediction)
             session.commit()
+            session.refresh(db_prediction)
+            
+            # Re-export report to update DB sync details (successful save with record ID)
+            if getattr(pipeline.config, "save_report", True):
+                try:
+                    from output.report_generator import export_report
+                    llm_info = {
+                        "provider": pipeline.config.agent.provider,
+                        "model_name": pipeline.config.agent.model_name,
+                        "enable_rebuttals": pipeline.config.agent.enable_rebuttals
+                    }
+                    export_report(
+                        prediction=db_prediction,
+                        reports_dir=getattr(pipeline.config, "reports_dir", "reports"),
+                        elapsed_time=None,
+                        db_sync_status=f"SUCCESSFUL (Record Saved with ID: {db_prediction.id})",
+                        llm_info=llm_info
+                    )
+                except Exception as re:
+                    logger.warning(f"Failed to update report with DB sync details: {re}")
             
         logger.info(f"Successfully completed analysis for {ticker}")
         return {"status": "SUCCESS", "ticker": ticker, "result": result}
+
         
     except Exception as e:
         logger.error(f"Task failed for {ticker}: {str(e)}")
