@@ -66,7 +66,11 @@ class PredictionScorer:
 
     def compute_brier_score(self, predicted_direction: str, confidence: float, actual_direction: str) -> float:
         correct = 1.0 if predicted_direction.lower() == actual_direction.lower() else 0.0
-        return round((float(confidence) / 100.0 - correct) ** 2, 6)
+        # DB stores confidence as fraction 0.0-1.0 (e.g. 0.78). If > 1.0, convert from 0-100 scale.
+        c = float(confidence)
+        if c > 1.0:
+            c /= 100.0
+        return round((c - correct) ** 2, 6)
 
     def score_prediction(self, prediction) -> dict:
         actual_data = self.fetch_actual_direction(prediction.ticker, prediction.report_date)

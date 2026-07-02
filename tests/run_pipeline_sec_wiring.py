@@ -27,7 +27,7 @@ def _make_pipeline():
 def test1():
     """When SEC is enabled, agent_system.sec_source is set to aggregator.sec."""
     from pipeline import EarningsPipeline
-    import huggingface_agents as ha
+    import agents.huggingface_agents as ha
 
     pipeline = _make_pipeline()
 
@@ -54,7 +54,7 @@ def test1():
 def test2():
     """When SEC is disabled (aggregator.sec is None), sec_source stays None."""
     from pipeline import EarningsPipeline
-    import huggingface_agents as ha
+    import agents.huggingface_agents as ha
 
     pipeline = _make_pipeline()
 
@@ -76,7 +76,7 @@ def test2():
 def test3():
     """getattr fallback works when aggregator has no 'sec' attribute at all."""
     from pipeline import EarningsPipeline
-    import huggingface_agents as ha
+    import agents.huggingface_agents as ha
 
     pipeline = _make_pipeline()
 

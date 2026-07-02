@@ -1,5 +1,5 @@
 def test1():
-    from resolvers import ReportTimeResolver, FiscalPeriodResolver
+    from data.resolvers import ReportTimeResolver, FiscalPeriodResolver
     from datetime import date
 
     rt = ReportTimeResolver()
@@ -21,7 +21,7 @@ def test1():
     print("PASS  Test 1 — resolvers degrade gracefully with all-None sources")
 
 def test2():
-    from resolvers import ReportTimeResolver
+    from data.resolvers import ReportTimeResolver
     from settings import ReportTime
     from datetime import date, datetime
     from unittest.mock import MagicMock
@@ -41,7 +41,7 @@ def test2():
     print("PASS  Test 2 — ReportTimeResolver reads BMO from Yahoo datetime hour")
 
 def test3():
-    from resolvers import ReportTimeResolver
+    from data.resolvers import ReportTimeResolver
     from settings import ReportTime
     from datetime import date, datetime
     from unittest.mock import MagicMock
@@ -60,7 +60,7 @@ def test3():
     print("PASS  Test 3 — ReportTimeResolver reads AMC from Yahoo datetime hour")
 
 def test4():
-    from resolvers import ReportTimeResolver
+    from data.resolvers import ReportTimeResolver
     from settings import ReportTime
     from datetime import date, datetime
     from unittest.mock import MagicMock, patch
@@ -85,7 +85,7 @@ def test4():
     print("PASS  Test 4 — ReportTimeResolver falls back to FinViz when Yahoo is ambiguous")
 
 def test5():
-    from resolvers import FiscalPeriodResolver
+    from data.resolvers import FiscalPeriodResolver
     from datetime import date
     from unittest.mock import MagicMock
 
@@ -118,7 +118,7 @@ def test5():
     print("PASS  Test 5 — FiscalPeriodResolver reads and advances quarter from Alpha Vantage")
 
 def test6():
-    from resolvers import FiscalPeriodResolver
+    from data.resolvers import FiscalPeriodResolver
     from datetime import date
     from unittest.mock import MagicMock
     from dataclasses import dataclass
@@ -146,7 +146,7 @@ def test6():
     print("PASS  Test 6 — FiscalPeriodResolver wraps Q4 -> Q1 and increments fiscal year")
 
 def test7():
-    from resolvers import FiscalPeriodResolver
+    from data.resolvers import FiscalPeriodResolver
     from datetime import date
     from unittest.mock import MagicMock
     from dataclasses import dataclass
@@ -198,7 +198,7 @@ def test8():
     aggregator._initialized = True
 
     # Patch get_company_data to test only the resolution block
-    from resolvers import ReportTimeResult, FiscalPeriodResult
+    from data.resolvers import ReportTimeResult, FiscalPeriodResult
 
     mock_rt_result = ReportTimeResult(
         value=ReportTime.AMC, source="yahoo", confidence="high"
@@ -233,7 +233,7 @@ def test8():
     print("PASS  Test 8 — get_company_data() wires both resolvers and assigns all three fields")
 
 def test9():
-    from agent_tools import AgentToolRegistry
+    from agents.agent_tools import AgentToolRegistry
     from settings import CompanyData
     from datetime import date
     from unittest.mock import MagicMock

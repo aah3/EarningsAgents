@@ -1,6 +1,6 @@
 def test1():
     import logging
-    from provider_chain import ProviderChain
+    from data.provider_chain import ProviderChain
 
     log = logging.getLogger("test")
     chain = ProviderChain(log)
@@ -24,7 +24,7 @@ def test1():
 
 def test2():
     import logging
-    from provider_chain import ProviderChain
+    from data.provider_chain import ProviderChain
 
     log = logging.getLogger("test")
     chain = ProviderChain(log)
@@ -41,7 +41,7 @@ def test2():
 
 def test3():
     import logging
-    from provider_chain import ProviderChain
+    from data.provider_chain import ProviderChain
 
     log = logging.getLogger("test")
     chain = ProviderChain(log)
@@ -62,7 +62,7 @@ def test3():
 
 def test4():
     import logging
-    from provider_chain import ProviderChain
+    from data.provider_chain import ProviderChain
 
     log = logging.getLogger("test")
     chain = ProviderChain(log)
@@ -80,7 +80,7 @@ def test4():
 
 def test5():
     import logging
-    from provider_chain import ProviderChain
+    from data.provider_chain import ProviderChain
 
     log = logging.getLogger("test")
     chain = ProviderChain(log)
@@ -104,7 +104,7 @@ def test5():
 
 def test6():
     import logging
-    from provider_chain import ProviderChain
+    from data.provider_chain import ProviderChain
 
     log = logging.getLogger("test")
     # Treat zero as empty
@@ -146,7 +146,7 @@ def test8():
     import logging
     from unittest.mock import MagicMock, patch
     from datetime import date
-    from provider_chain import ProviderChain
+    from data.provider_chain import ProviderChain
 
     log = logging.getLogger("test")
     chain = ProviderChain(log)

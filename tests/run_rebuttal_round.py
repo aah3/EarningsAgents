@@ -1,6 +1,6 @@
 import unittest
 import inspect
-import huggingface_agents as ha
+import agents.huggingface_agents as ha
 
 def test1():
     src = inspect.getsource(ha.ThreeAgentSystem.predict)

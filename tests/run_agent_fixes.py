@@ -39,7 +39,7 @@ def test2():
 
 
 def test3():
-    from agent_tools import AgentToolRegistry, ToolResult
+    from agents.agent_tools import AgentToolRegistry, ToolResult
     from settings import CompanyData, ReportTime
     from datetime import date
 
@@ -80,7 +80,7 @@ def test4():
     for mod in list(sys.modules.keys()):
         if "huggingface_agents" in mod:
             del sys.modules[mod]
-    import huggingface_agents as ha
+    import agents.huggingface_agents as ha
     assert hasattr(ha, "ThreeAgentSystem")
     assert hasattr(ha, "BullAgent")
     assert hasattr(ha, "ConsensusAgent")
@@ -91,7 +91,7 @@ def test4():
 
 def test5():
     import inspect
-    import huggingface_agents as ha
+    import agents.huggingface_agents as ha
 
     src = inspect.getsource(ha.ThreeAgentSystem.predict)
     # The assignment line must read self.enable_rebuttals
@@ -106,7 +106,7 @@ def test5():
 
 
 def test6():
-    import huggingface_agents as ha
+    import agents.huggingface_agents as ha
     from settings import AgentConfig, CompanyData, NewsArticle, ReportTime
     from datetime import date
     from unittest.mock import MagicMock
@@ -140,7 +140,7 @@ def test6():
 
 
 def test7():
-    import llm_client as lc
+    import agents.llm_client as lc
     import inspect
 
     src = inspect.getsource(lc.LLMClient._stream_anthropic)
@@ -155,7 +155,7 @@ def test7():
 
 
 def test8():
-    import huggingface_agents as ha
+    import agents.huggingface_agents as ha
     from settings import AgentConfig, CompanyData
     from datetime import date
     from unittest.mock import MagicMock

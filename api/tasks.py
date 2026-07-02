@@ -107,7 +107,7 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
         logger.error(f"Task failed for {ticker}: {str(e)}")
         return {"status": "FAILURE", "error": str(e)}
 
-from scoring_service import PredictionScorer
+from database.scoring_service import PredictionScorer
 from data.yahoo_finance import YahooFinanceDataSource, DataSourceConfig
 from datetime import timedelta as _timedelta
 

@@ -71,17 +71,12 @@ except (ImportError, ValueError):
 try:
     from .resolvers import ReportTimeResolver, FiscalPeriodResolver
 except (ImportError, ValueError):
-    from resolvers import ReportTimeResolver, FiscalPeriodResolver
+    from data.resolvers import ReportTimeResolver, FiscalPeriodResolver
 
 try:
     from .provider_chain import ProviderChain
 except (ImportError, ValueError):
-    try:
-        from provider_chain import ProviderChain
-    except (ImportError, ValueError):
-        import sys, os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from provider_chain import ProviderChain
+    from data.provider_chain import ProviderChain
 
 
 

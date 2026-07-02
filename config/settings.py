@@ -123,6 +123,7 @@ class CompanyData:
     short_interest: Optional[float] = None
     estimate_revisions: List[Dict[str, Any]] = field(default_factory=list)
     options_features: Optional[Dict[str, Any]] = None
+    analyst_recommendations: List[Dict[str, Any]] = field(default_factory=list)
 
     # SEC XBRL company facts (keyed by metric name; values may be dicts or raw scalars)
     company_facts: Optional[Dict[str, Any]] = None

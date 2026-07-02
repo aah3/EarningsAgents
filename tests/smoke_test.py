@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from scoring_service import PredictionScorer
+from database.scoring_service import PredictionScorer
 
 # Mock a HistoricalEarning-like object
 from dataclasses import dataclass

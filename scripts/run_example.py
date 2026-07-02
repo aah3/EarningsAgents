@@ -1,7 +1,9 @@
-# run_example.py
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_aggregator import DataAggregator
-from base import DataSourceConfig
+from data.data_aggregator import DataAggregator
+from data.base import DataSourceConfig
 from datetime import date
 
 # Initialize (Yahoo is free, no keys needed!)

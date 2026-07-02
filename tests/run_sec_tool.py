@@ -15,7 +15,7 @@ def test1():
     print("PASS  Test 1 — AgentConfig.sec_user_agent and load_config")
 
 def test2():
-    from agent_tools import AgentToolRegistry
+    from agents.agent_tools import AgentToolRegistry
     from settings import CompanyData
     from datetime import date
 
@@ -39,7 +39,7 @@ def test2():
     print("PASS  Test 2 — AgentToolRegistry backward-compatible sec_source param")
 
 def test3():
-    from agent_tools import AgentToolRegistry, ToolResult
+    from agents.agent_tools import AgentToolRegistry, ToolResult
     from settings import CompanyData
     from datetime import date
 
@@ -57,7 +57,7 @@ def test3():
     print("PASS  Test 3 — get_sec_transcript_by_period returns error when sec_source=None")
 
 def test4():
-    from agent_tools import AgentToolRegistry
+    from agents.agent_tools import AgentToolRegistry
     from settings import CompanyData
     from datetime import date
     from unittest.mock import MagicMock
@@ -85,7 +85,7 @@ def test4():
     print("PASS  Test 4 — get_sec_transcript_by_period validates fiscal_quarter")
 
 def test5():
-    from agent_tools import AgentToolRegistry
+    from agents.agent_tools import AgentToolRegistry
     from settings import CompanyData
     from datetime import date
     from unittest.mock import MagicMock, patch
@@ -129,7 +129,7 @@ def test5():
     print("PASS  Test 5 — get_sec_transcript_by_period returns correct structure")
 
 def test6():
-    from agent_tools import AgentToolRegistry
+    from agents.agent_tools import AgentToolRegistry
     from settings import CompanyData
     from datetime import date
     from unittest.mock import MagicMock
@@ -152,7 +152,7 @@ def test6():
     print("PASS  Test 6 — fiscal_year defaults to report_date.year - 1")
 
 def test7():
-    from agent_tools import AgentToolRegistry
+    from agents.agent_tools import AgentToolRegistry
     from settings import CompanyData
     from datetime import date
 
@@ -177,7 +177,7 @@ def test7():
 
 def test8():
     from unittest.mock import MagicMock
-    import huggingface_agents as ha
+    import agents.huggingface_agents as ha
     ha.LLMClient = MagicMock
 
     from settings import AgentConfig
