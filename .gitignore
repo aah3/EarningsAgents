@@ -66,3 +66,6 @@ options_screener.py
 celerybeat-schedule
 celerybeat.pid
 *.pid
+supply_chain_example.py
+reports/PENG_2026-07-07_report.md
+reports/PENG_2026-07-07_report.pdf

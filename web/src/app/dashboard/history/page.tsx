@@ -5,19 +5,41 @@ import { useAuth } from "@clerk/nextjs";
 import { api, Prediction } from "@/lib/api";
 import AnalysisResult from "@/components/AnalysisResult";
 
-function OutcomeCell({ pred }: { pred: Prediction }) {
+function OutcomeCell({ 
+    pred, 
+    onVerify, 
+    isVerifying 
+}: { 
+    pred: Prediction; 
+    onVerify: (e: React.MouseEvent) => void; 
+    isVerifying: boolean;
+}) {
     if (!pred.actual_direction) {
         return (
             <div className="text-right">
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-700 bg-white/5 px-3 py-1.5 rounded-lg">
-                    Awaiting Earnings
-                </span>
+                <button
+                    onClick={onVerify}
+                    disabled={isVerifying}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-200 border ${
+                        isVerifying 
+                        ? "bg-white/5 border-white/10 text-gray-500 cursor-not-allowed" 
+                        : "bg-accent/5 hover:bg-accent hover:text-black border-accent/20 hover:border-accent text-accent shadow-sm shadow-accent/5 hover:shadow-accent/20 cursor-pointer active:scale-95"
+                    }`}
+                >
+                    {isVerifying ? (
+                        <div className="flex items-center gap-1.5 justify-end">
+                            <span className="w-2.5 h-2.5 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+                            <span>Verifying...</span>
+                        </div>
+                    ) : (
+                        "Verify Outcome"
+                    )}
+                </button>
             </div>
         );
     }
 
     const correct = pred.direction.toLowerCase() === pred.actual_direction.toLowerCase();
-    const brier = pred.accuracy_score;
 
     return (
         <div className="text-right space-y-1">
@@ -34,11 +56,6 @@ function OutcomeCell({ pred }: { pred: Prediction }) {
                     {pred.actual_direction.toUpperCase()}
                 </span>
             </div>
-            {brier !== undefined && brier !== null && (
-                <div className="text-[9px] font-mono text-gray-600 text-right">
-                    Brier: {brier.toFixed(4)}
-                </div>
-            )}
         </div>
     );
 }
@@ -51,6 +68,25 @@ export default function HistoryPage() {
     const [selectedResult, setSelectedResult] = useState<Prediction | null>(null);
     const [filter, setFilter] = useState<"all" | "scored" | "pending">("all");
     const [sortBy, setSortBy] = useState<"date" | "confidence" | "brier">("date");
+    const [verifyingIds, setVerifyingIds] = useState<Record<number, boolean>>({});
+
+    const handleVerify = async (e: React.MouseEvent, pred: Prediction) => {
+        e.stopPropagation();
+        if (!pred.id) return;
+        
+        setVerifyingIds(prev => ({ ...prev, [pred.id!]: true }));
+        try {
+            const token = await getToken();
+            const response = await api.verifyPrediction(pred.id, token || undefined);
+            if (response.success && response.result) {
+                setHistory(prev => prev.map(p => p.id === pred.id ? { ...p, ...response.result } : p));
+            }
+        } catch (err: any) {
+            alert(`Verification failed: ${err.message || err}`);
+        } finally {
+            setVerifyingIds(prev => ({ ...prev, [pred.id!]: false }));
+        }
+    };
 
     useEffect(() => {
         async function loadHistory() {
@@ -164,6 +200,9 @@ export default function HistoryPage() {
                                 <th className="px-8 py-5">Analysis Date</th>
                                 <th className="px-8 py-5">Prediction</th>
                                 <th className="px-8 py-5">Confidence</th>
+                                <th className="px-8 py-5">Actual EPS</th>
+                                <th className="px-8 py-5">Post-Earnings Move</th>
+                                <th className="px-8 py-5">Brier Score</th>
                                 <th className="px-8 py-5 text-right">Outcome</th>
                             </tr>
                         </thead>
@@ -199,8 +238,34 @@ export default function HistoryPage() {
                                             <span className="font-mono font-bold text-white text-sm">{(row.confidence * 100).toFixed(0)}%</span>
                                         </div>
                                     </td>
+                                    <td className="px-8 py-6 font-mono text-sm text-white">
+                                        {row.actual_eps !== undefined && row.actual_eps !== null
+                                            ? `$${row.actual_eps.toFixed(2)}`
+                                            : <span className="text-gray-600">—</span>}
+                                    </td>
+                                    <td className="px-8 py-6 font-mono text-sm">
+                                        {row.actual_price_move_pct !== undefined && row.actual_price_move_pct !== null ? (
+                                            (() => {
+                                                const pct = row.actual_price_move_pct * 100;
+                                                const sign = pct >= 0 ? "+" : "";
+                                                const color = pct >= 0 ? "text-bull" : "text-bear";
+                                                return <span className={color}>{sign}{pct.toFixed(2)}%</span>;
+                                            })()
+                                        ) : (
+                                            <span className="text-gray-600">—</span>
+                                        )}
+                                    </td>
+                                    <td className="px-8 py-6 font-mono text-sm text-gray-400">
+                                        {row.accuracy_score !== undefined && row.accuracy_score !== null
+                                            ? row.accuracy_score.toFixed(4)
+                                            : <span className="text-gray-600">—</span>}
+                                    </td>
                                     <td className="px-8 py-6">
-                                        <OutcomeCell pred={row} />
+                                        <OutcomeCell 
+                                            pred={row} 
+                                            onVerify={(e) => handleVerify(e, row)}
+                                            isVerifying={row.id ? !!verifyingIds[row.id] : false}
+                                        />
                                     </td>
                                 </tr>
                             ))}

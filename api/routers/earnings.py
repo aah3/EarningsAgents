@@ -180,7 +180,7 @@ async def get_prediction_history(
 ):
     try:
         user = get_or_create_user(session, clerk_id)
-        statement = select(Prediction).where(Prediction.user_id == user.id).order_by(Prediction.prediction_date.desc())
+        statement = select(Prediction).order_by(Prediction.prediction_date.desc())
         predictions = session.exec(statement).all()
         return predictions
     except Exception as e:
@@ -368,8 +368,7 @@ async def get_performance_metrics(
         user = get_or_create_user(session, clerk_id)
 
         all_preds = session.exec(
-            select(Prediction).where(Prediction.user_id == user.id)
-            .order_by(Prediction.prediction_date)
+            select(Prediction).order_by(Prediction.prediction_date)
         ).all()
 
         total = len(all_preds)
@@ -510,6 +509,72 @@ def download_prediction_report(
             "Content-Disposition": f"attachment; filename={prediction.ticker}_{prediction.report_date.strftime('%Y-%m-%d')}_report.pdf"
         }
         return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+
+@router.post("/{prediction_id}/verify")
+async def verify_prediction(
+    prediction_id: int,
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Trigger outcome verification/scoring for a specific prediction.
+    """
+    try:
+        # Get prediction
+        prediction = session.get(Prediction, prediction_id)
+        if not prediction:
+            raise HTTPException(status_code=404, detail=f"Prediction with ID {prediction_id} not found")
+
+        from database.scoring_service import PredictionScorer
+        from data.yahoo_finance import YahooFinanceDataSource, DataSourceConfig
+
+        yahoo = None
+        try:
+            config = DataSourceConfig(rate_limit_calls=100, rate_limit_period=60)
+            yahoo = YahooFinanceDataSource(config)
+            yahoo.connect()
+            scorer = PredictionScorer(yahoo)
+            
+            result = scorer.score_prediction(prediction)
+            
+            if result.get("scored") is True:
+                prediction.actual_direction = result["actual_direction"]
+                prediction.actual_eps = result.get("actual_eps")
+                prediction.actual_price_move_pct = result.get("actual_price_move_pct")
+                prediction.accuracy_score = result.get("accuracy_score")
+                prediction.scored_at = result.get("scored_at", datetime.utcnow())
+                
+                session.add(prediction)
+                session.commit()
+                session.refresh(prediction)
+                
+                return {
+                    "success": True,
+                    "message": f"Successfully verified/scored prediction for {prediction.ticker}",
+                    "result": {
+                        "actual_direction": prediction.actual_direction,
+                        "actual_eps": prediction.actual_eps,
+                        "actual_price_move_pct": prediction.actual_price_move_pct,
+                        "accuracy_score": prediction.accuracy_score,
+                        "scored_at": prediction.scored_at.isoformat() if prediction.scored_at else None
+                    }
+                }
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Could not score prediction: {result.get('reason', 'Unknown reason')}"
+                )
+        finally:
+            if yahoo:
+                try:
+                    yahoo.disconnect()
+                except Exception:
+                    pass
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
 
 
 @router.get("/health")

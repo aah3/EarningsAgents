@@ -170,6 +170,13 @@ export const api = {
         return this.fetchWithAuth(url, token);
     },
 
+    async verifyPrediction(predictionId: number, token?: string) {
+        const url = `${API_BASE_URL}/earnings/${predictionId}/verify`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST'
+        });
+    },
+
     async downloadReport(predictionId: number, format: 'md' | 'pdf', ticker: string, token?: string): Promise<void> {
         const url = `${API_BASE_URL}/earnings/${predictionId}/report?format=${format}`;
         const headers = new Headers();
