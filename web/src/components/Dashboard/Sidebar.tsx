@@ -1,65 +1,133 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-import { UserButton, useUser } from "@clerk/nextjs";
+import { useUser, useClerk } from "@clerk/nextjs";
+import {
+  LayoutDashboard,
+  TrendingUp,
+  Layers,
+  Calendar,
+  History,
+  Gauge,
+  Settings,
+  LogOut,
+} from "lucide-react";
 
 const navItems = [
-    { name: "Overview", href: "/dashboard", icon: "📊" },
-    { name: "Predictions", href: "/dashboard/predictions", icon: "📈" },
-    { name: "Batch Analysis", href: "/dashboard/batch", icon: "⚡" },
-    { name: "Calendar", href: "/dashboard/calendar", icon: "📅" },
-    { name: "History", href: "/dashboard/history", icon: "📜" },
-    { name: "Performance", href: "/dashboard/performance", icon: "🎯" },
-    { name: "Settings", href: "/dashboard/settings", icon: "⚙️" },
+  { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Predictions", href: "/dashboard/predictions", icon: TrendingUp },
+  { name: "Batch Analysis", href: "/dashboard/batch", icon: Layers },
+  { name: "Calendar", href: "/dashboard/calendar", icon: Calendar },
+  { name: "History", href: "/dashboard/history", icon: History },
+  { name: "Performance", href: "/dashboard/performance", icon: Gauge },
+  { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
 export default function Sidebar() {
-    const pathname = usePathname();
-    const { user } = useUser();
+  const pathname = usePathname();
+  const { user } = useUser();
+  const { signOut } = useClerk();
 
-    return (
-        <aside className="w-72 border-r border-white/5 bg-[#080b11] flex-shrink-0 flex flex-col h-screen sticky top-0 z-20 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
-            <div className="p-8 border-b border-white/5 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-[0_0_20px_rgba(45,212,191,0.4)]">
-                    <svg className="w-6 h-6 text-background" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                    </svg>
-                </div>
-                <span className="text-2xl font-black tracking-tighter uppercase text-white shadow-black">Earnings AI</span>
-            </div>
+  return (
+    <aside className="sticky top-0 h-screen w-[248px] max-[900px]:w-[72px] shrink-0 flex flex-col bg-panel border-r border-panel-line px-3.5 py-5 z-20 shadow-[4px_0_24px_rgba(0,0,0,0.3)] transition-all duration-300 overflow-hidden">
+      {/* Top Header/Brand */}
+      <div className="flex items-center gap-3 select-none pb-5 justify-start max-[900px]:justify-center">
+        <Link
+          href="/dashboard"
+          className="brand flex items-center gap-3 font-display font-bold text-[19px] tracking-[-0.01em] text-white select-none focus-visible:ring-2 focus-visible:ring-teal outline-none rounded-lg"
+        >
+          <span
+            className="logo w-[30px] h-[30px] rounded-[9px] bg-gradient-to-br from-teal to-teal-deep grid place-items-center text-[#04231F] font-bold flex-shrink-0"
+            style={{ boxShadow: "0 0 22px rgba(45, 212, 191, 0.45)" }}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none">
+              <path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z" fill="#04231F" />
+              <path
+                d="M4 12l8 4.5 8-4.5"
+                stroke="#04231F"
+                strokeWidth="1.6"
+                fill="none"
+              />
+              <path
+                d="M4 16.2l8 4.5 8-4.5"
+                stroke="#04231F"
+                strokeWidth="1.6"
+                fill="none"
+              />
+            </svg>
+          </span>
+          <span className="max-[900px]:hidden font-display font-bold text-[19px] tracking-[-0.01em]">
+            EarningsAI
+          </span>
+        </Link>
+      </div>
 
-            <nav className="flex-1 px-4 py-8 space-y-3 overflow-y-auto custom-scrollbar">
-                {navItems.map((item) => {
-                    const isActive = pathname === item.href;
-                    return (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={`flex items-center gap-5 px-5 py-4 rounded-2xl transition-all font-bold text-[15px] ${isActive
-                                ? "bg-accent/10 border border-accent/20 text-accent shadow-lg shadow-accent/5 translate-x-1"
-                                : "text-gray-400 border border-transparent hover:bg-white/5 hover:text-white hover:translate-x-1"
-                                }`}
-                        >
-                            <span className="text-2xl">{item.icon}</span>
-                            {item.name}
-                        </Link>
-                    );
-                })}
-            </nav>
+      {/* Nav List */}
+      <nav className="flex-1 flex flex-col gap-1 overflow-y-auto custom-scrollbar select-none py-2">
+        {navItems.map((item) => {
+          const isActive = pathname === item.href;
+          const Icon = item.icon;
 
-            <div className="p-6 border-t border-white/5 bg-black/20">
-                <div className="flex items-center justify-between p-4 rounded-2xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer">
-                    <div className="flex items-center gap-4 min-w-0">
-                        <UserButton afterSignOutUrl="/" appearance={{ elements: { avatarBox: "w-10 h-10" } }} />
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-white truncate">{user?.firstName || "User Profile"}</p>
-                            <p className="text-[11px] text-accent font-black truncate uppercase tracking-widest mt-1">Pro Member</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </aside>
-    );
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-body font-semibold text-[14.5px] focus-visible:ring-2 focus-visible:ring-teal outline-none
+                ${
+                  isActive
+                    ? "bg-teal/10 border-l-2 border-teal text-teal shadow-lg shadow-teal/5"
+                    : "text-ink-mute border-l-2 border-transparent hover:bg-white/[0.03] hover:text-ink hover:translate-x-0.5"
+                }`}
+            >
+              <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? "text-teal" : "text-ink-mute"}`} />
+              <span className="max-[900px]:hidden truncate">{item.name}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Bottom Pinned User Section */}
+      <div className="mt-auto pt-3 border-t border-panel-line flex flex-col gap-3">
+        {/* User Card */}
+        <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-panel-line bg-white/[0.01] select-none justify-start max-[900px]:justify-center">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden border border-panel-line">
+            {user?.imageUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={user.imageUrl}
+                alt={user.firstName || "User"}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-teal/20 text-teal flex items-center justify-center font-display font-semibold text-xs">
+                U
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1 max-[900px]:hidden">
+            <p className="text-[14px] font-semibold text-white truncate leading-tight">
+              {user?.firstName || "User Profile"}
+            </p>
+            <p className="text-[12px] text-ink-dim truncate mt-0.5 leading-none">
+              {user?.primaryEmailAddress?.emailAddress || ""}
+            </p>
+          </div>
+        </div>
+
+        {/* Log Out */}
+        <button
+          onClick={async () => {
+            await signOut();
+            window.location.href = "/";
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-ink-mute hover:text-bear hover:bg-bear/8 border-l-2 border-transparent transition-all font-body font-semibold text-[14.5px] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-bear justify-start max-[900px]:justify-center select-none"
+        >
+          <LogOut className="w-5 h-5 flex-shrink-0" />
+          <span className="max-[900px]:hidden">Log out</span>
+        </button>
+      </div>
+    </aside>
+  );
 }

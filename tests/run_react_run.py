@@ -50,7 +50,7 @@ def test_react_debug():
     
     news = [
         NewsArticle(headline="Broadcom custom chip business gets major boost from new hyperscaler deal", sentiment_score=0.8, source="Reuters", published_at=date(2026, 5, 20)),
-        NewsArticle(headline="Semiconductor industry shows mixed recovery signals, Broadcom stands out", sentiment_score=0.4, source="Bloomberg", published_at=date(2026, 5, 25)),
+        NewsArticle(headline="Semiconductor industry shows mixed recovery signals, Broadcom stands out", sentiment_score=0.4, source="Yahoo Finance", published_at=date(2026, 5, 25)),
     ]
     
     agent = agent_system.bull_agent
