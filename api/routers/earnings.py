@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from pipeline import EarningsPipeline
 from config.settings import PipelineConfig, load_config
 from database.db import get_session
-from database.models import User, Prediction, PredictionChat
+from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory
 from api.dependencies.auth import get_current_user
 
 router = APIRouter(
@@ -264,34 +264,170 @@ async def get_daily_predictions(
 
 @router.get("/calendar")
 def get_earnings_calendar(
+    start: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    sector: Optional[str] = Query(None, description="Filter by sector"),
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     tickers: Optional[str] = None,
     use_finviz: bool = False,
     timeframe: str = "This Week",
     index_name: str = "S&P 500",
+    session: Session = Depends(get_session),
     pipeline: EarningsPipeline = Depends(get_pipeline)
 ):
     """
     Get the earnings calendar.
-    If 'use_finviz' is true, it uses 'timeframe' and 'index_name'.
-    Otherwise, uses Yahoo Finance via 'start_date', 'end_date', and 'tickers'.
+    Reads from EarningsCalendarEvent in the database, falling back to the aggregator
+    if no database rows match.
     """
     try:
+        eff_start = start or start_date
+        eff_end = end or end_date
+        
         if use_finviz:
             events = pipeline.aggregator.get_finviz_earnings(index_name, timeframe)
             return events
 
-        if not start_date or not end_date:
+        if not eff_start or not eff_end:
             raise HTTPException(status_code=400, detail="start_date and end_date required if not using finviz")
+
+        stmt = select(EarningsCalendarEvent).where(
+            EarningsCalendarEvent.report_date >= eff_start,
+            EarningsCalendarEvent.report_date <= eff_end
+        )
+        if sector:
+            stmt = stmt.where(EarningsCalendarEvent.sector == sector)
+        
+        if tickers:
+            ticker_list = [t.strip().upper() for t in tickers.split(",")]
+            stmt = stmt.where(EarningsCalendarEvent.ticker.in_(ticker_list))
+            
+        stmt = stmt.order_by(EarningsCalendarEvent.report_date)
+        db_events = session.exec(stmt).all()
+        
+        # If no events found, sync those dates on-the-fly from EarningsAPIDataSource
+        if not db_events:
+            try:
+                num_days = (eff_end - eff_start).days
+                if num_days <= 31:  # Limit range to avoid hitting API rate limits
+                    from data.earningsapi_source import EarningsAPIDataSource
+                    source = EarningsAPIDataSource(pipeline.config.earningsapi)
+                    source.connect()
+                    try:
+                        all_fetched = []
+                        for i in range(num_days + 1):
+                            target_date = eff_start + timedelta(days=i)
+                            day_events = source.get_calendar_by_date(target_date)
+                            all_fetched.extend(day_events)
+                            
+                        # Save to DB
+                        for ev in all_fetched:
+                            ticker = ev["ticker"].upper()
+                            report_date = ev["report_date"]
+                            
+                            stmt_check = select(EarningsCalendarEvent).where(
+                                EarningsCalendarEvent.ticker == ticker,
+                                EarningsCalendarEvent.report_date == report_date
+                            )
+                            db_event = session.exec(stmt_check).first()
+                            if not db_event:
+                                db_event = EarningsCalendarEvent(
+                                    ticker=ticker,
+                                    report_date=report_date
+                                )
+                            db_event.company_name = ev.get("company_name")
+                            db_event.report_time = ev.get("report_time")
+                            db_event.eps_estimate = ev.get("eps_estimate")
+                            db_event.revenue_estimate = ev.get("revenue_estimate")
+                            db_event.num_estimates = ev.get("num_estimates")
+                            db_event.updated_at = datetime.utcnow()
+                            session.add(db_event)
+                        session.commit()
+                        
+                        # Re-query DB after sync
+                        db_events = session.exec(stmt).all()
+                    finally:
+                        source.disconnect()
+            except Exception as se:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to sync calendar on the fly: {se}")
+
+        if db_events:
+            results = []
+            for e in db_events:
+                mapped_time = "unknown"
+                if e.report_time == "BMO":
+                    mapped_time = "before_market_open"
+                elif e.report_time == "AMC":
+                    mapped_time = "after_market_close"
+                
+                results.append({
+                    "ticker": e.ticker,
+                    "company_name": e.company_name,
+                    "report_date": e.report_date.isoformat() if hasattr(e.report_date, 'isoformat') else str(e.report_date),
+                    "report_time": mapped_time,
+                    "eps_estimate": e.eps_estimate,
+                    "consensus_eps": e.eps_estimate,
+                    "revenue_estimate": e.revenue_estimate,
+                    "consensus_revenue": e.revenue_estimate,
+                    "num_estimates": e.num_estimates,
+                    "sector": e.sector,
+                    "industry": e.industry,
+                    "market_cap": e.market_cap,
+                    "updated_at": e.updated_at.isoformat() if hasattr(e.updated_at, 'isoformat') else str(e.updated_at),
+                })
+            return results
 
         if tickers:
             ticker_list = [t.strip().upper() for t in tickers.split(",")]
         else:
             ticker_list = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA"]
             
-        events = pipeline.aggregator.get_earnings_calendar(ticker_list, start_date, end_date)
+        events = pipeline.aggregator.get_earnings_calendar(ticker_list, eff_start, eff_end)
         return events
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history/{ticker}")
+def get_ticker_earnings_history(
+    ticker: str,
+    session: Session = Depends(get_session)
+):
+    """
+    Get historical earnings and price reactions for a ticker.
+    Reads from the EarningsHistory database table, falling back to syncing
+    on-the-fly if no records exist.
+    """
+    ticker_upper = ticker.upper()
+    try:
+        stmt = select(EarningsHistory).where(
+            EarningsHistory.ticker == ticker_upper
+        ).order_by(EarningsHistory.report_date.desc())
+        
+        rows = session.exec(stmt).all()
+        
+        if not rows:
+            try:
+                from database.earnings_repo import sync_ticker_history
+                from data.earningsapi_source import EarningsAPIDataSource
+                from config.settings import load_config
+                config = load_config()
+                src = EarningsAPIDataSource(config.earningsapi)
+                src.connect()
+                try:
+                    sync_ticker_history(session, ticker_upper, src)
+                finally:
+                    src.disconnect()
+                rows = session.exec(stmt).all()
+            except Exception as se:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to sync history on the fly for {ticker_upper}: {se}")
+                
+        return rows
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

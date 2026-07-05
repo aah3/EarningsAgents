@@ -284,6 +284,13 @@ Then, output your final decision in the following exact JSON format, enclosed in
 QUANT_PROMPT = """You are a QUANTITATIVE analyst focused on statistical patterns and numerical signals.
 
 YOUR MISSION: Provide objective, data-driven prediction based on quantitative factors only.
+When a "Post-Earnings Reaction Pattern" is provided, compare the historical average
+ABSOLUTE next-day move (realized) against the current implied move (straddle):
+- If realized avg abs move > implied move, the options market is UNDER-pricing the event
+  → set "move_vs_implied": "exceeds implied move".
+- If realized avg abs move <= implied move → "inside implied move".
+Ground "expected_price_move" in this realized distribution (avg, range, and the beat/miss
+split), not a generic guess. Note any pattern where beats and misses move asymmetrically.
 
 ANALYSIS FOCUS:
 1. Historical beat/miss rate (last 4-8 quarters)
@@ -419,7 +426,18 @@ class BaseAgent:
         """Format company data into analysis prompt."""
         # Format historical earnings
         hist_str = ""
-        if company.historical_eps:
+        if company.enriched_history:
+            for h in company.enriched_history[:8]:
+                eps_dir = "BEAT" if h.get("eps_beat") else "MISS"
+                rev_dir = "BEAT" if h.get("revenue_beat") else "MISS"
+                def _pct(v): return f"{v:+.1f}%" if v is not None else "N/A"
+                hist_str += (
+                    f"  - {h.get('report_date')}: "
+                    f"EPS {eps_dir} {_pct(h.get('eps_surprise_pct'))} (YoY {_pct(h.get('eps_yoy'))}) | "
+                    f"Rev {rev_dir} {_pct(h.get('revenue_surprise_pct'))} (YoY {_pct(h.get('revenue_yoy'))}) | "
+                    f"Next-day move {_pct(h.get('reaction_1d_pct'))}\n"
+                )
+        elif company.historical_eps:
             for h in company.historical_eps[:4]:
                 beat = "BEAT" if h.get("surprise_pct", 0) > 0 else "MISS"
                 hist_str += f"  - {h.get('date')}: {beat} by {h.get('surprise_pct', 0):.1f}%\n"
@@ -497,6 +515,18 @@ class BaseAgent:
                 suffix = f" (as of {period} via {form})" if period else ""
                 facts_str += f"  - {fact_name}: {val_fmt}{suffix}\n"
         
+        reaction_str = ""
+        rs = company.reaction_summary
+        if rs:
+            reaction_str += f"  - Avg next-day move: {rs['avg_1d_pct']:+.1f}% (abs {rs['avg_abs_1d_pct']:.1f}%), σ {rs['std_1d_pct']:.1f}%\n"
+            reaction_str += f"  - Range over {rs['n']} quarters: {rs['min_1d_pct']:+.1f}% to {rs['max_1d_pct']:+.1f}%\n"
+            if rs.get("beat_move_avg") is not None:
+                reaction_str += f"  - Avg move when EPS beat: {rs['beat_move_avg']:+.1f}%\n"
+            if rs.get("miss_move_avg") is not None:
+                reaction_str += f"  - Avg move when EPS missed: {rs['miss_move_avg']:+.1f}%\n"
+        implied_str = (f"  - Current implied move (straddle): {company.implied_move_pct*100:.1f}%\n"
+                       if company.implied_move_pct is not None else "")
+        
         prompt = f"""
 ## Company Analysis Request
 
@@ -510,10 +540,14 @@ class BaseAgent:
 - Revenue Estimate: ${company.consensus_revenue/1e9 if company.consensus_revenue else 0:.1f}B
 - Number of Analysts: {company.num_analysts}
 
-### Historical Earnings (Last 4 Quarters)
+### Historical Earnings (EPS + Revenue + Reaction)
 {hist_str if hist_str else "  No historical data available"}
 - Beat Rate: {f"{company.beat_rate_4q:.0%}" if company.beat_rate_4q is not None else "N/A"}
 - Avg Surprise: {f"{company.avg_surprise_4q:.1f}%" if company.avg_surprise_4q is not None else "N/A"}
+
+### Post-Earnings Reaction Pattern (realized)
+{reaction_str if reaction_str else "  No reaction history available"}
+{implied_str}
 
 ### Recent Estimate Revisions
 {rev_str if rev_str else "  No recent revisions"}

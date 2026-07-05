@@ -1,7 +1,7 @@
 import logging
 from api.celery_app import celery_app
 from datetime import date, datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import sys
 import os
 
@@ -11,8 +11,9 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from pipeline import EarningsPipeline
 from settings import load_config
 from database.db import Session, engine
-from database.models import User, Prediction
+from database.models import User, Prediction, CompanyProfile, EarningsHistory, EarningsCalendarEvent
 from sqlmodel import select
+from database.earnings_repo import _refresh_profile, sync_ticker_history
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,9 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
             session.add(db_prediction)
             session.commit()
             session.refresh(db_prediction)
+            
+            # Enqueue ticker history sync on active user analysis
+            sync_ticker_history_task.delay(ticker.upper())
             
             # Re-export report to update DB sync details (successful save with record ID)
             if getattr(pipeline.config, "save_report", True):
@@ -212,3 +216,111 @@ def beat_heartbeat():
     """Lightweight liveness probe — fired every minute by Celery Beat."""
     logger.debug("[beat_heartbeat] alive")
     return {"alive": True, "ts": datetime.utcnow().isoformat()}
+
+
+# Removed local _refresh_profile (imported from database.earnings_repo)
+
+
+@celery_app.task(name="api.tasks.sync_earnings_calendar_task")
+def sync_earnings_calendar_task(days_forward: int = 14):
+    """
+    Sync upcoming earnings calendar events.
+    """
+    logger.info(f"Starting earnings calendar sync for the next {days_forward} days")
+    config = load_config()
+    from data.earningsapi_source import EarningsAPIDataSource
+    source = EarningsAPIDataSource(config.earningsapi)
+    if not source.connect():
+        logger.error("Failed to connect to EarningsAPIDataSource")
+        return {"status": "FAILURE", "error": "Connection failed"}
+        
+    try:
+        today = date.today()
+        all_events = []
+        for i in range(days_forward + 1):
+            target_date = today + _timedelta(days=i)
+            day_events = source.get_calendar_by_date(target_date)
+            all_events.extend(day_events)
+            
+        with Session(engine) as session:
+            distinct_tickers = set()
+            for ev in all_events:
+                ticker = ev["ticker"].upper()
+                report_date = ev["report_date"]
+                distinct_tickers.add(ticker)
+                
+                # Check for existing event
+                stmt = select(EarningsCalendarEvent).where(
+                    EarningsCalendarEvent.ticker == ticker,
+                    EarningsCalendarEvent.report_date == report_date
+                )
+                db_event = session.exec(stmt).first()
+                if not db_event:
+                    db_event = EarningsCalendarEvent(
+                        ticker=ticker,
+                        report_date=report_date
+                    )
+                
+                db_event.company_name = ev.get("company_name")
+                db_event.report_time = ev.get("report_time")
+                db_event.eps_estimate = ev.get("eps_estimate")
+                db_event.revenue_estimate = ev.get("revenue_estimate")
+                db_event.num_estimates = ev.get("num_estimates")
+                db_event.updated_at = datetime.utcnow()
+                
+                session.add(db_event)
+            session.commit()
+            
+            # Refresh profiles and denormalize
+            rate_limited = False
+            for ticker in distinct_tickers:
+                profile = None
+                if not rate_limited:
+                    try:
+                        profile = _refresh_profile(session, ticker)
+                    except Exception as e:
+                        import requests
+                        if isinstance(e, requests.exceptions.HTTPError) and e.response is not None and e.response.status_code == 429:
+                            logger.warning(f"Rate limit (429) hit, skipping further API profile fetches: {e}")
+                            rate_limited = True
+                
+                # Fallback to local profile if API was skipped or failed
+                if not profile:
+                    profile = session.exec(select(CompanyProfile).where(CompanyProfile.ticker == ticker)).first()
+                    
+                if profile:
+                    stmt = select(EarningsCalendarEvent).where(
+                        EarningsCalendarEvent.ticker == ticker
+                    )
+                    ticker_events = session.exec(stmt).all()
+                    for te in ticker_events:
+                        te.sector = profile.sector
+                        te.industry = profile.industry
+                        te.market_cap = profile.market_cap
+                        session.add(te)
+            session.commit()
+            
+        logger.info(f"Successfully synced earnings calendar: {len(all_events)} events")
+        return {"status": "SUCCESS", "events_synced": len(all_events)}
+    except Exception as e:
+        logger.error(f"Failed to sync earnings calendar: {e}", exc_info=True)
+        return {"status": "FAILURE", "error": str(e)}
+    finally:
+        source.disconnect()
+
+
+@celery_app.task(bind=True, name="api.tasks.sync_ticker_history_task")
+def sync_ticker_history_task(self, ticker: str):
+    """
+    Celery task wrapper around repository sync.
+    """
+    from database.earnings_repo import sync_ticker_history
+    from data.earningsapi_source import EarningsAPIDataSource
+    from config.settings import load_config
+    src = EarningsAPIDataSource(load_config().earningsapi)
+    src.connect()
+    try:
+        with Session(engine) as session:
+            return sync_ticker_history(session, ticker.upper(), src)
+    finally:
+        src.disconnect()

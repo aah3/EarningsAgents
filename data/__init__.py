@@ -53,6 +53,7 @@ from .base import (
 from .yahoo_finance import YahooFinanceDataSource
 from .sec_edgar import SECEdgarDataSource, SECFiling, EarningsTranscript
 from .news_sources import NewsAPIDataSource, AlphaVantageNewsDataSource
+from .earningsapi_source import EarningsAPIDataSource
 from .data_aggregator import DataAggregator
 
 
@@ -80,6 +81,7 @@ __all__ = [
     'SECEdgarDataSource',
     'NewsAPIDataSource',
     'AlphaVantageNewsDataSource',
+    'EarningsAPIDataSource',
     'DataAggregator',
     
     # Configuration

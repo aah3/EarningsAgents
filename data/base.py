@@ -208,6 +208,11 @@ class CompanyData(BaseModel):
     recent_transcripts: List[Dict[str, Any]] = Field(default_factory=list)
     company_facts: Dict[str, Any] = Field(default_factory=dict)
     options_features: Optional[Dict[str, Any]] = None
+    
+    # --- Persisted earnings enrichment (from EarningsHistory) ---
+    enriched_history: List[Dict[str, Any]] = Field(default_factory=list)
+    reaction_summary: Optional[Dict[str, Any]] = None
+    implied_move_pct: Optional[float] = None   # current straddle-implied move, decimal (0.06 = 6%)
 
 
 # ============================================================================

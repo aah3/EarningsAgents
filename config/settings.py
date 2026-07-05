@@ -69,6 +69,7 @@ class PipelineConfig:
     yahoo: DataSourceConfig = field(default_factory=lambda: DataSourceConfig(rate_limit_calls=2000))
     newsapi: DataSourceConfig = field(default_factory=DataSourceConfig)
     alphavantage: DataSourceConfig = field(default_factory=DataSourceConfig)
+    earningsapi: DataSourceConfig = field(default_factory=DataSourceConfig)
     sec: DataSourceConfig = field(default_factory=lambda: DataSourceConfig(enabled=False))
     
     # Bloomberg is legacy or optional now
@@ -207,6 +208,12 @@ def load_config() -> PipelineConfig:
         alphavantage=DataSourceConfig(
             api_key=os.getenv("ALPHAVANTAGE_API_KEY"),
             enabled=os.getenv("ALPHAVANTAGE_API_KEY") is not None
+        ),
+        earningsapi=DataSourceConfig(
+            api_key=os.getenv("EARNINGSAPI_API_KEY"),
+            enabled=os.getenv("EARNINGSAPI_API_KEY") is not None,
+            rate_limit_calls=60,
+            rate_limit_period=60.0,
         ),
         agent=AgentConfig(
             provider=provider,

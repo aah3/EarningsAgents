@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional
-from sqlmodel import SQLModel, Field, Relationship, Column, JSON
+from sqlmodel import SQLModel, Field, Relationship, Column, JSON, UniqueConstraint
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -62,3 +62,65 @@ class PredictionChat(SQLModel, table=True):
     
     user: Optional[User] = Relationship(back_populates="chats")
     prediction: Optional[Prediction] = Relationship(back_populates="chats")
+
+
+class CompanyProfile(SQLModel, table=True):
+    __tablename__ = "company_profile"
+    ticker: str = Field(primary_key=True)
+    company_name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    market_cap: Optional[float] = None
+    exchange: Optional[str] = None
+    country: Optional[str] = None
+    cik: Optional[str] = None
+    outstanding_shares: Optional[float] = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EarningsHistory(SQLModel, table=True):
+    __tablename__ = "earnings_history"
+    __table_args__ = (UniqueConstraint("ticker", "report_date", name="uq_hist_ticker_date"),)
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticker: str = Field(index=True)
+    report_date: date = Field(index=True)
+    report_time: Optional[str] = None
+    fiscal_quarter: Optional[str] = None
+    fiscal_year: Optional[int] = None
+    # EPS
+    eps_actual: Optional[float] = None
+    eps_estimate: Optional[float] = None
+    eps_surprise_pct: Optional[float] = None
+    eps_yoy: Optional[float] = None
+    eps_beat: Optional[bool] = None
+    # Revenue
+    revenue_actual: Optional[float] = None
+    revenue_estimate: Optional[float] = None
+    revenue_surprise_pct: Optional[float] = None
+    revenue_yoy: Optional[float] = None
+    revenue_beat: Optional[bool] = None
+    # Post-earnings reaction
+    reaction_1d_pct: Optional[float] = None
+    reaction_5d_pct: Optional[float] = None
+    reaction_volume: Optional[float] = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EarningsCalendarEvent(SQLModel, table=True):
+    __tablename__ = "earnings_calendar_event"
+    __table_args__ = (UniqueConstraint("ticker", "report_date", name="uq_cal_ticker_date"),)
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticker: str = Field(index=True)
+    company_name: Optional[str] = None
+    report_date: date = Field(index=True)
+    report_time: Optional[str] = None
+    eps_estimate: Optional[float] = None
+    revenue_estimate: Optional[float] = None
+    num_estimates: Optional[int] = None
+    # denormalized enrichment for fast tab reads
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    market_cap: Optional[float] = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

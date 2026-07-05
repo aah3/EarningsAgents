@@ -157,6 +157,29 @@ class EarningsPipeline:
             ticker, report_date, include_news=False, options_df=options_df
         )
         
+        # --- Attach persisted earnings enrichment for the agents ---
+        try:
+            from database.db import Session, engine
+            from database.earnings_repo import get_reaction_summary_and_history, sync_ticker_history
+            from data.earningsapi_source import EarningsAPIDataSource
+            with Session(engine) as session:
+                summary, hist = get_reaction_summary_and_history(session, ticker)
+                if not hist:  # first-run lazy populate (bounded, synchronous)
+                    src = EarningsAPIDataSource(self.config.earningsapi); src.connect()
+                    sync_ticker_history(session, ticker, src)
+                    summary, hist = get_reaction_summary_and_history(session, ticker)
+            company_data.reaction_summary = summary
+            company_data.enriched_history = hist
+        except Exception as e:
+            self.logger.warning(f"Reaction enrichment unavailable for {ticker}: {e}")
+
+        # --- Current implied move for realized-vs-implied comparison ---
+        try:
+            analytics = self.aggregator.get_option_analytics(ticker)
+            company_data.implied_move_pct = (analytics or {}).get("implied_move", {}).get("straddle_implied_move_pct")
+        except Exception as e:
+            self.logger.warning(f"Implied move unavailable for {ticker}: {e}")
+        
         publish(f"Fetching recent news and performing sentiment analysis...")
         
         # Fetch news with sentiment

@@ -51,6 +51,12 @@ celery_app.conf.update(
             "schedule": crontab(hour=SCORE_HOUR, minute=SCORE_MINUTE),
         },
 
+        "sync-earnings-calendar-daily": {
+            "task": "api.tasks.sync_earnings_calendar_task",
+            "schedule": crontab(hour=6, minute=0),
+            "kwargs": {"days_forward": 14},
+        },
+
         # Liveness heartbeat: 1-minute pulse so monitoring systems can
         # detect a dead beat scheduler within one interval.
         "beat-heartbeat": {
