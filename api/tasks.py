@@ -10,10 +10,11 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from pipeline import EarningsPipeline
 from settings import load_config
+from database.earnings_repo import _refresh_profile, sync_ticker_history
+from data.earningsapi_source import RateLimitError
 from database.db import Session, engine
 from database.models import User, Prediction, CompanyProfile, EarningsHistory, EarningsCalendarEvent
 from sqlmodel import select
-from database.earnings_repo import _refresh_profile, sync_ticker_history
 
 logger = logging.getLogger(__name__)
 
@@ -221,8 +222,10 @@ def beat_heartbeat():
 # Removed local _refresh_profile (imported from database.earnings_repo)
 
 
-@celery_app.task(name="api.tasks.sync_earnings_calendar_task")
-def sync_earnings_calendar_task(days_forward: int = 14):
+@celery_app.task(bind=True, name="api.tasks.sync_earnings_calendar_task",
+                 autoretry_for=(RateLimitError,), retry_backoff=True,
+                 retry_backoff_max=600, max_retries=5)
+def sync_earnings_calendar_task(self, days_forward: int = 14):
     """
     Sync upcoming earnings calendar events.
     """
@@ -309,7 +312,9 @@ def sync_earnings_calendar_task(days_forward: int = 14):
         source.disconnect()
 
 
-@celery_app.task(bind=True, name="api.tasks.sync_ticker_history_task")
+@celery_app.task(bind=True, name="api.tasks.sync_ticker_history_task",
+                 autoretry_for=(RateLimitError,), retry_backoff=True,
+                 retry_backoff_max=600, max_retries=5)
 def sync_ticker_history_task(self, ticker: str):
     """
     Celery task wrapper around repository sync.
@@ -324,3 +329,17 @@ def sync_ticker_history_task(self, ticker: str):
             return sync_ticker_history(session, ticker.upper(), src)
     finally:
         src.disconnect()
+
+sync_earnings_calendar_task.override_options = {
+    'autoretry_for': (RateLimitError,),
+    'retry_backoff': True,
+    'retry_backoff_max': 600,
+    'max_retries': 5
+}
+
+sync_ticker_history_task.override_options = {
+    'autoretry_for': (RateLimitError,),
+    'retry_backoff': True,
+    'retry_backoff_max': 600,
+    'max_retries': 5
+}

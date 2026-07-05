@@ -1,6 +1,8 @@
 import os
 import pytest
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+from data.market_hours import is_market_open, _ET
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from database.models import EarningsHistory
@@ -157,3 +159,76 @@ def test_live_reactions_smoke():
     assert r and r[0].get("reactions")
     dates = [x["date"] for x in r[0]["reactions"]]
     assert dates == sorted(dates), "reactions must be ascending before summarize_reaction slices [0]"
+
+
+# ---------- market open/hours tests ----------
+def test_market_open_weekday_regular_hours():
+    assert is_market_open(datetime(2026, 7, 6, 11, 0, tzinfo=_ET)) is True    # Mon 11:00 ET
+
+def test_market_closed_weekend():
+    assert is_market_open(datetime(2026, 7, 5, 11, 0, tzinfo=_ET)) is False   # Sun
+
+def test_market_closed_premarket_and_afterhours():
+    assert is_market_open(datetime(2026, 7, 6, 9, 0, tzinfo=_ET)) is False    # 09:00
+    assert is_market_open(datetime(2026, 7, 6, 16, 30, tzinfo=_ET)) is False  # 16:30
+
+def test_market_closed_on_holiday():
+    hol = {date(2026, 7, 6)}
+    assert is_market_open(datetime(2026, 7, 6, 11, 0, tzinfo=_ET), holidays=hol) is False
+
+def test_sample_depth_classification():
+    from database.earnings_repo import compute_reaction_summary
+    rows = lambda k: [{"reaction_1d_pct": 1.0, "eps_beat": True} for _ in range(k)]
+    assert compute_reaction_summary(rows(9))["sample_depth"] == "high"
+    assert compute_reaction_summary(rows(5))["sample_depth"] == "moderate"
+    assert compute_reaction_summary(rows(2))["sample_depth"] == "low"
+
+def test_format_prompt_shows_market_state():
+    from config.settings import AgentConfig
+    from agents.huggingface_agents import QuantAgent
+    from data.base import CompanyData
+    base = dict(ticker="AAPL", company_name="Apple", sector="Tech", industry="CE",
+                market_cap=3.7e12, report_date=date(2025,8,1), consensus_eps=1.95, consensus_revenue=90e9,
+                live_options={"implied_move_pct":0.06,"put_call_ratio":0.8,"avg_iv":0.35,
+                              "confidence_score":8.0,"days_to_expiry":5})
+    agent = QuantAgent(AgentConfig(provider="gemini", api_key="test"))
+    open_prompt = agent._format_prompt(CompanyData(market_open=True, **base), [])
+    closed_prompt = agent._format_prompt(CompanyData(market_open=False, **base), [])
+    assert "market OPEN" in open_prompt
+    assert "CLOSED" in closed_prompt
+    assert "Implied move (straddle)" in open_prompt
+
+
+def test_history_route_non_blocking_and_enqueues():
+    from fastapi.testclient import TestClient
+    from api.routers.earnings import router
+    from fastapi import FastAPI
+    from unittest.mock import MagicMock
+    
+    app = FastAPI()
+    app.include_router(router)
+    
+    from database.db import get_session
+    from sqlmodel import Session
+    
+    mock_session = MagicMock(spec=Session)
+    mock_session.exec.return_value.all.return_value = []
+    
+    app.dependency_overrides[get_session] = lambda: mock_session
+    
+    from api import tasks
+    original_delay = tasks.sync_ticker_history_task.delay
+    tasks.sync_ticker_history_task.delay = MagicMock()
+    
+    try:
+        client = TestClient(app)
+        response = client.get("/earnings/history/NEWTKR")
+        
+        assert response.status_code == 202
+        assert response.json() == {"status": "queued", "data": []}
+        
+        tasks.sync_ticker_history_task.delay.assert_called_once_with("NEWTKR")
+    finally:
+        tasks.sync_ticker_history_task.delay = original_delay
+        app.dependency_overrides.clear()
+

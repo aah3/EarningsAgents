@@ -292,6 +292,18 @@ ABSOLUTE next-day move (realized) against the current implied move (straddle):
 Ground "expected_price_move" in this realized distribution (avg, range, and the beat/miss
 split), not a generic guess. Note any pattern where beats and misses move asymmetrically.
 
+SAMPLE DEPTH — weight the realized reaction distribution by its quarter count (n) / sample depth:
+- high (n>=8): let the realized next-day distribution drive expected_price_move and the
+  move_vs_implied call; state high confidence.
+- moderate (n 4-7): use realized as primary, but hedge.
+- low (n<4) or none: defer to the implied move and lower your confidence explicitly.
+
+MARKET STATE — option signals are labeled LIVE or last-close:
+- LIVE (market OPEN): treat implied move, put/call, IV and confidence as current and
+  actionable; give the realized-vs-implied comparison full weight.
+- last close (market CLOSED): treat option data as stale; do not over-anchor on it and
+  note the reduced confidence in your reasoning.
+
 ANALYSIS FOCUS:
 1. Historical beat/miss rate (last 4-8 quarters)
 2. Average surprise magnitude and consistency
@@ -520,12 +532,23 @@ class BaseAgent:
         if rs:
             reaction_str += f"  - Avg next-day move: {rs['avg_1d_pct']:+.1f}% (abs {rs['avg_abs_1d_pct']:.1f}%), σ {rs['std_1d_pct']:.1f}%\n"
             reaction_str += f"  - Range over {rs['n']} quarters: {rs['min_1d_pct']:+.1f}% to {rs['max_1d_pct']:+.1f}%\n"
+            reaction_str += f"  - Sample depth: {rs.get('sample_depth', 'n/a')} (n={rs.get('n')})\n"
             if rs.get("beat_move_avg") is not None:
                 reaction_str += f"  - Avg move when EPS beat: {rs['beat_move_avg']:+.1f}%\n"
             if rs.get("miss_move_avg") is not None:
                 reaction_str += f"  - Avg move when EPS missed: {rs['miss_move_avg']:+.1f}%\n"
         implied_str = (f"  - Current implied move (straddle): {company.implied_move_pct*100:.1f}%\n"
                        if company.implied_move_pct is not None else "")
+        
+        market_label = "LIVE — market OPEN" if company.market_open else "last close — market CLOSED"
+        lo = company.live_options or {}
+        live_opts_str = ""
+        if lo:
+            def _p(v, pct=False): 
+                return ("N/A" if v is None else (f"{v*100:.1f}%" if pct else f"{v:.2f}"))
+            live_opts_str += f"  - Implied move (straddle): {_p(lo.get('implied_move_pct'), pct=True)}\n"
+            live_opts_str += f"  - Put/Call ratio: {_p(lo.get('put_call_ratio'))} | Avg IV: {_p(lo.get('avg_iv'), pct=True)}\n"
+            live_opts_str += f"  - Signal confidence: {_p(lo.get('confidence_score'))}/10 | DTE: {lo.get('days_to_expiry')}\n"
         
         prompt = f"""
 ## Company Analysis Request
@@ -558,8 +581,8 @@ class BaseAgent:
 - 21-Day Change: {f"{company.price_change_21d:.1%}" if company.price_change_21d is not None else "N/A"}
 - Short Interest: {f"{company.short_interest:.1%}" if company.short_interest is not None else "N/A"}
 
-### Options Market Signals
-{options_str if options_str else "  No options data available"}
+### Options Market Signals ({market_label})
+{live_opts_str or options_str or "  No options data available"}
 
 ### Recent News Headlines
 {news_str if news_str else "  No recent news"}

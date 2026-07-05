@@ -213,6 +213,8 @@ class CompanyData(BaseModel):
     enriched_history: List[Dict[str, Any]] = Field(default_factory=list)
     reaction_summary: Optional[Dict[str, Any]] = None
     implied_move_pct: Optional[float] = None   # current straddle-implied move, decimal (0.06 = 6%)
+    market_open: Optional[bool] = None
+    live_options: Optional[Dict[str, Any]] = None
 
 
 # ============================================================================

@@ -306,52 +306,15 @@ def get_earnings_calendar(
         stmt = stmt.order_by(EarningsCalendarEvent.report_date)
         db_events = session.exec(stmt).all()
         
-        # If no events found, sync those dates on-the-fly from EarningsAPIDataSource
+        # If no events found, enqueue calendar sync in background
         if not db_events:
             try:
-                num_days = (eff_end - eff_start).days
-                if num_days <= 31:  # Limit range to avoid hitting API rate limits
-                    from data.earningsapi_source import EarningsAPIDataSource
-                    source = EarningsAPIDataSource(pipeline.config.earningsapi)
-                    source.connect()
-                    try:
-                        all_fetched = []
-                        for i in range(num_days + 1):
-                            target_date = eff_start + timedelta(days=i)
-                            day_events = source.get_calendar_by_date(target_date)
-                            all_fetched.extend(day_events)
-                            
-                        # Save to DB
-                        for ev in all_fetched:
-                            ticker = ev["ticker"].upper()
-                            report_date = ev["report_date"]
-                            
-                            stmt_check = select(EarningsCalendarEvent).where(
-                                EarningsCalendarEvent.ticker == ticker,
-                                EarningsCalendarEvent.report_date == report_date
-                            )
-                            db_event = session.exec(stmt_check).first()
-                            if not db_event:
-                                db_event = EarningsCalendarEvent(
-                                    ticker=ticker,
-                                    report_date=report_date
-                                )
-                            db_event.company_name = ev.get("company_name")
-                            db_event.report_time = ev.get("report_time")
-                            db_event.eps_estimate = ev.get("eps_estimate")
-                            db_event.revenue_estimate = ev.get("revenue_estimate")
-                            db_event.num_estimates = ev.get("num_estimates")
-                            db_event.updated_at = datetime.utcnow()
-                            session.add(db_event)
-                        session.commit()
-                        
-                        # Re-query DB after sync
-                        db_events = session.exec(stmt).all()
-                    finally:
-                        source.disconnect()
+                from api.tasks import sync_earnings_calendar_task
+                days_forward = max(14, (eff_end - date.today()).days)
+                sync_earnings_calendar_task.delay(days_forward)
             except Exception as se:
                 import logging
-                logging.getLogger(__name__).warning(f"Failed to sync calendar on the fly: {se}")
+                logging.getLogger(__name__).warning(f"Failed to enqueue calendar sync: {se}")
 
         if db_events:
             results = []
@@ -393,14 +356,14 @@ def get_earnings_calendar(
 
 
 @router.get("/history/{ticker}")
-def get_ticker_earnings_history(
+async def get_ticker_earnings_history(
     ticker: str,
     session: Session = Depends(get_session)
 ):
     """
     Get historical earnings and price reactions for a ticker.
-    Reads from the EarningsHistory database table, falling back to syncing
-    on-the-fly if no records exist.
+    Reads from the EarningsHistory database table, enqueuing a background
+    sync task on a cache miss rather than blocking.
     """
     ticker_upper = ticker.upper()
     try:
@@ -411,23 +374,12 @@ def get_ticker_earnings_history(
         rows = session.exec(stmt).all()
         
         if not rows:
-            try:
-                from database.earnings_repo import sync_ticker_history
-                from data.earningsapi_source import EarningsAPIDataSource
-                from config.settings import load_config
-                config = load_config()
-                src = EarningsAPIDataSource(config.earningsapi)
-                src.connect()
-                try:
-                    sync_ticker_history(session, ticker_upper, src)
-                finally:
-                    src.disconnect()
-                rows = session.exec(stmt).all()
-            except Exception as se:
-                import logging
-                logging.getLogger(__name__).warning(f"Failed to sync history on the fly for {ticker_upper}: {se}")
-                
-        return rows
+            from api.tasks import sync_ticker_history_task
+            sync_ticker_history_task.delay(ticker_upper)
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=202, content={"status": "queued", "data": []})
+            
+        return {"status": "ready", "data": [r.model_dump() for r in rows]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

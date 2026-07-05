@@ -25,8 +25,12 @@ def compute_reaction_summary(rows: List[Dict[str, Any]]) -> Optional[Dict[str, A
         if r.get("reaction_1d_pct") is not None and r.get("eps_beat") is False
     ]
     
+    n = len(moves)
+    depth = "high" if n >= 8 else "moderate" if n >= 4 else "low"
+    
     return {
-        "n": len(moves),
+        "n": n,
+        "sample_depth": depth,
         "avg_1d_pct": round(statistics.fmean(moves), 2),
         "median_1d_pct": round(statistics.median(moves), 2),
         "min_1d_pct": round(min(moves), 2),
@@ -89,8 +93,8 @@ def _refresh_profile(session: Session, ticker: str) -> Optional[CompanyProfile]:
                 source.disconnect()
         except Exception as e:
             logger.error(f"Failed to refresh profile for {ticker_upper}: {e}", exc_info=True)
-            import requests
-            if isinstance(e, requests.exceptions.HTTPError) and e.response is not None and e.response.status_code == 429:
+            from data.earningsapi_source import RateLimitError
+            if isinstance(e, RateLimitError):
                 raise e
             
     return profile

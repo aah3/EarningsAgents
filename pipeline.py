@@ -161,24 +161,53 @@ class EarningsPipeline:
         try:
             from database.db import Session, engine
             from database.earnings_repo import get_reaction_summary_and_history, sync_ticker_history
-            from data.earningsapi_source import EarningsAPIDataSource
+            from data.earningsapi_source import EarningsAPIDataSource, RateLimitError
             with Session(engine) as session:
                 summary, hist = get_reaction_summary_and_history(session, ticker)
-                if not hist:  # first-run lazy populate (bounded, synchronous)
-                    src = EarningsAPIDataSource(self.config.earningsapi); src.connect()
-                    sync_ticker_history(session, ticker, src)
-                    summary, hist = get_reaction_summary_and_history(session, ticker)
+                if not hist:
+                    try:
+                        src = EarningsAPIDataSource(self.config.earningsapi); src.connect()
+                        try:
+                            sync_ticker_history(session, ticker, src)
+                        finally:
+                            src.disconnect()
+                        summary, hist = get_reaction_summary_and_history(session, ticker)
+                    except RateLimitError:
+                        self.logger.warning(f"429 on lazy-populate for {ticker}; enqueuing background sync")
+                        from api.tasks import sync_ticker_history_task          # lazy import (avoids cycle)
+                        sync_ticker_history_task.delay(ticker)                   # autoretries w/ backoff
             company_data.reaction_summary = summary
-            company_data.enriched_history = hist
+            company_data.enriched_history = hist or []
         except Exception as e:
             self.logger.warning(f"Reaction enrichment unavailable for {ticker}: {e}")
 
-        # --- Current implied move for realized-vs-implied comparison ---
+        # --- Current implied move & live options for realized-vs-implied comparison ---
+        analytics = None
         try:
             analytics = self.aggregator.get_option_analytics(ticker)
-            company_data.implied_move_pct = (analytics or {}).get("implied_move", {}).get("straddle_implied_move_pct")
+            if analytics:
+                company_data.implied_move_pct = analytics.get("implied_move", {}).get("straddle_implied_move_pct")
         except Exception as e:
             self.logger.warning(f"Implied move unavailable for {ticker}: {e}")
+
+        try:
+            from data.market_hours import is_market_open
+            company_data.market_open = is_market_open()
+            if analytics:
+                im = analytics.get("implied_move", {}) or {}
+                osum = analytics.get("option_summary", {}) or {}
+                company_data.live_options = {
+                    "implied_move_pct": im.get("straddle_implied_move_pct"),
+                    "confidence_score": im.get("confidence_score"),
+                    "upper_range": im.get("upper_range"),
+                    "lower_range": im.get("lower_range"),
+                    "days_to_expiry": im.get("days_to_expiry"),
+                    "put_call_ratio": osum.get("put_call_ratio"),
+                    "avg_iv": osum.get("avg_iv"),
+                    "total_volume": osum.get("total_volume"),
+                }
+        except Exception as e:
+            self.logger.warning(f"Failed to populate market open or live options for {ticker}: {e}")
         
         publish(f"Fetching recent news and performing sentiment analysis...")
         
