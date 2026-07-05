@@ -1508,6 +1508,18 @@ class ThreeAgentSystem:
                     f"{bear_rebuttal.confidence:.0f}%):  {bear_rebuttal.reasoning}\n"
                 )
 
+        # Map company.report_time to a short code: BMO | AMC | UNKNOWN
+        rt_val = company.report_time
+        if hasattr(rt_val, "value"):
+            rt_val = rt_val.value
+        rt_str = str(rt_val).lower().strip()
+        if "open" in rt_str or "bmo" in rt_str:
+            report_time_short = "BMO"
+        elif "close" in rt_str or "amc" in rt_str:
+            report_time_short = "AMC"
+        else:
+            report_time_short = "UNKNOWN"
+
         return EarningsPrediction(
             ticker=company.ticker,
             company_name=company.company_name,
@@ -1531,6 +1543,7 @@ class ThreeAgentSystem:
             debate_summary=debate_summary,
             rebuttal_summary=rebuttal_summary,
             options_features=company.options_features,
+            report_time=report_time_short,
         )
 
 

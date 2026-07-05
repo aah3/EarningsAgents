@@ -118,6 +118,7 @@ def main():
                         ticker=ticker,
                         company_name=f"{ticker} Corporation",
                         report_date=rep_date,
+                        report_timing="UNKNOWN",
                         direction=args.direction.upper(),
                         confidence=conf,
                         reasoning_summary=f"Manually created prediction for {ticker}.",

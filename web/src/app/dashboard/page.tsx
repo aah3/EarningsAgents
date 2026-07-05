@@ -129,9 +129,8 @@ export default function DashboardPage() {
       if (!isReady) {
         throw new Error("Analysis timed out. Please check prediction history later.");
       }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      setError(err.message || "An error occurred during analysis.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred during analysis.");
     } finally {
       setLoading(false);
       setMessages([]); // Clear toast messages after completion

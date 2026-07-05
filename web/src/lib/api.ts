@@ -24,6 +24,7 @@ export interface Prediction {
     actual_price_move_pct?: number;
     accuracy_score?: number;  // Brier score — lower is better
     scored_at?: string;
+    report_timing?: string;
 }
 
 export interface PredictionMetrics {

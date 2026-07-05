@@ -175,6 +175,7 @@ class EarningsPrediction:
     # Rebuttal cross-examination transcript (populated when enable_rebuttals=True)
     rebuttal_summary: Optional[str] = None
     options_features: Optional[Dict[str, Any]] = None
+    report_time: str = "UNKNOWN"
 
 
 def load_config() -> PipelineConfig:

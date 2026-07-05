@@ -112,6 +112,7 @@ def main():
                 ticker="NKE",
                 company_name=prediction.company_name,
                 report_date=datetime.combine(prediction.report_date, datetime.min.time()),
+                report_timing=getattr(prediction, "report_time", "UNKNOWN"),
                 direction=prediction.direction.value.upper(),
                 confidence=prediction.confidence,
                 expected_price_move=prediction.expected_price_move,
