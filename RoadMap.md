@@ -14,14 +14,14 @@ timeline
         Robust Rate Limiting : Implement token/RPM buckets per LLM provider
     section Week 2: Alternative Data
         SEC Filings Parsing : Extract MD&A & risk factors from 10-K/10-Q
-        Option Flow Signals : Integrate contract volume ratios, volatility surfaces
+        Option Flow Signals : Integrate contract volume ratios, volatility surfaces [COMPLETED]
         Web Search Tooling : Add Tavily/Serper APIs for real-time news retrieval
     section Week 3: Interactive Copilot
         Agent Chat Interface : Support multi-turn chat with Bull, Bear, and Quant
         Custom Document Ingestion : Upload PDF press releases and slide decks
     section Week 4: Backtesting & Analytics
         Historical Backtest Engine : Batch-run predictions on past quarters
-        Analytics Dashboard : Implement Brier score and accuracy charts
+        Analytics Dashboard : Implement Brier score and accuracy charts [PARTIAL COMPLETED]
     section Week 5: Scale & Live Deployment
         Docker Orchestration Tuning : Multi-replica workers & Celery monitoring
         Production Cloud Deploy : Integrate Supabase, Upstash, and Clerk prod
@@ -40,9 +40,10 @@ timeline
 *   **SEC EDGAR Parsing:**
     *   Upgrade the current [SECEdgarDataSource](file:///c:/Users/alfredo/Project/EarningsAgents/data/sec_edgar.py) to parse full HTML filings rather than just metadata.
     *   Extract the **Management's Discussion & Analysis (MD&A)** and **Risk Factors (Item 1A)** sections.
-*   **Options Market Features:**
-    *   Enhance option analytics in [OptionsDataSource](file:///c:/Users/alfredo/Project/EarningsAgents/data/options.py) to calculate the volatility skew, ATM IV trends, and call/put open interest ratios.
-    *   Provide these options signals directly to the **Quant Agent** for probability-weighted predictions.
+*   **Options Market Features:** [COMPLETED]
+    *   Enhanced option analytics in [OptionsChainAnalyzer](file:///c:/Users/alfredo/Project/EarningsAgents/data/options.py) to calculate volatility skew, ATM IV trends, and call/put open interest ratios.
+    *   Resolved option chain implied-move calculations to prioritize upcoming event expirations based on `earnings_date`, fallback to bid/ask price when mid-price is missing, and correctly compute overall Put/Call aggregate ratios.
+    *   Provided these options signals directly to the **Quant Agent** for probability-weighted predictions.
 *   **Web Search Integration:**
     *   Add a real-time web search tool (using Tavily or Serper API) to the ReAct agent tool loop in [agent_tools.py](file:///c:/Users/alfredo/Project/EarningsAgents/agent_tools.py) to fetch late-breaking company news, earnings whisper data, or pre-announcements.
 
@@ -66,8 +67,9 @@ timeline
         *   **Hit Rate (Accuracy %):** Percentage of correct Beat/Miss predictions.
         *   **Average Brier Score:** Evaluating forecast confidence calibration.
         *   **Average Implied vs. Actual Price Move:** How well the model identified mispriced options.
-*   **Analytics UI Dashboard:**
+*   **Analytics UI Dashboard:** [COMPLETED - PARTIAL]
     *   Add visual graphs (using Recharts) to the history section of the Next.js app to display historical performance and confidence metrics.
+    *   **Dashboard Overview Integration:** [COMPLETED] Connected the main **Dashboard Overview** to live predictions in the database to dynamically render the latest `n` prediction rows with an integrated limit selector.
 
 ### 🔹 Week 5: Scalability, Security, & Production Deployment
 **Goal:** Deploy the multi-container stack to a staging environment and prepare for live trading/research.
