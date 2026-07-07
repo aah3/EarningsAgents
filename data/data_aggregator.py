@@ -27,7 +27,7 @@ try:
         EarningsCallTranscript,
         ReportTime,
     )
-    from .yahoo_finance import YahooFinanceDataSource, OptionChainSummary, OptionContract
+    from .yahoo_finance import YahooFinanceDataSource, OptionChainSummary, OptionContract, OptionType as YFOptType
     from .sec_edgar import SECEdgarDataSource, SECFiling, CompanyFact
     from .news_sources import NewsAPIDataSource, AlphaVantageNewsDataSource
     from .options import OptionData, OptionChainAnalyzer, OptionType as OptType
@@ -47,7 +47,7 @@ except (ImportError, ValueError):
         EarningsCallTranscript,
         ReportTime,
     )
-    from yahoo_finance import YahooFinanceDataSource, OptionChainSummary, OptionContract
+    from yahoo_finance import YahooFinanceDataSource, OptionChainSummary, OptionContract, OptionType as YFOptType
     from sec_edgar import SECEdgarDataSource, SECFiling, CompanyFact
     from news_sources import NewsAPIDataSource, AlphaVantageNewsDataSource
     from options import OptionData, OptionChainAnalyzer, OptionType as OptType
@@ -292,7 +292,7 @@ class DataAggregator:
         historical_list = result.value or []
         historical = [self._to_dict(h) for h in historical_list]
         
-        # Calculate beat rate & avg surprise
+        # Calculate beat rate & median surprise
         beat_rate = None
         avg_surprise = None
         if historical_list:
@@ -300,7 +300,14 @@ class DataAggregator:
             # Handle both dataclass and Pydantic model
             beats = sum(1 for h in recent if (getattr(h, 'beat', False) if not isinstance(h, dict) else h.get('beat', False)))
             beat_rate = beats / len(recent) if recent else 0.0
-            avg_surprise = sum(getattr(h, 'surprise_pct', 0) if not isinstance(h, dict) else h.get('surprise_pct', 0) for h in recent) / len(recent) if recent else 0.0
+            
+            import statistics
+            surprise_vals = []
+            for h in recent:
+                val = getattr(h, 'surprise_pct', None) if not isinstance(h, dict) else h.get('surprise_pct', None)
+                if val is not None:
+                    surprise_vals.append(max(-100.0, min(100.0, float(val))))
+            avg_surprise = statistics.median(surprise_vals) if surprise_vals else 0.0
         
         # Get price data (Yahoo)
         result = chain.fetch("price_data", [
@@ -348,10 +355,10 @@ class DataAggregator:
             try:
                 import sys
                 import os
-                parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                if parent_dir not in sys.path:
-                    sys.path.insert(0, parent_dir)
-                from options_features import OptionFeaturesExtractor
+                try:
+                    from research.options_features import OptionFeaturesExtractor
+                except ImportError:
+                    from options_features import OptionFeaturesExtractor
                 
                 # Default mapping assumes it follows our standard format
                 extractor = OptionFeaturesExtractor(date_col='date')
@@ -642,7 +649,6 @@ class DataAggregator:
             for c in contracts:
                 try:
                     # Map enum types
-                    from yahoo_finance import OptionType as YFOptType
                     o_type = OptType.CALL if c.option_type == YFOptType.CALL else OptType.PUT
                     
                     opt_data_list.append(OptionData(
@@ -671,12 +677,11 @@ class DataAggregator:
             # Use the high-quality analyzer from options.py
             current_price = self.yahoo.get_price_data(ticker).current_price
             analyzer = OptionChainAnalyzer(ticker, current_price, opt_data_list)
-            features = analyzer.get_chain_features()
+            features = analyzer.get_chain_features(earnings_date=earnings_date)
             
-            # Extract implied move from features
-            feat_move = features.get("implied_move", {})
+            feat_move = features.get("implied_move", {}) or {}
+            available = bool(feat_move.get("implied_move_pct")) and len(contracts) >= 10
             
-            # Calculate a robust confidence score based on data quality
             confidence = 0.0
             if feat_move:
                 confidence += 4.0
@@ -687,21 +692,40 @@ class DataAggregator:
             elif len(contracts) > 10:
                 confidence += 1.5
             
-            return {
-                "implied_move": {
-                    "straddle_implied_move_pct": feat_move.get("implied_move_pct", 0),
+            if available:
+                implied_move_data = {
+                    "straddle_implied_move_pct": feat_move.get("implied_move_pct"),
                     "confidence_score": confidence,
                     "upper_range": feat_move.get("upper_range"),
                     "lower_range": feat_move.get("lower_range"),
                     "days_to_expiry": feat_move.get("days_to_expiry"),
-                },
-                "option_summary": {
-                    "put_call_ratio": features.get("put_call_ratios", {}).get("total", {}).get("volume_ratio", 0),
+                }
+                option_summary_data = {
+                    "put_call_ratio": features.get("put_call_ratios", {}).get("total", {}).get("volume_ratio"),
                     "total_volume": features.get("total_volume", 0),
                     "total_oi": features.get("total_open_interest", 0),
-                    "avg_iv": features.get("skew", {}).get("atm_iv", 0),
+                    "avg_iv": features.get("skew", {}).get("atm_iv"),
                     **features
-                },
+                }
+            else:
+                implied_move_data = {
+                    "straddle_implied_move_pct": None,
+                    "confidence_score": confidence,
+                    "upper_range": None,
+                    "lower_range": None,
+                    "days_to_expiry": None,
+                }
+                option_summary_data = {
+                    "put_call_ratio": None,
+                    "total_volume": 0,
+                    "total_oi": 0,
+                    "avg_iv": None,
+                }
+            
+            return {
+                "available": available,
+                "implied_move": implied_move_data,
+                "option_summary": option_summary_data,
                 "total_contracts": len(contracts)
             }
         except Exception as e:

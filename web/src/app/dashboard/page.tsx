@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { Loader2, ArrowLeft, Terminal, AlertTriangle } from "lucide-react";
 import { api, Prediction, PredictionMetrics } from "@/lib/api";
@@ -32,8 +32,66 @@ export default function DashboardPage() {
     Consensus: string;
   }>({ Bull: "", Bear: "", Quant: "", Consensus: "" });
   const [metrics, setMetrics] = useState<PredictionMetrics | null>(null);
+  const [realPredictions, setRealPredictions] = useState<Prediction[]>([]);
+  const [limit, setLimit] = useState<number>(5);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(true);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
+
+  const fetchHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      const token = await getToken();
+      if (token) {
+        const data = await api.getPredictionHistory(token);
+        setRealPredictions(data || []);
+      }
+    } catch (err) {
+      console.error("Failed to load prediction history", err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, [getToken]);
+
+  const mappedPredictionRows = useMemo(() => {
+    const sorted = realPredictions.slice(0, limit);
+    return sorted.map((p) => {
+      let consensus: "BEAT" | "MISS" | "INLINE" = "BEAT";
+      const dir = (p.direction || "").toUpperCase();
+      if (dir === "MISS") {
+        consensus = "MISS";
+      } else if (dir === "INLINE" || dir === "MEET" || dir === "NEUTRAL") {
+        consensus = "INLINE";
+      }
+      
+      const status: "VALIDATED" | "PENDING" = p.actual_direction ? "VALIDATED" : "PENDING";
+      
+      let targetDate = "";
+      if (p.report_date) {
+        if (typeof p.report_date === "string") {
+          targetDate = p.report_date.split("T")[0];
+        } else {
+          try {
+            targetDate = new Date(p.report_date).toISOString().split("T")[0];
+          } catch {
+            targetDate = String(p.report_date);
+          }
+        }
+      }
+      
+      return {
+        ticker: p.ticker,
+        targetDate: targetDate,
+        status: status,
+        consensus: consensus,
+        confidence: Math.round(p.confidence * 100),
+      };
+    });
+  }, [realPredictions, limit]);
 
   const scrollToBottom = () => {
     terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -129,6 +187,9 @@ export default function DashboardPage() {
       if (!isReady) {
         throw new Error("Analysis timed out. Please check prediction history later.");
       }
+      
+      // Reload history to show the newly ran prediction immediately
+      fetchHistory();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An error occurred during analysis.");
     } finally {
@@ -263,20 +324,32 @@ export default function DashboardPage() {
         ) : (
           /* Interactive Predictions Table */
           <PredictionsTable
+            predictions={mappedPredictionRows}
+            limit={limit}
+            onLimitChange={setLimit}
             onRowClick={(row) => {
-              const mapped: Prediction = {
-                ticker: row.ticker,
-                company_name: getCompanyName(row.ticker),
-                report_date: row.targetDate,
-                prediction_date: row.targetDate,
-                direction: row.consensus,
-                confidence: row.confidence / 100,
-                reasoning_summary: getMockReasoning(row.ticker),
-                debate_summary: getMockDebate(row.ticker),
-                bull_factors: getMockFactors().bull,
-                bear_factors: getMockFactors().bear,
-              };
-              setResult(mapped);
+              const found = realPredictions.find(
+                (p) =>
+                  p.ticker === row.ticker &&
+                  (p.report_date || "").startsWith(row.targetDate)
+              );
+              if (found) {
+                setResult(found);
+              } else {
+                const mapped: Prediction = {
+                  ticker: row.ticker,
+                  company_name: getCompanyName(row.ticker),
+                  report_date: row.targetDate,
+                  prediction_date: row.targetDate,
+                  direction: row.consensus,
+                  confidence: row.confidence / 100,
+                  reasoning_summary: getMockReasoning(row.ticker),
+                  debate_summary: getMockDebate(row.ticker),
+                  bull_factors: getMockFactors().bull,
+                  bear_factors: getMockFactors().bear,
+                };
+                setResult(mapped);
+              }
             }}
           />
         )}

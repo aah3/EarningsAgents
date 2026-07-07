@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from typing import List, Optional
+from typing import List, Optional, Dict
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON, UniqueConstraint
 
 class User(SQLModel, table=True):
@@ -105,6 +105,7 @@ class EarningsHistory(SQLModel, table=True):
     reaction_5d_pct: Optional[float] = None
     reaction_volume: Optional[float] = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    provenance: Dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class EarningsCalendarEvent(SQLModel, table=True):

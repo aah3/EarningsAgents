@@ -100,6 +100,12 @@ def _refresh_profile(session: Session, ticker: str) -> Optional[CompanyProfile]:
     return profile
 
 
+def compute_yoy(current_actual: Optional[float], year_ago_actual: Optional[float], min_base: float) -> Optional[float]:
+    """Compute year-over-year growth percentage, capped at ±1000%."""
+    from data.metrics import safe_surprise_pct
+    return safe_surprise_pct(current_actual, year_ago_actual, cap=1000.0, min_base=min_base)
+
+
 def sync_ticker_history(session: Session, ticker: str, source) -> int:
     """
     Pure sync: pull /v1/earnings + /v1/earnings-reactions from `source`, merge by
@@ -122,6 +128,7 @@ def sync_ticker_history(session: Session, ticker: str, source) -> int:
     reactions_by_date = {r["date"]: r for r in reactions}
     
     from data.earningsapi_source import summarize_reaction
+    from data.metrics import safe_surprise_pct
     
     upserted_count = 0
     for row in earnings:
@@ -162,15 +169,54 @@ def sync_ticker_history(session: Session, ticker: str, source) -> int:
         db_hist.report_time = report_time
         db_hist.eps_actual = actual_eps
         db_hist.eps_estimate = row.get("epsEstimate")
-        db_hist.eps_surprise_pct = eps_data.get("surprisePercent")
-        db_hist.eps_yoy = eps_data.get("yoy")
+        
+        provenance = {}
+        
+        eps_surp = eps_data.get("surprisePercent")
+        if eps_surp is not None:
+            db_hist.eps_surprise_pct = eps_surp
+            provenance["eps_surprise_pct"] = "reported"
+        else:
+            local_eps_surp = safe_surprise_pct(actual_eps, row.get("epsEstimate"), min_base=0.05)
+            if local_eps_surp is not None:
+                db_hist.eps_surprise_pct = local_eps_surp
+                provenance["eps_surprise_pct"] = "computed"
+            else:
+                db_hist.eps_surprise_pct = None
+                
+        eps_yoy_val = eps_data.get("yoy")
+        if eps_yoy_val is not None:
+            db_hist.eps_yoy = eps_yoy_val
+            provenance["eps_yoy"] = "reported"
+        else:
+            db_hist.eps_yoy = None
+            
         db_hist.eps_beat = eps_data.get("beat")
         
         db_hist.revenue_actual = actual_rev
         db_hist.revenue_estimate = row.get("revenueEstimate")
-        db_hist.revenue_surprise_pct = rev_data.get("surprisePercent")
-        db_hist.revenue_yoy = rev_data.get("yoy")
+        
+        rev_surp = rev_data.get("surprisePercent")
+        if rev_surp is not None:
+            db_hist.revenue_surprise_pct = rev_surp
+            provenance["revenue_surprise_pct"] = "reported"
+        else:
+            local_rev_surp = safe_surprise_pct(actual_rev, row.get("revenueEstimate"), min_base=1e6)
+            if local_rev_surp is not None:
+                db_hist.revenue_surprise_pct = local_rev_surp
+                provenance["revenue_surprise_pct"] = "computed"
+            else:
+                db_hist.revenue_surprise_pct = None
+                
+        rev_yoy_val = rev_data.get("yoy")
+        if rev_yoy_val is not None:
+            db_hist.revenue_yoy = rev_yoy_val
+            provenance["revenue_yoy"] = "reported"
+        else:
+            db_hist.revenue_yoy = None
+            
         db_hist.revenue_beat = rev_data.get("beat")
+        db_hist.provenance = provenance
         
         db_hist.reaction_1d_pct = summary.get("reaction_1d_pct")
         db_hist.reaction_5d_pct = summary.get("reaction_5d_pct")
@@ -180,6 +226,40 @@ def sync_ticker_history(session: Session, ticker: str, source) -> int:
         session.add(db_hist)
         upserted_count += 1
         
+    if upserted_count > 0:
+        session.flush()
+        all_rows = session.exec(
+            select(EarningsHistory)
+            .where(EarningsHistory.ticker == ticker_upper)
+            .order_by(EarningsHistory.report_date.asc())
+        ).all()
+        
+        for r in all_rows:
+            prov = dict(r.provenance or {})
+            if r.eps_yoy is None or r.revenue_yoy is None:
+                prev_row = None
+                min_diff = 9999
+                for p in all_rows:
+                    diff_days = (r.report_date - p.report_date).days
+                    if 330 <= diff_days <= 400:
+                        if abs(diff_days - 365) < min_diff:
+                            min_diff = abs(diff_days - 365)
+                            prev_row = p
+                
+                if prev_row:
+                    if r.eps_yoy is None and r.eps_actual is not None and prev_row.eps_actual is not None:
+                        local_yoy = compute_yoy(r.eps_actual, prev_row.eps_actual, min_base=0.05)
+                        if local_yoy is not None:
+                            r.eps_yoy = local_yoy
+                            prov["eps_yoy"] = "computed"
+                    if r.revenue_yoy is None and r.revenue_actual is not None and prev_row.revenue_actual is not None:
+                        local_yoy = compute_yoy(r.revenue_actual, prev_row.revenue_actual, min_base=1e6)
+                        if local_yoy is not None:
+                            r.revenue_yoy = local_yoy
+                            prov["revenue_yoy"] = "computed"
+            r.provenance = prov
+            session.add(r)
+                    
     session.commit()
     logger.info(f"Synced {upserted_count} history rows for {ticker_upper}")
     return upserted_count

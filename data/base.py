@@ -46,7 +46,7 @@ class HistoricalEarning(BaseModel):
     date: date
     actual_eps: float
     estimate_eps: float
-    surprise_pct: float
+    surprise_pct: Optional[float] = None
     beat: bool
     fiscal_quarter: Optional[str] = None
     fiscal_year: Optional[int] = None
@@ -55,11 +55,11 @@ class HistoricalEarning(BaseModel):
     def calculate_surprise(cls, v, values):
         """Calculate surprise percentage if not provided."""
         if v is None and 'actual_eps' in values and 'estimate_eps' in values:
-            actual = values['actual_eps']
-            estimate = values['estimate_eps']
-            if estimate != 0:
-                return ((actual - estimate) / abs(estimate)) * 100
-        return v or 0.0
+            from data.metrics import safe_surprise_pct
+            return safe_surprise_pct(values['actual_eps'], values['estimate_eps'])
+        if v is not None:
+            return max(-100.0, min(100.0, float(v)))
+        return v
 
 
 class EstimateRevision(BaseModel):
@@ -76,10 +76,11 @@ class EstimateRevision(BaseModel):
     def calculate_change(cls, v, values):
         """Calculate change percentage if not provided."""
         if v is None and 'old_estimate' in values and 'new_estimate' in values:
-            old = values['old_estimate']
-            new = values['new_estimate']
-            if old != 0:
-                return ((new - old) / abs(old)) * 100
+            from data.metrics import safe_surprise_pct
+            res = safe_surprise_pct(values['new_estimate'], values['old_estimate'])
+            return res if res is not None else 0.0
+        if v is not None:
+            return max(-100.0, min(100.0, float(v)))
         return v or 0.0
 
 

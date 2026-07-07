@@ -388,8 +388,10 @@ class AlphaVantageDataSource(BaseDataSource):
                 if not surprise and reported_eps and estimated_eps:
                     surprise = reported_eps - estimated_eps
                 
-                if not surprise_pct and reported_eps and estimated_eps and estimated_eps != 0:
-                    surprise_pct = ((reported_eps - estimated_eps) / abs(estimated_eps)) * 100
+                if not surprise_pct and reported_eps and estimated_eps:
+                    from data.metrics import safe_surprise_pct
+                    res = safe_surprise_pct(reported_eps, estimated_eps)
+                    surprise_pct = res if res is not None else 0.0
                 
                 earnings.append(HistoricalEarning(
                     date=reported_date or fiscal_date,

@@ -1260,9 +1260,9 @@ class YahooFinanceDataSource(BaseDataSource):
                 actual_eps = safe_float(actual)
                 estimate_eps = safe_float(estimate)
                 
-                surprise_pct = 0.0
-                if estimate_eps != 0:
-                    surprise_pct = ((actual_eps - estimate_eps) / abs(estimate_eps)) * 100
+                from data.metrics import safe_surprise_pct
+                res = safe_surprise_pct(actual_eps, estimate_eps)
+                surprise_pct = res if res is not None else 0.0
                 
                 historical.append(HistoricalEarning(
                     date=idx.date() if hasattr(idx, 'date') else idx,

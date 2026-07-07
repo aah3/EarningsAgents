@@ -11,15 +11,20 @@ type SortKey = "ticker" | "targetDate" | "status" | "consensus" | "confidence";
 type SortDir = "asc" | "desc" | "none";
 
 interface PredictionsTableProps {
+  predictions?: PredictionRow[];
   onRowClick?: (row: PredictionRow) => void;
+  limit?: number;
+  onLimitChange?: (limit: number) => void;
 }
 
-export default function PredictionsTable({ onRowClick }: PredictionsTableProps) {
+export default function PredictionsTable({ onRowClick, predictions, limit, onLimitChange }: PredictionsTableProps) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | PredictionStatus>("ALL");
   const [consensusFilter, setConsensusFilter] = useState<"ALL" | Consensus>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("targetDate");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const dataList = predictions || MOCK_PREDICTIONS;
 
   // Handle header click to cycle: none -> asc -> desc -> none
   const handleSort = (key: SortKey) => {
@@ -70,13 +75,13 @@ export default function PredictionsTable({ onRowClick }: PredictionsTableProps) 
 
   // Filter and sort prediction rows
   const processedRows = useMemo(() => {
-    return MOCK_PREDICTIONS
+    return dataList
       .filter((r) => r.ticker.toLowerCase().includes(query.trim().toLowerCase()))
       .filter((r) => statusFilter === "ALL" || r.status === statusFilter)
       .filter((r) => consensusFilter === "ALL" || r.consensus === consensusFilter)
       .slice()
       .sort(compareBy(sortKey, sortDir));
-  }, [query, statusFilter, consensusFilter, sortKey, sortDir]);
+  }, [dataList, query, statusFilter, consensusFilter, sortKey, sortDir]);
 
   // Render sorting arrows helper
   const renderSortIndicator = (key: SortKey) => {
@@ -112,8 +117,24 @@ export default function PredictionsTable({ onRowClick }: PredictionsTableProps) 
             Recent Predictions
           </h2>
           <span className="text-[11px] font-mono font-bold text-ink-mute bg-[#0E1524] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
-            Showing {processedRows.length} of {MOCK_PREDICTIONS.length}
+            Showing {processedRows.length} of {dataList.length}
           </span>
+          {onLimitChange && (
+            <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-ink-mute bg-[#0E1524] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
+              <span>Show:</span>
+              <select
+                value={limit || 5}
+                onChange={(e) => onLimitChange(Number(e.target.value))}
+                className="bg-transparent text-white focus:outline-none cursor-pointer font-bold border-none p-0 outline-none"
+              >
+                <option value={5} className="bg-panel text-white">5</option>
+                <option value={10} className="bg-panel text-white">10</option>
+                <option value={25} className="bg-panel text-white">25</option>
+                <option value={50} className="bg-panel text-white">50</option>
+                <option value={100} className="bg-panel text-white">100</option>
+              </select>
+            </div>
+          )}
         </div>
         <Link
           href="/dashboard/history"

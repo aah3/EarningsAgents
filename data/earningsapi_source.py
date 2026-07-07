@@ -201,6 +201,8 @@ class EarningsAPIDataSource(BaseDataSource):
             return data
         except Exception as e:
             self.logger.error(f"Error fetching company earnings for {ticker}: {e}")
+            if "RateLimitError" in type(e).__name__:
+                raise
             return []
 
     def get_earnings_reactions(self, symbol: str) -> List[Dict[str, Any]]:
@@ -216,6 +218,8 @@ class EarningsAPIDataSource(BaseDataSource):
             return data
         except Exception as e:
             self.logger.error(f"Error fetching earnings reactions for {ticker}: {e}")
+            if "RateLimitError" in type(e).__name__:
+                raise
             return []
 
     def get_profile(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -246,6 +250,8 @@ class EarningsAPIDataSource(BaseDataSource):
             return normalized
         except Exception as e:
             self.logger.error(f"Error fetching profile for {ticker}: {e}")
+            if "RateLimitError" in type(e).__name__:
+                raise
             return None
 
     # Implement remaining abstract methods to satisfy ABC

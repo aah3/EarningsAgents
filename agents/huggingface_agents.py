@@ -304,6 +304,10 @@ MARKET STATE — option signals are labeled LIVE or last-close:
 - last close (market CLOSED): treat option data as stale; do not over-anchor on it and
   note the reduced confidence in your reasoning.
 
+If the options block says DATA UNAVAILABLE, do not treat the implied move as 0% — treat it
+as unknown, skip the realized-vs-implied comparison, and base expected_price_move on the
+realized next-day reaction distribution alone (weighted by sample depth).
+
 ANALYSIS FOCUS:
 1. Historical beat/miss rate (last 4-8 quarters)
 2. Average surprise magnitude and consistency
@@ -440,19 +444,73 @@ class BaseAgent:
         hist_str = ""
         if company.enriched_history:
             for h in company.enriched_history[:8]:
-                eps_dir = "BEAT" if h.get("eps_beat") else "MISS"
-                rev_dir = "BEAT" if h.get("revenue_beat") else "MISS"
+                eps_beat = h.get("eps_beat")
+                if eps_beat is None:
+                    actual = h.get("eps_actual")
+                    estimate = h.get("eps_estimate")
+                    eps_beat = (actual > estimate) if (actual is not None and estimate is not None) else False
+                eps_dir = "BEAT" if eps_beat else "MISS"
+                
+                rev_beat = h.get("revenue_beat")
+                if rev_beat is None:
+                    actual = h.get("revenue_actual")
+                    estimate = h.get("revenue_estimate")
+                    rev_beat = (actual > estimate) if (actual is not None and estimate is not None) else False
+                rev_dir = "BEAT" if rev_beat else "MISS"
+                
                 def _pct(v): return f"{v:+.1f}%" if v is not None else "N/A"
+                
+                prov = h.get("provenance") or {}
+                eps_tag = " (computed)" if prov.get("eps_surprise_pct") == "computed" else ""
+                
+                eps_surp = h.get("eps_surprise_pct")
+                if eps_surp is None:
+                    actual = h.get("eps_actual")
+                    estimate = h.get("eps_estimate")
+                    if actual is not None and estimate is not None:
+                        diff = actual - estimate
+                        eps_surp_str = f"${diff:+.2f} (low base){eps_tag}"
+                    else:
+                        eps_surp_str = f"N/A{eps_tag}"
+                else:
+                    eps_surp_str = f"{max(-100.0, min(100.0, float(eps_surp))):+.1f}%{eps_tag}"
+                    
+                rev_tag = " (computed)" if prov.get("revenue_surprise_pct") == "computed" else ""
+                rev_surp = h.get("revenue_surprise_pct")
+                if rev_surp is None:
+                    rev_surp_str = f"N/A{rev_tag}"
+                else:
+                    rev_surp_str = f"{max(-100.0, min(100.0, float(rev_surp))):+.1f}%{rev_tag}"
+                
+                def _yoy_pct(val, field_name):
+                    if val is None:
+                        return "N/A"
+                    tag = " (computed)" if prov.get(field_name) == "computed" else ""
+                    return f"{val:+.1f}%{tag}"
+                
                 hist_str += (
                     f"  - {h.get('report_date')}: "
-                    f"EPS {eps_dir} {_pct(h.get('eps_surprise_pct'))} (YoY {_pct(h.get('eps_yoy'))}) | "
-                    f"Rev {rev_dir} {_pct(h.get('revenue_surprise_pct'))} (YoY {_pct(h.get('revenue_yoy'))}) | "
+                    f"EPS {eps_dir} {eps_surp_str} (YoY {_yoy_pct(h.get('eps_yoy'), 'eps_yoy')}) | "
+                    f"Rev {rev_dir} {rev_surp_str} (YoY {_yoy_pct(h.get('revenue_yoy'), 'revenue_yoy')}) | "
                     f"Next-day move {_pct(h.get('reaction_1d_pct'))}\n"
                 )
         elif company.historical_eps:
             for h in company.historical_eps[:4]:
-                beat = "BEAT" if h.get("surprise_pct", 0) > 0 else "MISS"
-                hist_str += f"  - {h.get('date')}: {beat} by {h.get('surprise_pct', 0):.1f}%\n"
+                actual_eps = h.get("actual_eps")
+                estimate_eps = h.get("estimate_eps")
+                surprise_pct = h.get("surprise_pct")
+                date_val = h.get("date")
+                beat = "BEAT" if (surprise_pct or 0) > 0 or ((actual_eps or 0) > (estimate_eps or 0)) else "MISS"
+                
+                if surprise_pct is None:
+                    if actual_eps is not None and estimate_eps is not None:
+                        diff = actual_eps - estimate_eps
+                        surp_str = f"${diff:+.2f} (low base)"
+                    else:
+                        surp_str = "N/A"
+                else:
+                    surp_str = f"{max(-100.0, min(100.0, float(surprise_pct))):+.1f}%"
+                hist_str += f"  - {date_val}: {beat} by {surp_str}\n"
         
         # Format estimate revisions
         rev_str = ""
@@ -540,15 +598,21 @@ class BaseAgent:
         implied_str = (f"  - Current implied move (straddle): {company.implied_move_pct*100:.1f}%\n"
                        if company.implied_move_pct is not None else "")
         
-        market_label = "LIVE — market OPEN" if company.market_open else "last close — market CLOSED"
-        lo = company.live_options or {}
-        live_opts_str = ""
-        if lo:
+        state = "market OPEN" if company.market_open else "market CLOSED"
+        if company.live_options:
+            options_header = f"### Options Market Signals (LIVE — {state})"
+            
             def _p(v, pct=False): 
                 return ("N/A" if v is None else (f"{v*100:.1f}%" if pct else f"{v:.2f}"))
-            live_opts_str += f"  - Implied move (straddle): {_p(lo.get('implied_move_pct'), pct=True)}\n"
-            live_opts_str += f"  - Put/Call ratio: {_p(lo.get('put_call_ratio'))} | Avg IV: {_p(lo.get('avg_iv'), pct=True)}\n"
-            live_opts_str += f"  - Signal confidence: {_p(lo.get('confidence_score'))}/10 | DTE: {lo.get('days_to_expiry')}\n"
+            
+            options_body = ""
+            options_body += f"  - Implied move (straddle): {_p(company.live_options.get('implied_move_pct'), pct=True)}\n"
+            options_body += f"  - Put/Call ratio: {_p(company.live_options.get('put_call_ratio'))} | Avg IV: {_p(company.live_options.get('avg_iv'), pct=True)}\n"
+            options_body += f"  - Signal confidence: {_p(company.live_options.get('confidence_score'))}/10 | DTE: {company.live_options.get('days_to_expiry')}\n"
+        else:
+            options_header = f"### Options Market Signals ({state} — DATA UNAVAILABLE)"
+            options_body = ("  Options chain unavailable this fetch. Do NOT infer an implied move of 0%; "
+                            "treat implied move as unknown and rely on the realized reaction distribution.\n")
         
         prompt = f"""
 ## Company Analysis Request
@@ -560,13 +624,14 @@ class BaseAgent:
 
 ### Consensus Estimates
 - EPS Estimate: ${company.consensus_eps:.2f}
-- Revenue Estimate: ${company.consensus_revenue/1e9 if company.consensus_revenue else 0:.1f}B
+- Revenue Estimate: {f"${company.consensus_revenue/1e9:.2f}B" if company.consensus_revenue else "N/A"}
 - Number of Analysts: {company.num_analysts}
 
 ### Historical Earnings (EPS + Revenue + Reaction)
+(computed) = derived locally, not reported by the provider
 {hist_str if hist_str else "  No historical data available"}
 - Beat Rate: {f"{company.beat_rate_4q:.0%}" if company.beat_rate_4q is not None else "N/A"}
-- Avg Surprise: {f"{company.avg_surprise_4q:.1f}%" if company.avg_surprise_4q is not None else "N/A"}
+- Median Surprise (4Q): {f"{company.avg_surprise_4q:.1f}%" if company.avg_surprise_4q is not None else "N/A"}
 
 ### Post-Earnings Reaction Pattern (realized)
 {reaction_str if reaction_str else "  No reaction history available"}
@@ -581,8 +646,8 @@ class BaseAgent:
 - 21-Day Change: {f"{company.price_change_21d:.1%}" if company.price_change_21d is not None else "N/A"}
 - Short Interest: {f"{company.short_interest:.1%}" if company.short_interest is not None else "N/A"}
 
-### Options Market Signals ({market_label})
-{live_opts_str or options_str or "  No options data available"}
+{options_header}
+{options_body}
 
 ### Recent News Headlines
 {news_str if news_str else "  No recent news"}

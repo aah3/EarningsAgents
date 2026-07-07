@@ -162,20 +162,62 @@ class EarningsPipeline:
             from database.db import Session, engine
             from database.earnings_repo import get_reaction_summary_and_history, sync_ticker_history
             from data.earningsapi_source import EarningsAPIDataSource, RateLimitError
+            from database.models import EarningsCalendarEvent
+            from sqlmodel import select
             with Session(engine) as session:
                 summary, hist = get_reaction_summary_and_history(session, ticker)
-                if not hist:
+                
+                cal_event = session.exec(
+                    select(EarningsCalendarEvent).where(
+                        EarningsCalendarEvent.ticker == ticker.upper(),
+                        EarningsCalendarEvent.report_date == report_date
+                    )
+                ).first()
+                
+                if not hist or not cal_event:
                     try:
                         src = EarningsAPIDataSource(self.config.earningsapi); src.connect()
                         try:
-                            sync_ticker_history(session, ticker, src)
+                            if not hist:
+                                sync_ticker_history(session, ticker, src)
+                                summary, hist = get_reaction_summary_and_history(session, ticker)
+                            if not cal_event:
+                                earnings = src.get_company_earnings(ticker)
+                                for row in earnings:
+                                    if row.get("date") == report_date.isoformat():
+                                        cal_event = session.exec(
+                                            select(EarningsCalendarEvent).where(
+                                                EarningsCalendarEvent.ticker == ticker.upper(),
+                                                EarningsCalendarEvent.report_date == report_date
+                                            )
+                                        ).first()
+                                        if not cal_event:
+                                            cal_event = EarningsCalendarEvent(
+                                                ticker=ticker.upper(),
+                                                report_date=report_date
+                                            )
+                                        cal_event.company_name = company_data.company_name
+                                        cal_event.eps_estimate = row.get("epsEstimate")
+                                        cal_event.revenue_estimate = row.get("revenueEstimate")
+                                        session.add(cal_event)
+                                        session.commit()
+                                        session.refresh(cal_event)
+                                        break
                         finally:
                             src.disconnect()
-                        summary, hist = get_reaction_summary_and_history(session, ticker)
                     except RateLimitError:
                         self.logger.warning(f"429 on lazy-populate for {ticker}; enqueuing background sync")
                         from api.tasks import sync_ticker_history_task          # lazy import (avoids cycle)
                         sync_ticker_history_task.delay(ticker)                   # autoretries w/ backoff
+                
+                # Apply fallbacks for missing consensus revenue/EPS from calendar event
+                if cal_event and cal_event.revenue_estimate:
+                    if not company_data.consensus_revenue or company_data.consensus_revenue == 0.0:
+                        company_data.consensus_revenue = cal_event.revenue_estimate
+                if cal_event and cal_event.eps_estimate:
+                    if not company_data.consensus_eps or company_data.consensus_eps == 0.0:
+                        company_data.consensus_eps = cal_event.eps_estimate
+                        
             company_data.reaction_summary = summary
             company_data.enriched_history = hist or []
         except Exception as e:
@@ -184,16 +226,14 @@ class EarningsPipeline:
         # --- Current implied move & live options for realized-vs-implied comparison ---
         analytics = None
         try:
-            analytics = self.aggregator.get_option_analytics(ticker)
-            if analytics:
-                company_data.implied_move_pct = analytics.get("implied_move", {}).get("straddle_implied_move_pct")
+            analytics = self.aggregator.get_option_analytics(ticker, earnings_date=report_date)
         except Exception as e:
             self.logger.warning(f"Implied move unavailable for {ticker}: {e}")
 
         try:
             from data.market_hours import is_market_open
             company_data.market_open = is_market_open()
-            if analytics:
+            if analytics and analytics.get("available"):
                 im = analytics.get("implied_move", {}) or {}
                 osum = analytics.get("option_summary", {}) or {}
                 company_data.live_options = {
@@ -206,6 +246,10 @@ class EarningsPipeline:
                     "avg_iv": osum.get("avg_iv"),
                     "total_volume": osum.get("total_volume"),
                 }
+                company_data.implied_move_pct = im.get("straddle_implied_move_pct")
+            else:
+                company_data.live_options = None
+                company_data.implied_move_pct = None
         except Exception as e:
             self.logger.warning(f"Failed to populate market open or live options for {ticker}: {e}")
         

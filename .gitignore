@@ -69,3 +69,6 @@ celerybeat.pid
 supply_chain_example.py
 reports/PENG_2026-07-07_report.md
 reports/PENG_2026-07-07_report.pdf
+run_intc_debate.py
+reports/INTC_2026-07-23_report.md
+reports/INTC_2026-07-23_report.pdf
