@@ -371,6 +371,19 @@ class DataAggregator:
                     exp_df = extractor.extract_features(df, group_by_expiry=True)
                     if not exp_df.empty:
                         options_features['by_expiration'] = exp_df.to_dict('records')
+                    
+                    # Sanitize any NaN/Inf values that PostgreSQL JSON fields reject
+                    import math
+                    def sanitize_nan(val):
+                        if isinstance(val, dict):
+                            return {k: sanitize_nan(v) for k, v in val.items()}
+                        elif isinstance(val, list):
+                            return [sanitize_nan(v) for v in val]
+                        elif isinstance(val, float):
+                            if math.isnan(val) or math.isinf(val):
+                                return None
+                        return val
+                    options_features = sanitize_nan(options_features)
             except Exception as e:
                 self.logger.warning(f"Failed to compute option features for {ticker}: {e}")
         
@@ -420,6 +433,7 @@ class DataAggregator:
         company_data = CompanyData(
             ticker=ticker,
             company_name=company_info.company_name,
+            company_description=company_info.description,
             sector=company_info.sector,
             industry=company_info.industry,
             market_cap=company_info.market_cap,

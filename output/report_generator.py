@@ -162,6 +162,10 @@ def generate_markdown_report(
 | **Scored At** | {scored_at_str} |
 """
 
+    desc_sect = ""
+    if getattr(prediction, "company_description", None):
+        desc_sect = f"## Company Description\n\n{prediction.company_description}\n\n---\n\n"
+
     md = f"""# AI Earnings Debate Report: {company_name} ({ticker})
 
 This report details the execution and results of the Multi-Agent AI Earnings Debate for **{company_name} ({ticker})**, which reports earnings on **{report_date_str}**.
@@ -193,7 +197,7 @@ This report details the execution and results of the Multi-Agent AI Earnings Deb
 
 ---
 
-## Bull Case Factors
+{desc_sect}## Bull Case Factors
 
 {bull_factors_str}
 
@@ -319,6 +323,18 @@ def generate_pdf_report(
         
         pdf.ln(8)
         
+    # 2.5 Company Description (if available)
+    if getattr(prediction, "company_description", None):
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_text_color(40, 50, 60)
+        pdf.cell(pdf.epw, 8, "COMPANY DESCRIPTION", new_x="LMARGIN", new_y="NEXT")
+        pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(0, 0, 0)
+        pdf.multi_cell(pdf.epw, 5, sanitize_for_pdf(prediction.company_description))
+        pdf.ln(8)
+
     # 3. Bull / Bear cases
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(46, 125, 50) # Green for bull case

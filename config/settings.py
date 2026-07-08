@@ -177,6 +177,7 @@ class EarningsPrediction:
     rebuttal_summary: Optional[str] = None
     options_features: Optional[Dict[str, Any]] = None
     report_time: str = "UNKNOWN"
+    company_description: Optional[str] = None
 
 
 def load_config() -> PipelineConfig:

@@ -349,6 +349,7 @@ RULES:
 - If historical pattern is very consistent: Respect it
 - If User (Analyst) analysis provides verified unique insight, incorporate it into final reasoning
 - When rebuttals are provided, give extra weight to whichever side successfully refuted the other's weakest argument
+- Evaluate the company's business focus and product exposure (from the company description) in light of current macroeconomic trends, news headlines, and geopolitical events (e.g., Middle East tensions affecting energy prices, inflation pressures, interest rate movements, supply chain friction). Determine if these macro forces present a short-term headwind or tailwind for this specific company's earnings.
 
 INSTRUCTIONS:
 First, provide a brief paragraph explaining your thoughts and reasoning (your "thinking process").
@@ -619,6 +620,7 @@ class BaseAgent:
 
 **Company:** {company.company_name} ({company.ticker})
 **Sector:** {company.sector} | **Industry:** {company.industry}
+**Company Description:** {company.company_description or 'No description available.'}
 **Market Cap:** ${mc_val:.1f}B
 **Report Date:** {company.report_date}
 
@@ -1150,6 +1152,7 @@ class ConsensusAgent(BaseAgent):
         status_callback=None,
         bull_rebuttal: Optional[AgentResponse] = None,
         bear_rebuttal: Optional[AgentResponse] = None,
+        news: Optional[List[NewsArticle]] = None,
     ) -> AgentResponse:
         """Synthesize agent responses (and optional rebuttals) into a final prediction."""
         successful_agents = []
@@ -1203,11 +1206,23 @@ class ConsensusAgent(BaseAgent):
                 f"\n### ANALYST (USER PROVIDED) ANALYSIS\n- Analysis: {user_analysis}\n"
             )
 
+        company_context = (
+            f"Company: {company.company_name} ({company.ticker})\n"
+            f"Sector: {company.sector} | Industry: {company.industry}\n"
+            f"Business Summary: {company.company_description or 'No description available.'}\n"
+        )
+        news_headlines = ""
+        if news:
+            news_headlines = "Recent News Headlines:\n" + "\n".join([f"- {n.headline}" for n in news[:8]]) + "\n"
+
         synthesis_prompt = (
-            f"## Synthesis Request for {company.ticker}\n"
+            f"## Consensus Prediction Request for {company.ticker}\n"
+            f"### Company Profile\n{company_context}\n"
+            f"### Geopolitical & Macro News Context\n{news_headlines}\n"
+            f"### Agent Debates\n"
             f"{bull_section}{bear_section}{quant_section}"
             f"{rebuttal_section}{user_analysis_section}"
-            f"\n---\nBased on this {'multi-round debate' if rebuttal_section else 'debate'}, "
+            f"\n---\nBased on the company profile, geopolitical/macro news context, and the agent debates/rebuttals, "
             "provide your FINAL consensus prediction. Weigh the evidence and make a decisive call."
         )
 
@@ -1585,6 +1600,7 @@ class ThreeAgentSystem:
                     status_callback=get_status_callback("Consensus"),
                     bull_rebuttal=bull_rebuttal,
                     bear_rebuttal=bear_rebuttal,
+                    news=news,
                 )
             )
         except Exception as e:
@@ -1645,6 +1661,7 @@ class ThreeAgentSystem:
         return EarningsPrediction(
             ticker=company.ticker,
             company_name=company.company_name,
+            company_description=company.company_description,
             report_date=company.report_date,
             prediction_date=prediction_date,
             direction=consensus_response.direction,

@@ -177,6 +177,7 @@ class CompanyData(BaseModel):
     """Complete company data structure."""
     ticker: str
     company_name: str
+    company_description: Optional[str] = None
     sector: str
     industry: str
     market_cap: float

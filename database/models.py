@@ -16,6 +16,7 @@ class Prediction(SQLModel, table=True):
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     ticker: str = Field(index=True)
     company_name: str
+    company_description: Optional[str] = Field(default=None)
     report_date: datetime
     report_timing: Optional[str] = Field(default=None)
     prediction_date: datetime = Field(default_factory=datetime.utcnow)
