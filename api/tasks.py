@@ -13,7 +13,7 @@ from settings import load_config
 from database.earnings_repo import _refresh_profile, sync_ticker_history
 from data.earningsapi_source import RateLimitError
 from database.db import Session, engine
-from database.models import User, Prediction, CompanyProfile, EarningsHistory, EarningsCalendarEvent
+from database.models import User, Prediction, CompanyProfile, EarningsHistory, EarningsCalendarEvent, UserSettings
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,75 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
     logger.info(f"Starting background analysis for {ticker} (Task ID: {task_id})")
     
     report_date = date.fromisoformat(report_date_str)
-    pipeline = get_pipeline()
+    
+    # Check for user-specific settings overrides
+    pipeline = None
+    with Session(engine) as session:
+        statement = select(User).where(User.clerk_id == clerk_id)
+        user = session.exec(statement).first()
+        if user:
+            statement_settings = select(UserSettings).where(UserSettings.user_id == user.id)
+            user_settings = session.exec(statement_settings).first()
+            if user_settings:
+                # check if there are overrides
+                has_overrides = any([
+                    user_settings.provider != "gemini",
+                    user_settings.model_name != "gemini-flash-latest",
+                    user_settings.temperature != 0.3,
+                    user_settings.max_tokens != 8192,
+                    user_settings.use_react is True,
+                    user_settings.enable_rebuttals is True,
+                    user_settings.gemini_api_key is not None,
+                    user_settings.openai_api_key is not None,
+                    user_settings.anthropic_api_key is not None,
+                    user_settings.newsapi_api_key is not None,
+                    user_settings.alphavantage_api_key is not None,
+                    user_settings.earningsapi_api_key is not None
+                ])
+                if has_overrides:
+                    logger.info(f"Custom user overrides found for user {clerk_id}. Initializing bespoke pipeline.")
+                    config = load_config()
+                    config.output_dir = "worker_output"
+                    
+                    if user_settings.provider:
+                        config.agent.provider = user_settings.provider.lower()
+                    if user_settings.model_name:
+                        config.agent.model_name = user_settings.model_name
+                    if user_settings.temperature is not None:
+                        config.agent.temperature = user_settings.temperature
+                    if user_settings.max_tokens is not None:
+                        config.agent.max_tokens = user_settings.max_tokens
+                    if user_settings.use_react is not None:
+                        config.agent.use_react = user_settings.use_react
+                    if user_settings.react_max_turns is not None:
+                        config.agent.react_max_turns = user_settings.react_max_turns
+                    if user_settings.enable_rebuttals is not None:
+                        config.agent.enable_rebuttals = user_settings.enable_rebuttals
+                        
+                    # Apply keys
+                    if config.agent.provider == "gemini" and user_settings.gemini_api_key:
+                        config.agent.api_key = user_settings.gemini_api_key
+                    elif config.agent.provider == "openai" and user_settings.openai_api_key:
+                        config.agent.api_key = user_settings.openai_api_key
+                    elif config.agent.provider == "anthropic" and user_settings.anthropic_api_key:
+                        config.agent.api_key = user_settings.anthropic_api_key
+                        
+                    if user_settings.newsapi_api_key:
+                        config.newsapi.api_key = user_settings.newsapi_api_key
+                        config.newsapi.enabled = True
+                    if user_settings.alphavantage_api_key:
+                        config.alphavantage.api_key = user_settings.alphavantage_api_key
+                        config.alphavantage.enabled = True
+                    if user_settings.earningsapi_api_key:
+                        config.earningsapi.api_key = user_settings.earningsapi_api_key
+                        config.earningsapi.enabled = True
+                        
+                    pipeline = EarningsPipeline(config)
+                    pipeline.initialize()
+                    
+    if pipeline is None:
+        logger.info(f"Using default pipeline configuration for user {clerk_id}.")
+        pipeline = get_pipeline()
     
     try:
         import redis

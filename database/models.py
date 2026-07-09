@@ -10,6 +10,36 @@ class User(SQLModel, table=True):
     
     predictions: List["Prediction"] = Relationship(back_populates="user")
     chats: List["PredictionChat"] = Relationship(back_populates="user")
+    settings: Optional["UserSettings"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
+    )
+
+class UserSettings(SQLModel, table=True):
+    __tablename__ = "user_settings"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True, unique=True)
+    
+    # LLM Settings
+    provider: str = Field(default="gemini")
+    model_name: str = Field(default="gemini-flash-latest")
+    temperature: float = Field(default=0.3)
+    max_tokens: int = Field(default=8192)
+    use_react: bool = Field(default=False)
+    react_max_turns: int = Field(default=6)
+    enable_rebuttals: bool = Field(default=False)
+    
+    # API Keys (stored locally in plain text/unmasked in database)
+    gemini_api_key: Optional[str] = Field(default=None)
+    openai_api_key: Optional[str] = Field(default=None)
+    anthropic_api_key: Optional[str] = Field(default=None)
+    newsapi_api_key: Optional[str] = Field(default=None)
+    alphavantage_api_key: Optional[str] = Field(default=None)
+    earningsapi_api_key: Optional[str] = Field(default=None)
+    
+    user: Optional[User] = Relationship(back_populates="settings")
+
 
 class Prediction(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

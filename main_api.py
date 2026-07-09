@@ -17,6 +17,14 @@ ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialize Database
+    try:
+        import database.models
+        init_db()
+        print("Database initialized successfully.")
+    except Exception as e:
+        print(f"Warning: Failed to initialize database: {e}")
+
     # Initialize Redis Cache
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:

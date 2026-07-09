@@ -200,6 +200,22 @@ export const api = {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(downloadUrl);
+    },
+
+    async getSettings(token: string) {
+        const url = `${API_BASE_URL}/earnings/settings`;
+        return this.fetchWithAuth(url, token);
+    },
+
+    async updateSettings(settingsData: any, token: string) {
+        const url = `${API_BASE_URL}/earnings/settings`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(settingsData)
+        });
     }
 };
 

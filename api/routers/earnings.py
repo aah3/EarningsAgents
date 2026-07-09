@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from pipeline import EarningsPipeline
 from config.settings import PipelineConfig, load_config
 from database.db import get_session
-from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory
+from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings
 from api.dependencies.auth import get_current_user
 
 router = APIRouter(
@@ -42,6 +42,193 @@ def get_pipeline():
         _pipeline_instance = EarningsPipeline(config)
         _pipeline_instance.initialize()
     return _pipeline_instance
+
+def mask_api_key(key: Optional[str]) -> Optional[str]:
+    if not key:
+        return None
+    if len(key) <= 8:
+        return "********"
+    return f"{key[:4]}...{key[-4:]}"
+
+def is_masked(key: Optional[str]) -> bool:
+    if not key:
+        return False
+    if "..." in key or "*" in key:
+        return True
+    return False
+
+def get_pipeline_for_user(session: Session, clerk_id: str) -> EarningsPipeline:
+    user = get_or_create_user(session, clerk_id)
+    statement = select(UserSettings).where(UserSettings.user_id == user.id)
+    user_settings = session.exec(statement).first()
+    
+    if not user_settings:
+        # Create default user settings in DB so they are initialized
+        user_settings = UserSettings(user_id=user.id)
+        session.add(user_settings)
+        session.commit()
+        session.refresh(user_settings)
+        return get_pipeline()
+        
+    has_overrides = any([
+        user_settings.provider != "gemini",
+        user_settings.model_name != "gemini-flash-latest",
+        user_settings.temperature != 0.3,
+        user_settings.max_tokens != 8192,
+        user_settings.use_react is True,
+        user_settings.enable_rebuttals is True,
+        user_settings.gemini_api_key is not None,
+        user_settings.openai_api_key is not None,
+        user_settings.anthropic_api_key is not None,
+        user_settings.newsapi_api_key is not None,
+        user_settings.alphavantage_api_key is not None,
+        user_settings.earningsapi_api_key is not None
+    ])
+    
+    if not has_overrides:
+        return get_pipeline()
+        
+    # Instantiate user-specific pipeline
+    config = load_config()
+    config.output_dir = "api_output"
+    
+    # Apply agent settings overrides
+    if user_settings.provider:
+        config.agent.provider = user_settings.provider.lower()
+    if user_settings.model_name:
+        config.agent.model_name = user_settings.model_name
+    if user_settings.temperature is not None:
+        config.agent.temperature = user_settings.temperature
+    if user_settings.max_tokens is not None:
+        config.agent.max_tokens = user_settings.max_tokens
+    if user_settings.use_react is not None:
+        config.agent.use_react = user_settings.use_react
+    if user_settings.react_max_turns is not None:
+        config.agent.react_max_turns = user_settings.react_max_turns
+    if user_settings.enable_rebuttals is not None:
+        config.agent.enable_rebuttals = user_settings.enable_rebuttals
+        
+    # Apply API Key overrides
+    if config.agent.provider == "gemini" and user_settings.gemini_api_key:
+        config.agent.api_key = user_settings.gemini_api_key
+    elif config.agent.provider == "openai" and user_settings.openai_api_key:
+        config.agent.api_key = user_settings.openai_api_key
+    elif config.agent.provider == "anthropic" and user_settings.anthropic_api_key:
+        config.agent.api_key = user_settings.anthropic_api_key
+        
+    if user_settings.newsapi_api_key:
+        config.newsapi.api_key = user_settings.newsapi_api_key
+        config.newsapi.enabled = True
+    if user_settings.alphavantage_api_key:
+        config.alphavantage.api_key = user_settings.alphavantage_api_key
+        config.alphavantage.enabled = True
+    if user_settings.earningsapi_api_key:
+        config.earningsapi.api_key = user_settings.earningsapi_api_key
+        config.earningsapi.enabled = True
+        
+    pipeline = EarningsPipeline(config)
+    pipeline.initialize()
+    return pipeline
+
+
+class SettingsUpdateRequest(BaseModel):
+    provider: Optional[str] = None
+    model_name: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    use_react: Optional[bool] = None
+    react_max_turns: Optional[int] = None
+    enable_rebuttals: Optional[bool] = None
+    
+    gemini_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    newsapi_api_key: Optional[str] = None
+    alphavantage_api_key: Optional[str] = None
+    earningsapi_api_key: Optional[str] = None
+
+
+@router.get("/settings")
+async def get_user_settings(
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    user = get_or_create_user(session, clerk_id)
+    statement = select(UserSettings).where(UserSettings.user_id == user.id)
+    user_settings = session.exec(statement).first()
+    
+    if not user_settings:
+        user_settings = UserSettings(user_id=user.id)
+        session.add(user_settings)
+        session.commit()
+        session.refresh(user_settings)
+        
+    return {
+        "provider": user_settings.provider,
+        "model_name": user_settings.model_name,
+        "temperature": user_settings.temperature,
+        "max_tokens": user_settings.max_tokens,
+        "use_react": user_settings.use_react,
+        "react_max_turns": user_settings.react_max_turns,
+        "enable_rebuttals": user_settings.enable_rebuttals,
+        # Mask keys
+        "gemini_api_key": mask_api_key(user_settings.gemini_api_key),
+        "openai_api_key": mask_api_key(user_settings.openai_api_key),
+        "anthropic_api_key": mask_api_key(user_settings.anthropic_api_key),
+        "newsapi_api_key": mask_api_key(user_settings.newsapi_api_key),
+        "alphavantage_api_key": mask_api_key(user_settings.alphavantage_api_key),
+        "earningsapi_api_key": mask_api_key(user_settings.earningsapi_api_key),
+    }
+
+
+@router.post("/settings")
+async def update_user_settings(
+    request: SettingsUpdateRequest,
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    user = get_or_create_user(session, clerk_id)
+    statement = select(UserSettings).where(UserSettings.user_id == user.id)
+    user_settings = session.exec(statement).first()
+    
+    if not user_settings:
+        user_settings = UserSettings(user_id=user.id)
+        session.add(user_settings)
+        
+    if request.provider is not None:
+        user_settings.provider = request.provider
+    if request.model_name is not None:
+        user_settings.model_name = request.model_name
+    if request.temperature is not None:
+        user_settings.temperature = request.temperature
+    if request.max_tokens is not None:
+        user_settings.max_tokens = request.max_tokens
+    if request.use_react is not None:
+        user_settings.use_react = request.use_react
+    if request.react_max_turns is not None:
+        user_settings.react_max_turns = request.react_max_turns
+    if request.enable_rebuttals is not None:
+        user_settings.enable_rebuttals = request.enable_rebuttals
+        
+    # Helper to update key if not masked or unset
+    def update_key(db_field_name: str, new_value: Optional[str]):
+        if new_value is None:
+            return
+        if new_value == "":
+            setattr(user_settings, db_field_name, None)
+        elif not is_masked(new_value):
+            setattr(user_settings, db_field_name, new_value)
+            
+    update_key("gemini_api_key", request.gemini_api_key)
+    update_key("openai_api_key", request.openai_api_key)
+    update_key("anthropic_api_key", request.anthropic_api_key)
+    update_key("newsapi_api_key", request.newsapi_api_key)
+    update_key("alphavantage_api_key", request.alphavantage_api_key)
+    update_key("earningsapi_api_key", request.earningsapi_api_key)
+    
+    session.add(user_settings)
+    session.commit()
+    return {"status": "success", "message": "Settings updated successfully"}
 
 from api.tasks import analyze_ticker_task
 from celery.result import AsyncResult
@@ -190,11 +377,11 @@ async def get_prediction_history(
 async def chat_with_consensus(
     request: ChatRequest,
     clerk_id: str = Depends(get_current_user),
-    session: Session = Depends(get_session),
-    pipeline: EarningsPipeline = Depends(get_pipeline)
+    session: Session = Depends(get_session)
 ):
     try:
         user = get_or_create_user(session, clerk_id)
+        pipeline = get_pipeline_for_user(session, clerk_id)
         
         # format messages for LLM
         messages_dict = [{"role": msg.role, "content": msg.content} for msg in request.messages]
@@ -417,12 +604,14 @@ async def get_sentiment(
 @router.post("/batch")
 async def predict_batch(
     request: BatchPredictRequest,
-    pipeline: EarningsPipeline = Depends(get_pipeline)
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
 ):
     """
     Run predictions for a bespoke list of tickers and reporting dates.
     """
     try:
+        pipeline = get_pipeline_for_user(session, clerk_id)
         companies_dicts = [
             {
                 "ticker": item.ticker.upper(),
