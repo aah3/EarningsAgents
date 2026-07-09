@@ -85,6 +85,7 @@ export default function DashboardPage() {
       
       return {
         ticker: p.ticker,
+        sector: p.sector || undefined,
         targetDate: targetDate,
         status: status,
         consensus: consensus,

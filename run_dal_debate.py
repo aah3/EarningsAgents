@@ -119,6 +119,7 @@ def main():
                 ticker="DAL",
                 company_name=prediction.company_name,
                 company_description=getattr(prediction, "company_description", None),
+                sector=getattr(prediction, "sector", None),
                 report_date=datetime.combine(prediction.report_date, datetime.min.time()),
                 report_timing=getattr(prediction, "report_time", "UNKNOWN"),
                 direction=prediction.direction.value.upper(),

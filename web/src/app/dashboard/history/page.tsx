@@ -176,6 +176,7 @@ export default function HistoryPage() {
         id: p.id,
         ticker: p.ticker,
         company: p.company_name,
+        sector: p.sector ?? undefined,
         analysisDate: p.prediction_date,
         reportDate: p.report_date,
         reportTiming: (p.report_timing as ReportTiming) || "UNKNOWN",
@@ -294,6 +295,7 @@ export default function HistoryPage() {
     const headers = [
       "Ticker",
       "Company",
+      "Sector",
       "Analysis Date",
       "Report Date",
       "Report Timing",
@@ -308,6 +310,7 @@ export default function HistoryPage() {
     const rowsData = visibleRows.map((r) => [
       r.ticker,
       `"${r.company.replace(/"/g, '""')}"`,
+      r.sector || "—",
       r.analysisDate ? new Date(r.analysisDate).toISOString().split("T")[0] : "",
       r.reportDate ? new Date(r.reportDate).toISOString().split("T")[0] : "",
       r.reportTiming,
@@ -357,7 +360,7 @@ export default function HistoryPage() {
 
   const getConfidenceBarColor = (score: number) => {
     if (score >= 80) return "bg-bull";
-    if (score >= 60) return "bg-human";
+    if (score >= 60) return "bg-teal";
     return "bg-bear";
   };
 
@@ -446,7 +449,7 @@ export default function HistoryPage() {
               <h2 className="text-lg font-display font-semibold text-white uppercase tracking-wider">
                 Historical Ledger
               </h2>
-              <span className="text-[11px] font-mono font-bold text-ink-mute bg-[#0E1524] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
+              <span className="text-[11px] font-mono font-bold text-ink-mute bg-[var(--color-panel-sunk)] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
                 Showing {visibleRows.length} of {rows.length}
               </span>
             </div>
@@ -491,7 +494,7 @@ export default function HistoryPage() {
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
                   Prediction:
                 </span>
-                <div className="flex gap-0.5 p-1 bg-[#0e1524] border border-panel-line rounded-[10px] select-none">
+                <div className="flex gap-0.5 p-1 bg-[var(--color-panel-sunk)] border border-panel-line rounded-[10px] select-none">
                   {(["ALL", "BEAT", "MISS", "INLINE"] as const).map((p) => (
                     <button
                       key={p}
@@ -514,7 +517,7 @@ export default function HistoryPage() {
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
                   Outcome:
                 </span>
-                <div className="flex gap-0.5 p-1 bg-[#0e1524] border border-panel-line rounded-[10px] select-none">
+                <div className="flex gap-0.5 p-1 bg-[var(--color-panel-sunk)] border border-panel-line rounded-[10px] select-none">
                   {(["ALL", "CORRECT", "WRONG", "UNVERIFIED"] as const).map((o) => (
                     <button
                       key={o}
@@ -560,84 +563,93 @@ export default function HistoryPage() {
           {/* Table Container */}
           <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
             <table className="w-full text-left whitespace-nowrap border-collapse">
-              <thead className="sticky top-0 bg-[#05070a] border-b border-panel-line text-[11px] font-mono font-bold uppercase tracking-widest text-ink-dim select-none z-10">
+              <thead className="sticky top-0 bg-[#05070a] border-b border-panel-line text-ink-dim select-none z-10">
                 <tr>
-                  <th className="pl-8 pr-4 py-5" aria-sort={getAriaSort("ticker")}>
+                  <th className="pl-8 pr-4 py-5 label-caps" aria-sort={getAriaSort("ticker")}>
                     <button
                       onClick={() => handleSort("ticker")}
-                      className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Ticker
                       {renderSortIndicator("ticker")}
                     </button>
                   </th>
-                  <th className="px-6 py-5" aria-sort={getAriaSort("analysisDate")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("sector")}>
+                    <button
+                      onClick={() => handleSort("sector")}
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                    >
+                      Sector
+                      {renderSortIndicator("sector")}
+                    </button>
+                  </th>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("analysisDate")}>
                     <button
                       onClick={() => handleSort("analysisDate")}
-                      className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Analysis Date
                       {renderSortIndicator("analysisDate")}
                     </button>
                   </th>
-                  <th className="px-6 py-5" aria-sort={getAriaSort("reportDate")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("reportDate")}>
                     <button
                       onClick={() => handleSort("reportDate")}
-                      className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Report Date
                       {renderSortIndicator("reportDate")}
                     </button>
                   </th>
-                  <th className="px-6 py-5" aria-sort={getAriaSort("prediction")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("prediction")}>
                     <button
                       onClick={() => handleSort("prediction")}
-                      className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Prediction
                       {renderSortIndicator("prediction")}
                     </button>
                   </th>
-                  <th className="px-6 py-5" aria-sort={getAriaSort("confidence")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("confidence")}>
                     <button
                       onClick={() => handleSort("confidence")}
-                      className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Confidence
                       {renderSortIndicator("confidence")}
                     </button>
                   </th>
-                  <th className="px-6 py-5" aria-sort={getAriaSort("actualEps")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("actualEps")}>
                     <button
                       onClick={() => handleSort("actualEps")}
-                      className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Actual EPS
                       {renderSortIndicator("actualEps")}
                     </button>
                   </th>
-                  <th className="px-6 py-5" aria-sort={getAriaSort("postEarningsMove")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("postEarningsMove")}>
                     <button
                       onClick={() => handleSort("postEarningsMove")}
-                      className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Post-Earnings Move
                       {renderSortIndicator("postEarningsMove")}
                     </button>
                   </th>
-                  <th className="px-6 py-5" aria-sort={getAriaSort("brier")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("brier")}>
                     <button
                       onClick={() => handleSort("brier")}
-                      className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Brier
                       {renderSortIndicator("brier")}
                     </button>
                   </th>
-                  <th className="pl-4 pr-8 py-5 text-right" aria-sort={getAriaSort("outcome")}>
+                  <th className="pl-4 pr-8 py-5 text-right label-caps" aria-sort={getAriaSort("outcome")}>
                     <button
                       onClick={() => handleSort("outcome")}
-                      className="flex items-center gap-2 ml-auto group text-right font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                      className="flex items-center gap-2 ml-auto group text-right label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Outcome
                       {renderSortIndicator("outcome")}
@@ -674,6 +686,11 @@ export default function HistoryPage() {
                       >
                         {row.company}
                       </div>
+                    </td>
+
+                    {/* Sector */}
+                    <td className="px-6 py-4 text-sm text-ink-mute font-medium">
+                      {(!row.sector || row.sector === "Unknown") ? "—" : row.sector}
                     </td>
 
                     {/* Analysis Date */}
@@ -713,7 +730,7 @@ export default function HistoryPage() {
                             style={{ width: `${row.confidence}%` }}
                           />
                         </div>
-                        <span className="font-mono font-bold text-white text-sm">
+                        <span className="font-data text-white text-sm">
                           {row.confidence}%
                         </span>
                       </div>

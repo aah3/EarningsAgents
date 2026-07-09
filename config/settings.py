@@ -104,6 +104,7 @@ class CompanyData:
     
     # Earnings info
     report_date: date
+    company_description: Optional[str] = None
     report_time: ReportTime = ReportTime.UNKNOWN
     fiscal_quarter: str = ""
     fiscal_year: int = 0
@@ -128,6 +129,13 @@ class CompanyData:
     estimate_revisions: List[Dict[str, Any]] = field(default_factory=list)
     options_features: Optional[Dict[str, Any]] = None
     analyst_recommendations: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Enrichment fields
+    enriched_history: List[Dict[str, Any]] = field(default_factory=list)
+    reaction_summary: Optional[Dict[str, Any]] = None
+    implied_move_pct: Optional[float] = None
+    market_open: Optional[bool] = None
+    live_options: Optional[Dict[str, Any]] = None
 
     # SEC XBRL company facts (keyed by metric name; values may be dicts or raw scalars)
     company_facts: Optional[Dict[str, Any]] = None
@@ -178,6 +186,7 @@ class EarningsPrediction:
     options_features: Optional[Dict[str, Any]] = None
     report_time: str = "UNKNOWN"
     company_description: Optional[str] = None
+    sector: Optional[str] = None
 
 
 def load_config() -> PipelineConfig:

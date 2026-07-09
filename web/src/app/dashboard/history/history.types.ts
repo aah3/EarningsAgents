@@ -6,6 +6,7 @@ export type HistoryRow = {
   id?: number;
   ticker: string;
   company: string;
+  sector?: string;
   analysisDate: string;                 // ISO — Prediction.prediction_date (when analysis ran)
   reportDate: string;                   // ISO — Prediction.report_date (actual earnings date)
   reportTiming: ReportTiming;           // before/after market session

@@ -47,6 +47,7 @@ class Prediction(SQLModel, table=True):
     ticker: str = Field(index=True)
     company_name: str
     company_description: Optional[str] = Field(default=None)
+    sector: Optional[str] = Field(default=None)
     report_date: datetime
     report_timing: Optional[str] = Field(default=None)
     prediction_date: datetime = Field(default_factory=datetime.utcnow)

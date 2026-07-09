@@ -2,8 +2,9 @@
 
 @theme {
   --color-bg: #070A12;
-  --color-panel: #0E1524;
+  --color-panel: #131C2E;
   --color-panel-line: #1B2436;
+  --color-panel-sunk: #0E1524;
   --color-ink: #F5F8FF;
   --color-ink-mute: #9AA7BE;
   --color-ink-dim: #5E6B84;
@@ -14,6 +15,9 @@
   --color-bear: #F87171;
   --color-quant: #60A5FA;
   --color-human: #FBBF24;
+  --surface-bull: rgba(52, 211, 153, 0.10);
+  --surface-bear: rgba(248, 113, 113, 0.10);
+  --border-subtle: rgba(255, 255, 255, 0.15);
 
   --font-display: var(--font-space-grotesk);
   --font-body: var(--font-inter);
@@ -24,6 +28,7 @@
   --color-bg: #070A12;
   --color-panel: #131C2E;
   --color-panel-line: #1B2436;
+  --color-panel-sunk: #0E1524;
   --color-ink: #F5F8FF;
   --color-ink-mute: #9AA7BE;
   --color-ink-dim: #5E6B84;
@@ -34,6 +39,9 @@
   --color-bear: #F87171;
   --color-quant: #60A5FA;
   --color-human: #FBBF24;
+  --surface-bull: rgba(52, 211, 153, 0.10);
+  --surface-bear: rgba(248, 113, 113, 0.10);
+  --border-subtle: rgba(255, 255, 255, 0.15);
   --font-display: var(--font-space-grotesk);
   --font-body: var(--font-inter);
   --font-mono: var(--font-space-mono);
@@ -171,4 +179,17 @@ body {
   font-weight: 700;
   font-size: 22px;
   fill: var(--color-teal);
+}
+
+.font-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }

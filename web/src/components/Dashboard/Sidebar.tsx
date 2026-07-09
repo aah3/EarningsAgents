@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useUser, useClerk } from "@clerk/nextjs";
+
 import {
   LayoutDashboard,
   TrendingUp,
@@ -12,7 +12,6 @@ import {
   History,
   Gauge,
   Settings,
-  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -27,15 +26,13 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user } = useUser();
-  const { signOut } = useClerk();
 
   return (
     <aside className="sticky top-0 h-screen w-[248px] max-[900px]:w-[72px] shrink-0 flex flex-col bg-panel border-r border-panel-line px-3.5 py-5 z-20 shadow-[4px_0_24px_rgba(0,0,0,0.3)] transition-all duration-300 overflow-hidden">
       {/* Top Header/Brand */}
       <div className="flex items-center gap-3 select-none pb-5 justify-start max-[900px]:justify-center">
         <Link
-          href="/dashboard"
+          href="/"
           className="brand flex items-center gap-3 font-display font-bold text-[19px] tracking-[-0.01em] text-white select-none focus-visible:ring-2 focus-visible:ring-teal outline-none rounded-lg"
         >
           <span
@@ -88,46 +85,6 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom Pinned User Section */}
-      <div className="mt-auto pt-3 border-t border-panel-line flex flex-col gap-3">
-        {/* User Card */}
-        <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-panel-line bg-white/[0.01] select-none justify-start max-[900px]:justify-center">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden border border-panel-line">
-            {user?.imageUrl ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={user.imageUrl}
-                alt={user.firstName || "User"}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full bg-teal/20 text-teal flex items-center justify-center font-display font-semibold text-xs">
-                U
-              </div>
-            )}
-          </div>
-          <div className="min-w-0 flex-1 max-[900px]:hidden">
-            <p className="text-[14px] font-semibold text-white truncate leading-tight">
-              {user?.firstName || "User Profile"}
-            </p>
-            <p className="text-[12px] text-ink-dim truncate mt-0.5 leading-none">
-              {user?.primaryEmailAddress?.emailAddress || ""}
-            </p>
-          </div>
-        </div>
-
-        {/* Log Out */}
-        <button
-          onClick={async () => {
-            await signOut();
-            window.location.href = "/";
-          }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-ink-mute hover:text-bear hover:bg-bear/8 border-l-2 border-transparent transition-all font-body font-semibold text-[14.5px] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-bear justify-start max-[900px]:justify-center select-none"
-        >
-          <LogOut className="w-5 h-5 flex-shrink-0" />
-          <span className="max-[900px]:hidden">Log out</span>
-        </button>
-      </div>
     </aside>
   );
 }

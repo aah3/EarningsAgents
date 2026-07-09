@@ -3,6 +3,7 @@ export type PredictionStatus = "VALIDATED" | "PENDING";
 
 export type PredictionRow = {
   ticker: string;
+  sector?: string;
   targetDate: string;   // ISO yyyy-mm-dd
   status: PredictionStatus;
   consensus: Consensus;
@@ -12,6 +13,7 @@ export type PredictionRow = {
 export const MOCK_PREDICTIONS: PredictionRow[] = [
   {
     ticker: "PRGS",
+    sector: "Technology",
     targetDate: "2026-06-27",
     status: "VALIDATED",
     consensus: "BEAT",
@@ -19,6 +21,7 @@ export const MOCK_PREDICTIONS: PredictionRow[] = [
   },
   {
     ticker: "NKE",
+    sector: "Consumer Discretionary",
     targetDate: "2026-06-25",
     status: "VALIDATED",
     consensus: "MISS",
@@ -26,6 +29,7 @@ export const MOCK_PREDICTIONS: PredictionRow[] = [
   },
   {
     ticker: "LNN",
+    sector: "Industrials",
     targetDate: "2026-07-02",
     status: "PENDING",
     consensus: "INLINE",
@@ -33,6 +37,7 @@ export const MOCK_PREDICTIONS: PredictionRow[] = [
   },
   {
     ticker: "MS",
+    sector: "Financials",
     targetDate: "2026-07-15",
     status: "PENDING",
     consensus: "BEAT",
@@ -40,6 +45,7 @@ export const MOCK_PREDICTIONS: PredictionRow[] = [
   },
   {
     ticker: "PENG",
+    sector: "Technology",
     targetDate: "2026-07-22",
     status: "PENDING",
     consensus: "BEAT",

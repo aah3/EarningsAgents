@@ -104,7 +104,7 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
   // Get color for confidence bar
   const getConfidenceBarColor = (score: number) => {
     if (score >= 80) return "bg-bull";
-    if (score >= 60) return "bg-human";
+    if (score >= 60) return "bg-teal";
     return "bg-bear";
   };
 
@@ -116,11 +116,11 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
           <h2 className="text-lg font-display font-semibold text-white uppercase tracking-wider">
             Recent Predictions
           </h2>
-          <span className="text-[11px] font-mono font-bold text-ink-mute bg-[#0E1524] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
+          <span className="text-[11px] font-mono font-bold text-ink-mute bg-[var(--color-panel-sunk)] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
             Showing {processedRows.length} of {dataList.length}
           </span>
           {onLimitChange && (
-            <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-ink-mute bg-[#0E1524] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
+            <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-ink-mute bg-[var(--color-panel-sunk)] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
               <span>Show:</span>
               <select
                 value={limit || 5}
@@ -168,7 +168,7 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
               Status:
             </span>
-            <div className="flex gap-0.5 p-1 bg-[#0e1524] border border-panel-line rounded-[10px] select-none">
+            <div className="flex gap-0.5 p-1 bg-[var(--color-panel-sunk)] border border-panel-line rounded-[10px] select-none">
               {(["ALL", "VALIDATED", "PENDING"] as const).map((s) => (
                 <button
                   key={s}
@@ -191,7 +191,7 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
               Consensus:
             </span>
-            <div className="flex gap-0.5 p-1 bg-[#0e1524] border border-panel-line rounded-[10px] select-none">
+            <div className="flex gap-0.5 p-1 bg-[var(--color-panel-sunk)] border border-panel-line rounded-[10px] select-none">
               {(["ALL", "BEAT", "MISS", "INLINE"] as const).map((c) => (
                 <button
                   key={c}
@@ -215,47 +215,50 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
       <div className="overflow-x-auto">
         <table className="w-full text-left whitespace-nowrap border-collapse">
           <thead>
-            <tr className="bg-[#05070a] border-b border-panel-line text-[11px] font-mono font-bold uppercase tracking-widest text-ink-dim select-none">
-              <th className="px-8 py-5" aria-sort={getAriaSort("ticker")}>
+            <tr className="bg-[#05070a] border-b border-panel-line text-ink-dim select-none">
+              <th className="px-8 py-5 label-caps" aria-sort={getAriaSort("ticker")}>
                 <button
                   onClick={() => handleSort("ticker")}
-                  className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                  className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                 >
                   Ticker
                   {renderSortIndicator("ticker")}
                 </button>
               </th>
-              <th className="px-8 py-5" aria-sort={getAriaSort("targetDate")}>
+              <th className="px-8 py-5 label-caps text-left text-ink-dim font-semibold">
+                Sector
+              </th>
+              <th className="px-8 py-5 label-caps" aria-sort={getAriaSort("targetDate")}>
                 <button
                   onClick={() => handleSort("targetDate")}
-                  className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                  className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                 >
                   Target Date
                   {renderSortIndicator("targetDate")}
                 </button>
               </th>
-              <th className="px-8 py-5" aria-sort={getAriaSort("status")}>
+              <th className="px-8 py-5 label-caps" aria-sort={getAriaSort("status")}>
                 <button
                   onClick={() => handleSort("status")}
-                  className="flex items-center gap-2 group text-left font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                  className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                 >
                   Status
                   {renderSortIndicator("status")}
                 </button>
               </th>
-              <th className="px-8 py-5 text-center" aria-sort={getAriaSort("consensus")}>
+              <th className="px-8 py-5 text-center label-caps" aria-sort={getAriaSort("consensus")}>
                 <button
                   onClick={() => handleSort("consensus")}
-                  className="flex items-center gap-2 mx-auto group text-center font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                  className="flex items-center gap-2 mx-auto group text-center label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                 >
                   Consensus
                   {renderSortIndicator("consensus")}
                 </button>
               </th>
-              <th className="px-8 py-5 text-right" aria-sort={getAriaSort("confidence")}>
+              <th className="px-8 py-5 text-right label-caps" aria-sort={getAriaSort("confidence")}>
                 <button
                   onClick={() => handleSort("confidence")}
-                  className="flex items-center gap-2 ml-auto group text-right font-mono font-bold tracking-widest hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                  className="flex items-center gap-2 ml-auto group text-right label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                 >
                   Confidence Score
                   {renderSortIndicator("confidence")}
@@ -281,6 +284,9 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
                     {row.ticker}
                   </td>
                   <td className="px-8 py-4 text-sm text-ink-mute font-medium">
+                    {(!row.sector || row.sector === "Unknown") ? "—" : row.sector}
+                  </td>
+                  <td className="px-8 py-4 text-sm text-ink-mute font-medium">
                     {new Date(row.targetDate).toLocaleDateString(undefined, {
                       year: "numeric",
                       month: "short",
@@ -295,7 +301,7 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
                   </td>
                   <td className="px-8 py-4 text-right">
                     <div className="flex items-center justify-end gap-3 select-none">
-                      <span className="font-display font-semibold text-2xl tracking-tight text-white group-hover:text-teal transition-colors select-none font-mono">
+                      <span className="font-data font-semibold text-2xl tracking-tight text-white group-hover:text-teal transition-colors select-none">
                         {row.confidence}<span className="text-ink-dim text-lg select-none">%</span>
                       </span>
                       <div className="w-[64px] h-[5px] bg-white/10 rounded-full overflow-hidden select-none flex-shrink-0">
@@ -310,7 +316,7 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="px-8 py-16 text-center select-none">
+                <td colSpan={6} className="px-8 py-16 text-center select-none">
                   <div className="flex flex-col items-center justify-center gap-4">
                     <XCircle className="w-12 h-12 text-ink-dim opacity-30 animate-pulse" />
                     <span className="text-ink-mute text-sm font-semibold tracking-wider font-display">

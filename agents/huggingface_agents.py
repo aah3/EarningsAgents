@@ -1662,6 +1662,7 @@ class ThreeAgentSystem:
             ticker=company.ticker,
             company_name=company.company_name,
             company_description=company.company_description,
+            sector=company.sector,
             report_date=company.report_date,
             prediction_date=prediction_date,
             direction=consensus_response.direction,

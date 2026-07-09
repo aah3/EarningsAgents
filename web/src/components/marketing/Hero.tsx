@@ -81,7 +81,7 @@ export default function Hero({ data = DEFAULT_PIPELINE }: HeroProps) {
       </div>
 
       {/* Right Column: Pipeline Diagram Wrap */}
-      <div className="diagram-wrap max-[940px]:order-2 relative border border-panel-line rounded-[20px] bg-gradient-to-b from-[#0E1524]/90 to-[#070A12]/60 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_30px_80px_rgba(0,0,0,0.5)] overflow-hidden before:content-[''] before:absolute before:inset-0 before:bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] before:bg-[size:34px_34px] before:pointer-events-none">
+      <div className="diagram-wrap max-[940px]:order-2 relative border border-panel-line rounded-[20px] bg-gradient-to-b from-[var(--color-panel-sunk)]/90 to-[#070A12]/60 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_30px_80px_rgba(0,0,0,0.5)] overflow-hidden before:content-[''] before:absolute before:inset-0 before:bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] before:bg-[size:34px_34px] before:pointer-events-none">
         {/* Diagram Head */}
         <div className="diagram-head relative flex justify-between items-center font-mono text-[11px] tracking-[0.12em] text-ink-dim uppercase mb-1.5 px-1 py-0.5 select-none z-10">
           <span>PIPELINE · {data.ticker} Q3</span>
