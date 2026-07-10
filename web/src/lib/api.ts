@@ -134,7 +134,7 @@ export const api = {
         return this.fetchWithAuth(url.toString(), token);
     },
 
-    async getCalendar(startDate?: string, endDate?: string, tickers?: string, useFinviz: boolean = false, timeframe: string = "This Week", indexName: string = "S&P 500", token?: string) {
+    async getCalendar(startDate?: string, endDate?: string, tickers?: string, useFinviz: boolean = false, timeframe: string = "This Week", indexName: string = "S&P 500", token?: string, options: RequestInit = {}) {
         const url = new URL(`${API_BASE_URL}/earnings/calendar`);
         if (startDate) url.searchParams.append("start_date", startDate);
         if (endDate) url.searchParams.append("end_date", endDate);
@@ -144,7 +144,7 @@ export const api = {
             url.searchParams.append("timeframe", timeframe);
             url.searchParams.append("index_name", indexName);
         }
-        return this.fetchWithAuth(url.toString(), token);
+        return this.fetchWithAuth(url.toString(), token, options);
     },
 
     async getSentiment(ticker: string, daysBack: number = 30, token?: string) {

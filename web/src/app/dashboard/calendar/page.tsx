@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/lib/api";
 import { XCircle } from "lucide-react";
@@ -11,6 +11,7 @@ interface EarningsEvent {
     report_time: string;
     consensus_eps?: number;
     consensus_revenue?: number;
+    date_range?: string;
 }
 
 const SessionBadge = ({ timing }: { timing: string }) => {
@@ -34,7 +35,8 @@ const SessionBadge = ({ timing }: { timing: string }) => {
 export default function CalendarPage() {
     const { getToken } = useAuth();
     
-    // Default to this week
+    // Used to map timeframe dropdown selections to concrete start/end dates for the DB/Yahoo path.
+    // NOTE: Finviz endpoint ignores start_date/end_date and computes its own date range on the backend.
     const getDatesForTimeframe = (tf: string) => {
         const today = new Date();
         let start = new Date();
@@ -88,15 +90,76 @@ export default function CalendarPage() {
     const [events, setEvents] = useState<EarningsEvent[]>([]);
     const [error, setError] = useState<string | null>(null);
 
-    const handleFetchCalendar = async () => {
+    // In-memory cache for Finviz requests (keyed by useFinviz|indexName|timeframe)
+    const cacheRef = useRef<Map<string, EarningsEvent[]>>(new Map());
+
+    // Debounce states for Finviz selectors
+    const [debouncedIndexName, setDebouncedIndexName] = useState(indexName);
+    const [debouncedTimeframe, setDebouncedTimeframe] = useState(timeframe);
+    const [debouncedUseFinviz, setDebouncedUseFinviz] = useState(useFinviz);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedIndexName(indexName);
+            setDebouncedTimeframe(timeframe);
+            setDebouncedUseFinviz(useFinviz);
+        }, 380); // Debounce by ~380ms
+        
+        return () => {
+            clearTimeout(timer);
+        };
+    }, [indexName, timeframe, useFinviz]);
+
+    const handleFetchCalendar = async (signal?: AbortSignal) => {
+        const activeUseFinviz = useFinviz;
+        const activeIndexName = indexName;
+        const activeTimeframe = timeframe;
+
+        // Check cache hit for Finviz path
+        if (activeUseFinviz) {
+            const cacheKey = `${activeUseFinviz}|${activeIndexName}|${activeTimeframe}`;
+            if (cacheRef.current.has(cacheKey)) {
+                setEvents(cacheRef.current.get(cacheKey) || []);
+                setError(null);
+                setLoading(false);
+                return;
+            }
+        }
+
         setLoading(true);
         setError(null);
         try {
             const token = await getToken();
             const tokenStr = token ?? undefined;
-            const data = await api.getCalendar(startDate, endDate, tickers, useFinviz, timeframe, indexName, tokenStr);
-            setEvents(data || []);
+            
+            // NOTE: On the finviz branch, start_date and end_date are dead parameters (the endpoint ignores them).
+            // We pass undefined to omit them.
+            const queryStart = activeUseFinviz ? undefined : startDate;
+            const queryEnd = activeUseFinviz ? undefined : endDate;
+            
+            const data = await api.getCalendar(
+                queryStart,
+                queryEnd,
+                tickers,
+                activeUseFinviz,
+                activeTimeframe,
+                activeIndexName,
+                tokenStr,
+                { signal }
+            );
+            
+            const eventsData = data || [];
+            setEvents(eventsData);
+            
+            // Populate cache on successful Finviz fetch
+            if (activeUseFinviz) {
+                const cacheKey = `${activeUseFinviz}|${activeIndexName}|${activeTimeframe}`;
+                cacheRef.current.set(cacheKey, eventsData);
+            }
         } catch (err: any) {
+            if (err.name === 'AbortError') {
+                return; // Request was aborted, ignore state update
+            }
             setError(err.message || "Failed to fetch calendar.");
         } finally {
             setLoading(false);
@@ -105,8 +168,34 @@ export default function CalendarPage() {
 
     // Auto-fetch when filters/inputs change
     useEffect(() => {
-        handleFetchCalendar();
-    }, [useFinviz, indexName, timeframe, startDate, endDate, tickers]);
+        const controller = new AbortController();
+        const isFinvizActive = useFinviz;
+
+        if (isFinvizActive) {
+            // Wait for debounce timer if dropdown values are out of sync with debounced states
+            if (debouncedIndexName !== indexName || debouncedTimeframe !== timeframe || debouncedUseFinviz !== useFinviz) {
+                return;
+            }
+            handleFetchCalendar(controller.signal);
+        } else {
+            // Yahoo/DB path: fetch immediately
+            handleFetchCalendar(controller.signal);
+        }
+
+        return () => {
+            controller.abort();
+        };
+    }, [
+        useFinviz, 
+        debouncedUseFinviz, 
+        debouncedIndexName, 
+        debouncedTimeframe, 
+        startDate, 
+        endDate, 
+        tickers, 
+        indexName, 
+        timeframe
+    ]);
 
     const handleTimeframeChange = (tf: string) => {
         setTimeframe(tf);
@@ -122,7 +211,15 @@ export default function CalendarPage() {
                     <h1 className="text-[clamp(1.9rem,3vw,2.3rem)] font-display font-semibold tracking-tight text-white mb-2 leading-none">
                         Earnings Calendar
                     </h1>
-                    <p className="text-sm text-ink-mute font-body">Upcoming reports powered by data aggregators.</p>
+                    <p className="text-sm text-ink-mute font-body flex items-center gap-2 flex-wrap select-none">
+                        <span>Upcoming reports powered by data aggregators.</span>
+                        <span className="px-2 py-0.5 text-xs bg-[var(--color-panel-sunk)] border border-panel-line text-teal font-mono rounded-[6px]">
+                            {useFinviz
+                                ? (events.length > 0 && events[0].date_range ? events[0].date_range : `${startDate} to ${endDate}`)
+                                : `${startDate} to ${endDate}`
+                            }
+                        </span>
+                    </p>
                 </div>
             </header>
 
@@ -179,7 +276,7 @@ export default function CalendarPage() {
                     </div>
                     <div className="w-full lg:flex-1">
                         <button
-                            onClick={handleFetchCalendar}
+                            onClick={() => handleFetchCalendar()}
                             disabled={loading}
                             className="w-full py-2.5 rounded-xl font-mono font-bold uppercase tracking-widest text-xs bg-gradient-to-br from-teal to-teal-deep text-[#04231F] hover:shadow-[0_0_15px_rgba(45,212,191,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
                         >
@@ -219,7 +316,7 @@ export default function CalendarPage() {
                     </div>
                     <div>
                         <button
-                            onClick={handleFetchCalendar}
+                            onClick={() => handleFetchCalendar()}
                             disabled={loading}
                             className="px-8 py-2.5 rounded-xl font-mono font-bold uppercase tracking-widest text-xs bg-gradient-to-br from-teal to-teal-deep text-[#04231F] hover:shadow-[0_0_15px_rgba(45,212,191,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
                         >
