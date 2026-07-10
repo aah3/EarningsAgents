@@ -120,6 +120,7 @@ def main():
                 expected_price_move=prediction.expected_price_move,
                 move_vs_implied=prediction.move_vs_implied,
                 guidance_expectation=prediction.guidance_expectation,
+                likely_guidance=getattr(prediction, "likely_guidance", ""),
                 reasoning_summary=prediction.reasoning_summary,
                 bull_factors=prediction.bull_factors,
                 bear_factors=prediction.bear_factors,

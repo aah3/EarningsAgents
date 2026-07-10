@@ -171,6 +171,7 @@ class EarningsPrediction:
     expected_price_move: str = ""
     move_vs_implied: str = ""
     guidance_expectation: str = ""
+    likely_guidance: str = ""
 
     # Reasoning
     reasoning_summary: str = ""

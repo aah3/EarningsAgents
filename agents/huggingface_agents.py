@@ -166,6 +166,7 @@ class AgentResponse:
     bull_factors: List[str]
     bear_factors: List[str]
     key_signals: Dict[str, Any]
+    likely_guidance: str = ""
     raw_response: str = ""
 
 
@@ -177,6 +178,7 @@ AGENT_RESPONSE_SCHEMA = {
         "expected_price_move": {"type": "string"},
         "move_vs_implied": {"type": "string"},
         "guidance_expectation": {"type": "string"},
+        "likely_guidance": {"type": "string"},
         "reasoning": {"type": "string"},
         "bull_factors": {"type": "array", "items": {"type": "string"}},
         "bear_factors": {"type": "array", "items": {"type": "string"}},
@@ -360,6 +362,7 @@ Then, output your final decision in the following exact JSON format, enclosed in
     "expected_price_move": "positive" | "negative" | "neutral",
     "move_vs_implied": "inside implied move" | "exceeds implied move",
     "guidance_expectation": "positive" | "negative" | "neutral",
+    "likely_guidance": "<specific details on what guidance ranges or outlook the company is likely to provide, including qualitative and quantitative expectations>",
     "reasoning": "<2-3 sentence final decision rationale>",
     "bull_factors": ["<accepted bull points>"],
     "bear_factors": ["<accepted bear points>"],
@@ -1036,6 +1039,7 @@ Stop calling tools once you have enough information to form a confident predicti
                 bull_factors=data.get("bull_factors", []),
                 bear_factors=data.get("bear_factors", []),
                 key_signals=data.get("key_signals", {}),
+                likely_guidance=data.get("likely_guidance", ""),
                 raw_response=response,
             )
         except AgentResponseError:
@@ -1670,6 +1674,7 @@ class ThreeAgentSystem:
             expected_price_move=consensus_response.expected_price_move,
             move_vs_implied=consensus_response.move_vs_implied,
             guidance_expectation=consensus_response.guidance_expectation,
+            likely_guidance=consensus_response.likely_guidance,
             reasoning_summary=consensus_response.reasoning,
             bull_factors=bull_response.bull_factors if bull_response else [],
             bear_factors=bear_response.bear_factors if bear_response else [],

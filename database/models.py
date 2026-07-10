@@ -58,6 +58,7 @@ class Prediction(SQLModel, table=True):
     expected_price_move: str = Field(default="")
     move_vs_implied: str = Field(default="")
     guidance_expectation: str = Field(default="")
+    likely_guidance: str = Field(default="")
     
     reasoning_summary: str
     

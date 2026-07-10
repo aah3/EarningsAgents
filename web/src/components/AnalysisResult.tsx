@@ -159,6 +159,20 @@ ${userText}`
                 </div>
             </div>
 
+            {result.likely_guidance && (
+                <div className="mb-10 p-6 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 shadow-inner">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+                            <span className="text-indigo-400 font-black text-lg">🔮</span>
+                        </div>
+                        <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.2em]">Expected Guidance Outlook</p>
+                    </div>
+                    <p className="text-sm text-gray-200 leading-relaxed font-medium">
+                        {result.likely_guidance}
+                    </p>
+                </div>
+            )}
+
             {result.options_features && (
                 <div className="mb-10 p-6 rounded-2xl border border-accent/20 bg-accent/5 shadow-inner">
                     <div className="flex items-center gap-3 mb-5">

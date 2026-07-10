@@ -12,6 +12,7 @@ export interface Prediction {
     expected_price_move?: string;
     move_vs_implied?: string;
     guidance_expectation?: string;
+    likely_guidance?: string;
     bull_factors: string[];
     bear_factors: string[];
     debate_summary?: string;
