@@ -58,64 +58,63 @@ export default function BatchAnalysisPage() {
     };
 
     return (
-        <div className="space-y-10 pb-20">
-            <header className="mb-10">
-                <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight mb-3 font-outfit text-white">Batch Analysis</h1>
-                <p className="text-gray-400 font-medium text-lg">Predict multiple earnings simultaneously.</p>
+        <div className="space-y-6 pb-20">
+            <header className="flex justify-between items-end mb-[20px]">
+                <div>
+                    <h1 className="text-[clamp(1.9rem,3vw,2.3rem)] font-display font-semibold tracking-tight text-white mb-2 leading-none">
+                        Batch Analysis
+                    </h1>
+                    <p className="text-sm text-ink-mute font-body">Predict multiple earnings simultaneously.</p>
+                </div>
             </header>
 
             <div className="grid grid-cols-1 gap-10">
                 {/* Form */}
-                <div className="glass p-8 rounded-3xl border border-white/10 bg-[#0c1017] shadow-2xl relative">
+                <div className="bg-panel border border-[#26334A] rounded-[16px] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] relative overflow-hidden">
                     {loading && (
-                        <div className="absolute inset-0 bg-black/60 backdrop-blur-md rounded-3xl z-10 flex flex-col items-center justify-center border border-accent/20">
-                            <div className="relative w-16 h-16 mb-6">
-                                <div className="absolute inset-0 rounded-full border-4 border-white/10"></div>
-                                <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-accent animate-spin"></div>
-                                <div className="absolute inset-0 flex items-center justify-center text-accent">
-                                    <span className="animate-pulse">⚡</span>
-                                </div>
-                            </div>
-                            <p className="text-accent font-bold animate-pulse text-xs tracking-[0.2em] uppercase">Running Batch Predictions...</p>
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-md rounded-[16px] z-10 flex flex-col items-center justify-center border border-teal/20">
+                            <div className="w-12 h-12 border-4 border-teal border-t-transparent rounded-full animate-spin mb-4" />
+                            <p className="text-teal font-mono font-bold animate-pulse text-xs tracking-[0.2em] uppercase">Running Batch Predictions...</p>
                         </div>
                     )}
 
                     <div className="space-y-6">
                         {companies.map((company, index) => (
-                            <div key={index} className="flex flex-wrap lg:flex-nowrap gap-4 items-center">
+                            <div key={index} className="flex flex-wrap lg:flex-nowrap gap-4 items-center border-b border-panel-line pb-4 last:border-b-0 last:pb-0">
                                 <div className="w-full lg:w-1/4">
-                                    <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400 mb-2 block">Ticker</label>
+                                    <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim mb-2 block select-none">Ticker</label>
                                     <input
                                         type="text"
                                         value={company.ticker}
                                         onChange={(e) => handleChange(index, 'ticker', e.target.value)}
                                         placeholder="E.G. AAPL"
-                                        className="w-full bg-[#080b11] border border-white/10 rounded-2xl px-5 py-3 focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none uppercase font-black text-white"
+                                        className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none uppercase font-semibold text-xs tracking-wider text-white placeholder-white/20 transition-all font-body"
                                     />
                                 </div>
                                 <div className="w-full lg:w-1/4">
-                                    <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400 mb-2 block">Report Date</label>
+                                    <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim mb-2 block select-none">Report Date</label>
                                     <input
                                         type="date"
                                         value={company.report_date}
                                         onChange={(e) => handleChange(index, 'report_date', e.target.value)}
-                                        className="w-full bg-[#080b11] border border-white/10 rounded-2xl px-5 py-3 focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none text-white relative [color-scheme:dark]"
+                                        className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-white relative [color-scheme:dark] text-xs font-mono transition-all"
                                     />
                                 </div>
                                 <div className="w-full lg:flex-1">
-                                    <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400 mb-2 block">User Analysis (Optional)</label>
+                                    <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim mb-2 block select-none">User Analysis (Optional)</label>
                                     <input
                                         type="text"
                                         value={company.user_analysis}
                                         onChange={(e) => handleChange(index, 'user_analysis', e.target.value)}
                                         placeholder="Optional Context..."
-                                        className="w-full bg-[#080b11] border border-white/10 rounded-2xl px-5 py-3 focus:border-accent outline-none text-white"
+                                        className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-white text-xs placeholder-white/20 transition-all font-body"
                                     />
                                 </div>
                                 <div className="mt-6">
                                     <button 
                                         onClick={() => handleRemoveRow(index)}
-                                        className="text-red-500 bg-red-500/10 p-3 rounded-2xl hover:bg-red-500/20"
+                                        disabled={companies.length <= 1}
+                                        className="text-red-500 bg-red-500/10 p-2.5 rounded-xl hover:bg-red-500/20 border border-red-500/20 transition-all cursor-pointer font-bold disabled:opacity-30 disabled:cursor-not-allowed"
                                     >
                                         ✗
                                     </button>
@@ -123,10 +122,10 @@ export default function BatchAnalysisPage() {
                             </div>
                         ))}
 
-                        <div className="flex justify-between items-center mt-8">
+                        <div className="flex justify-between items-center mt-8 pt-4 border-t border-panel-line">
                             <button
                                 onClick={handleAddRow}
-                                className="text-xs font-bold text-accent uppercase tracking-widest px-4 py-2 bg-accent/10 rounded-lg hover:bg-accent/20"
+                                className="text-xs font-mono font-bold text-teal hover:text-teal/80 uppercase tracking-widest px-4 py-2 bg-teal/10 rounded-lg border border-teal/20 transition-all cursor-pointer"
                             >
                                 + Add Ticker
                             </button>
@@ -134,14 +133,14 @@ export default function BatchAnalysisPage() {
                             <button
                                 onClick={handleRunBatch}
                                 disabled={loading}
-                                className="w-1/3 py-4 rounded-2xl font-black uppercase tracking-[0.15em] text-xs bg-accent text-background hover:bg-accent/90"
+                                className="py-2.5 px-8 rounded-xl font-mono font-bold uppercase tracking-widest text-xs bg-gradient-to-br from-teal to-teal-deep text-[#04231F] hover:shadow-[0_0_15px_rgba(45,212,191,0.3)] transition-all cursor-pointer flex items-center justify-center"
                             >
                                 {loading ? "Analyzing..." : "Run Batch Predictions"}
                             </button>
                         </div>
 
                         {error && (
-                            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-500 font-bold mt-4">
+                            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-500 font-bold mt-4 select-none">
                                 ⚠️ {error}
                             </div>
                         )}
@@ -150,10 +149,10 @@ export default function BatchAnalysisPage() {
 
                 {/* Results List */}
                 {results && results.length > 0 && (
-                    <div className="space-y-10">
-                        <h2 className="text-2xl font-bold font-outfit text-white">Batch Results</h2>
+                    <div className="space-y-6">
+                        <h2 className="text-xl font-display font-semibold text-white uppercase tracking-wider">Batch Results</h2>
                         {results.map((result, idx) => (
-                            <div key={idx} className="bg-[#0c1017] border border-white/10 rounded-[40px] overflow-hidden">
+                            <div key={idx} className="rounded-[16px] border border-[#26334A] bg-panel overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.35)] animate-in fade-in duration-300">
                                 <AnalysisResult result={result} />
                             </div>
                         ))}

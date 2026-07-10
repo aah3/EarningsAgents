@@ -401,7 +401,7 @@ export default function SettingsPage() {
                     <div>
                       <span className="text-[14px] font-semibold text-white">Enable Cross-Examination (Rebuttal Stage)</span>
                       <p className="text-ink-dim text-[12px] mt-0.5 leading-relaxed">
-                        Add a formal rebuttal cycle where Bull and Bear agents cross-examine each other's points.
+                        Add a formal rebuttal cycle where Bull and Bear agents cross-examine each other&apos;s points.
                       </p>
                     </div>
                   </label>
