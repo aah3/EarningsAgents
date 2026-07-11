@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Depends, Response
+from fastapi import APIRouter, HTTPException, Query, Depends, Response, Request
 from datetime import date, datetime
 from typing import List, Optional
 from pydantic import BaseModel
@@ -14,6 +14,7 @@ from config.settings import PipelineConfig, load_config
 from database.db import get_session
 from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings
 from api.dependencies.auth import get_current_user
+from api.rate_limit import limiter, RATE_LIMIT_PREDICT, RATE_LIMIT_CHAT, RATE_LIMIT_BATCH
 
 router = APIRouter(
     prefix="/earnings",
@@ -257,9 +258,11 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
 
 @router.post("/predict/{ticker}")
+@limiter.limit(RATE_LIMIT_PREDICT)
 async def predict_ticker(
-    ticker: str, 
-    request: PredictRequest,
+    request: Request,
+    ticker: str,
+    body: PredictRequest,
     force_refresh: bool = Query(False, description="Force new analysis and bypass cache"),
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
@@ -267,33 +270,33 @@ async def predict_ticker(
     try:
         # Ensure user exists in DB
         user = get_or_create_user(session, clerk_id)
-        
+
         # 1. Check for cached prediction if not forcing refresh and no custom analysis
-        if not force_refresh and not request.user_analysis:
+        if not force_refresh and not body.user_analysis:
             statement = select(Prediction).where(
                 Prediction.user_id == user.id,
                 Prediction.ticker == ticker.upper()
             ).order_by(Prediction.prediction_date.desc())
             existing_predictions = session.exec(statement).all()
-            
+
             for p in existing_predictions:
                 # Check if we already ran it today for this report
-                if request.report_date is not None and p.report_date.date() == request.report_date and p.prediction_date.date() == date.today():
+                if body.report_date is not None and p.report_date.date() == body.report_date and p.prediction_date.date() == date.today():
                     return {
                         "task_id": f"cached-{p.id}",
                         "status": "PENDING",
                         "message": f"Cached analysis found for {ticker}"
                     }
-        
+
         # Dispatch background task
         task = analyze_ticker_task.delay(
-            ticker.upper(), 
-            request.report_date.isoformat() if request.report_date else "", 
+            ticker.upper(),
+            body.report_date.isoformat() if body.report_date else "",
             clerk_id,
-            request.user_analysis or "",
-            request.enable_rebuttals
+            body.user_analysis or "",
+            body.enable_rebuttals
         )
-        
+
         return {
             "task_id": task.id,
             "status": "PENDING",
@@ -376,29 +379,31 @@ async def get_prediction_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/chat")
+@limiter.limit(RATE_LIMIT_CHAT)
 async def chat_with_consensus(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     try:
         user = get_or_create_user(session, clerk_id)
         pipeline = get_pipeline_for_user(session, clerk_id)
-        
+
         # format messages for LLM
-        messages_dict = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-        
+        messages_dict = [{"role": msg.role, "content": msg.content} for msg in body.messages]
+
         # query ConsensusAgent
         response_text = pipeline.agent_system.consensus_agent.chat(messages_dict)
-        
+
         # append agent response
         messages_dict.append({"role": "model", "content": response_text})
-        
+
         # persist chat locally
         chat_session = PredictionChat(
             user_id=user.id,
-            prediction_id=request.prediction_id,
-            ticker=request.ticker,
+            prediction_id=body.prediction_id,
+            ticker=body.ticker,
             messages=messages_dict
         )
         session.add(chat_session)
@@ -604,8 +609,10 @@ async def get_sentiment(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/batch")
+@limiter.limit(RATE_LIMIT_BATCH)
 async def predict_batch(
-    request: BatchPredictRequest,
+    request: Request,
+    body: BatchPredictRequest,
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -620,12 +627,12 @@ async def predict_batch(
                 "report_date": item.report_date,
                 "user_analysis": item.user_analysis
             }
-            for item in request.companies
+            for item in body.companies
         ]
-        
+
         predictions = pipeline.predict_batch(
             companies_dicts,
-            prediction_date=request.prediction_date
+            prediction_date=body.prediction_date
         )
         return predictions
     except Exception as e:

@@ -8,6 +8,9 @@ import uvicorn
 import redis.asyncio as redis
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from api.rate_limit import limiter
 
 # Allowed origins: comma-separated list from env, falls back to localhost only.
 # Example: CORS_ORIGINS=https://app.yourdomain.com,https://yourdomain.com
@@ -42,6 +45,11 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Rate limiting (slowapi) - only routes explicitly decorated with
+# @limiter.limit(...) are affected; no default/global limit is set here.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Include routers
 app.include_router(earnings.router)
