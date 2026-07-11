@@ -235,8 +235,6 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                 user_id=user.id,
                 ticker=ticker.upper(),
                 company_name=result.get("company_name", "Unknown"),
-                company_description=result.get("company_description"),
-                sector=result.get("sector"),
                 report_date=datetime.combine(report_date, datetime.min.time()),
                 report_timing=resolved_report_timing if resolved_report_timing != "UNKNOWN" else result.get("report_time", "UNKNOWN"),
                 direction=result.get("direction", "NEUTRAL").upper(),
@@ -258,6 +256,12 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
             session.add(db_prediction)
             session.commit()
             session.refresh(db_prediction)
+            
+            # Ensure company profile exists/is updated
+            try:
+                _refresh_profile(session, ticker)
+            except Exception as pe:
+                logger.error(f"Failed to refresh/create profile for {ticker}: {pe}")
             
             # Enqueue ticker history sync on active user analysis
             sync_ticker_history_task.delay(ticker.upper())

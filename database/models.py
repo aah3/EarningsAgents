@@ -49,8 +49,6 @@ class Prediction(SQLModel, table=True):
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     ticker: str = Field(index=True)
     company_name: str
-    company_description: Optional[str] = Field(default=None)
-    sector: Optional[str] = Field(default=None)
     report_date: datetime
     report_timing: Optional[str] = Field(default=None)
     prediction_date: datetime = Field(default_factory=datetime.utcnow)
@@ -105,6 +103,7 @@ class CompanyProfile(SQLModel, table=True):
     __tablename__ = "company_profile"
     ticker: str = Field(primary_key=True)
     company_name: Optional[str] = None
+    company_description: Optional[str] = None
     sector: Optional[str] = None
     industry: Optional[str] = None
     market_cap: Optional[float] = None

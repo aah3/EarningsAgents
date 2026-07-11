@@ -55,6 +55,31 @@ def get_reaction_summary_and_history(session: Session, ticker: str, quarters: in
     return compute_reaction_summary(rows), rows
 
 
+def summarize_description(description: str, config) -> str:
+    """Summarizes company description in 2-3 sentences using LLMClient with simple fallback."""
+    if not description:
+        return ""
+    try:
+        from agents.llm_client import LLMClient
+        llm = LLMClient(
+            api_key=config.agent.api_key,
+            provider=config.agent.provider,
+            model=config.agent.model_name
+        )
+        sys_prompt = "You are a financial analyst. Summarize the following company description in 2-3 concise sentences, focusing on the core business, products/services, and target market. Do not add any introductory or concluding text."
+        summary = llm.generate(sys_prompt, description)
+        if summary and summary.strip():
+            return summary.strip()
+    except Exception as e:
+        logger.warning(f"Failed to summarize description using LLM: {e}. Falling back to original summary sentences.")
+    
+    # Fallback to first 3 sentences
+    sentences = [s.strip() for s in description.replace("\n", " ").split(". ") if s.strip()]
+    if len(sentences) > 3:
+        return ". ".join(sentences[:3]) + "."
+    return description
+
+
 def _refresh_profile(session: Session, ticker: str) -> Optional[CompanyProfile]:
     """
     Refreshes company profile in the database, cached for 7 days.
@@ -63,34 +88,65 @@ def _refresh_profile(session: Session, ticker: str) -> Optional[CompanyProfile]:
     profile = session.exec(select(CompanyProfile).where(CompanyProfile.ticker == ticker_upper)).first()
     now = datetime.utcnow()
     
-    if not profile or (now - profile.updated_at).days >= 7:
+    if not profile or (now - profile.updated_at).days >= 7 or not getattr(profile, "company_description", None):
         try:
             from data.earningsapi_source import EarningsAPIDataSource
             from config.settings import load_config
             config = load_config()
             
+            profile_data = None
             source = EarningsAPIDataSource(config.earningsapi)
             source.connect()
             try:
                 profile_data = source.get_profile(ticker_upper)
-                if profile_data:
-                    if not profile:
-                        profile = CompanyProfile(ticker=ticker_upper)
-                    profile.company_name = profile_data.get("company_name")
-                    profile.sector = profile_data.get("sector")
-                    profile.industry = profile_data.get("industry")
-                    profile.market_cap = profile_data.get("market_cap")
-                    profile.exchange = profile_data.get("exchange")
-                    profile.country = profile_data.get("country")
-                    profile.cik = profile_data.get("cik")
-                    profile.outstanding_shares = profile_data.get("outstanding_shares")
-                    profile.updated_at = now
-                    
-                    session.add(profile)
-                    session.commit()
-                    session.refresh(profile)
+            except Exception as e:
+                logger.warning(f"EarningsAPI profile fetch failed: {e}")
             finally:
                 source.disconnect()
+                
+            # If we don't have profile_data from source, or to get longBusinessSummary, let's call yfinance:
+            yf_info = {}
+            try:
+                import yfinance as yf
+                sid = yf.Ticker(ticker_upper)
+                yf_info = sid.info or {}
+            except Exception as e:
+                logger.error(f"Failed to fetch yfinance data for {ticker_upper}: {e}")
+
+            if profile_data or yf_info:
+                if not profile:
+                    profile = CompanyProfile(ticker=ticker_upper)
+                
+                # Use EarningsAPI data as primary, yfinance as fallback
+                profile.company_name = (profile_data or {}).get("company_name") or yf_info.get("longName") or yf_info.get("shortName") or profile.company_name or ticker_upper
+                profile.sector = (profile_data or {}).get("sector") or yf_info.get("sector") or profile.sector or "Unknown"
+                profile.industry = (profile_data or {}).get("industry") or yf_info.get("industry") or profile.industry or "Unknown"
+                
+                # Assign other fields
+                if (profile_data or {}).get("market_cap"):
+                    profile.market_cap = profile_data.get("market_cap")
+                elif yf_info.get("marketCap"):
+                    profile.market_cap = float(yf_info.get("marketCap"))
+                    
+                profile.exchange = (profile_data or {}).get("exchange") or yf_info.get("exchange") or profile.exchange
+                profile.country = (profile_data or {}).get("country") or yf_info.get("country") or profile.country
+                
+                # Fields specific to profile_data
+                if profile_data:
+                    profile.cik = profile_data.get("cik") or profile.cik
+                    profile.outstanding_shares = profile_data.get("outstanding_shares") or profile.outstanding_shares
+                
+                # Fetch and summarize description from yfinance info
+                desc = yf_info.get("longBusinessSummary")
+                if desc:
+                    # Summarize description
+                    summary = summarize_description(desc, config)
+                    profile.company_description = summary
+                
+                profile.updated_at = now
+                session.add(profile)
+                session.commit()
+                session.refresh(profile)
         except Exception as e:
             logger.error(f"Failed to refresh profile for {ticker_upper}: {e}", exc_info=True)
             from data.earningsapi_source import RateLimitError

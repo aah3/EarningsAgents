@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from pipeline import EarningsPipeline
 from config.settings import PipelineConfig, load_config
 from database.db import get_session
-from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings
+from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings, CompanyProfile
 from api.dependencies.auth import get_current_user
 from api.rate_limit import limiter, RATE_LIMIT_PREDICT, RATE_LIMIT_CHAT, RATE_LIMIT_BATCH
 from database.crypto import encrypt, decrypt
@@ -331,6 +331,11 @@ async def get_task_status(
         prediction = session.get(Prediction, prediction_id)
         if prediction:
             result_data = prediction.dict() if hasattr(prediction, "dict") else prediction.__dict__
+            # Fetch company profile and merge in sector/company_description
+            profile = session.get(CompanyProfile, prediction.ticker)
+            result_data["company_description"] = profile.company_description if profile else None
+            result_data["sector"] = profile.sector if profile else None
+            
             # Fix datetimes
             if isinstance(result_data.get('report_date'), datetime):
                 result_data['report_date'] = result_data['report_date'].isoformat()
@@ -386,7 +391,19 @@ async def get_prediction_history(
         user = get_or_create_user(session, clerk_id)
         statement = select(Prediction).order_by(Prediction.prediction_date.desc())
         predictions = session.exec(statement).all()
-        return predictions
+        
+        # Fetch profiles for the predicted tickers
+        tickers = {p.ticker for p in predictions}
+        profiles = {prof.ticker: prof for prof in session.exec(select(CompanyProfile).where(CompanyProfile.ticker.in_(list(tickers)))).all()} if tickers else {}
+        
+        result = []
+        for p in predictions:
+            p_dict = p.dict() if hasattr(p, "dict") else p.__dict__.copy()
+            prof = profiles.get(p.ticker)
+            p_dict["company_description"] = prof.company_description if prof else None
+            p_dict["sector"] = prof.sector if prof else None
+            result.append(p_dict)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -768,6 +785,12 @@ def download_prediction_report(
     prediction = session.get(Prediction, prediction_id)
     if not prediction:
         raise HTTPException(status_code=404, detail="Prediction not found")
+        
+    # Merge company_description and sector from CompanyProfile in-memory
+    profile = session.get(CompanyProfile, prediction.ticker)
+    if profile:
+        object.__setattr__(prediction, "company_description", profile.company_description)
+        object.__setattr__(prediction, "sector", profile.sector)
         
     llm_info = {
         "provider": pipeline.config.agent.provider,

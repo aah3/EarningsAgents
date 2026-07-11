@@ -121,8 +121,6 @@ def main():
                 user_id=user.id,
                 ticker="PENG",
                 company_name=prediction.company_name,
-                company_description=getattr(prediction, "company_description", None),
-                sector=getattr(prediction, "sector", None),
                 report_date=datetime.combine(prediction.report_date, datetime.min.time()),
                 report_timing=getattr(prediction, "report_time", "UNKNOWN"),
                 direction=prediction.direction.value.upper(),
@@ -142,6 +140,14 @@ def main():
             session.add(db_prediction)
             session.commit()
             session.refresh(db_prediction)
+            
+            # Sync company profile
+            try:
+                from database.earnings_repo import _refresh_profile
+                _refresh_profile(session, "PENG")
+            except Exception as pe:
+                print(f"Warning: Failed to save/refresh company profile for PENG: {pe}")
+                
             print(f"Successfully saved prediction to Supabase! ID: {db_prediction.id}")
             
             # Double check retrieval

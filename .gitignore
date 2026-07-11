@@ -75,3 +75,9 @@ reports/PENG_2026-07-07_report.pdf
 run_intc_debate.py
 reports/INTC_2026-07-23_report.md
 reports/INTC_2026-07-23_report.pdf
+reports/DAL_2026-07-10_report.md
+reports/DAL_2026-07-10_report.pdf
+run_dal_debate.py
+run_nike_debate.py
+run_peng_debate.py
+alembic/versions/0d3fa7d9ca76_remove_company_description_and_sector_.py
