@@ -31,7 +31,7 @@ def get_pipeline():
     return _pipeline
 
 @celery_app.task(bind=True, name="api.tasks.analyze_ticker_task")
-def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, user_analysis: str = ""):
+def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, user_analysis: str = "", enable_rebuttals: Optional[bool] = None):
     """
     Background task to analyze a ticker and save results.
     """
@@ -42,6 +42,8 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
     
     # Check for user-specific settings overrides
     pipeline = None
+    has_overrides = False
+    user_settings = None
     with Session(engine) as session:
         statement = select(User).where(User.clerk_id == clerk_id)
         user = session.exec(statement).first()
@@ -62,27 +64,38 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                     user_settings.anthropic_api_key is not None,
                     user_settings.newsapi_api_key is not None,
                     user_settings.alphavantage_api_key is not None,
-                    user_settings.earningsapi_api_key is not None
+                    user_settings.earningsapi_api_key is not None,
+                    enable_rebuttals is not None
                 ])
-                if has_overrides:
-                    logger.info(f"Custom user overrides found for user {clerk_id}. Initializing bespoke pipeline.")
-                    config = load_config()
-                    config.output_dir = "worker_output"
-                    
-                    if user_settings.provider:
-                        config.agent.provider = user_settings.provider.lower()
-                    if user_settings.model_name:
-                        config.agent.model_name = user_settings.model_name
-                    if user_settings.temperature is not None:
-                        config.agent.temperature = user_settings.temperature
-                    if user_settings.max_tokens is not None:
-                        config.agent.max_tokens = user_settings.max_tokens
-                    if user_settings.use_react is not None:
-                        config.agent.use_react = user_settings.use_react
-                    if user_settings.react_max_turns is not None:
-                        config.agent.react_max_turns = user_settings.react_max_turns
-                    if user_settings.enable_rebuttals is not None:
-                        config.agent.enable_rebuttals = user_settings.enable_rebuttals
+            else:
+                has_overrides = enable_rebuttals is not None
+        else:
+            has_overrides = enable_rebuttals is not None
+            
+    if has_overrides:
+        logger.info(f"Custom overrides or parameters found for user {clerk_id}. Initializing bespoke pipeline.")
+        config = load_config()
+        config.output_dir = "worker_output"
+        
+        if user_settings:
+            if user_settings.provider:
+                config.agent.provider = user_settings.provider.lower()
+            if user_settings.model_name:
+                config.agent.model_name = user_settings.model_name
+            if user_settings.temperature is not None:
+                config.agent.temperature = user_settings.temperature
+            if user_settings.max_tokens is not None:
+                config.agent.max_tokens = user_settings.max_tokens
+            if user_settings.use_react is not None:
+                config.agent.use_react = user_settings.use_react
+            if user_settings.react_max_turns is not None:
+                config.agent.react_max_turns = user_settings.react_max_turns
+            if user_settings.enable_rebuttals is not None:
+                config.agent.enable_rebuttals = user_settings.enable_rebuttals
+                
+        # Task parameter override takes precedence
+        if enable_rebuttals is not None:
+            config.agent.enable_rebuttals = enable_rebuttals
                         
                     # Apply keys
                     if config.agent.provider == "gemini" and user_settings.gemini_api_key:

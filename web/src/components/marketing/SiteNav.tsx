@@ -39,10 +39,18 @@ export default function SiteNav() {
       <ul className="nav-links flex items-center gap-[34px] list-none max-[940px]:hidden">
         <li>
           <Link
-            href="#"
+            href="/learn#how-it-works"
             className="text-ink-mute hover:text-ink transition-colors duration-150 text-[14.5px] font-[450] font-body focus-visible:ring-2 focus-visible:ring-teal outline-none rounded-sm px-1 py-0.5"
           >
             How it works
+          </Link>
+        </li>
+        <li>
+          <Link
+            href="/learn"
+            className="text-ink-mute hover:text-ink transition-colors duration-150 text-[14.5px] font-[450] font-body focus-visible:ring-2 focus-visible:ring-teal outline-none rounded-sm px-1 py-0.5"
+          >
+            Learn
           </Link>
         </li>
         <li>

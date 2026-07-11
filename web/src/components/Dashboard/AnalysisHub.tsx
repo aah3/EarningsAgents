@@ -8,6 +8,8 @@ interface AnalysisHubProps {
   setReportDate: (val: string) => void;
   userAnalysis: string;
   setUserAnalysis: (val: string) => void;
+  enableRebuttals: boolean;
+  setEnableRebuttals: (val: boolean) => void;
   onRunAnalysis: () => void;
   loading: boolean;
 }
@@ -19,6 +21,8 @@ export default function AnalysisHub({
   setReportDate,
   userAnalysis,
   setUserAnalysis,
+  enableRebuttals,
+  setEnableRebuttals,
   onRunAnalysis,
   loading,
 }: AnalysisHubProps) {
@@ -107,6 +111,24 @@ export default function AnalysisHub({
           className="w-full bg-[#05070a] border border-panel-line border-l-2 border-l-human rounded-xl px-5 py-4 focus:border-teal focus:ring-1 focus:ring-teal/50 outline-none transition-all text-sm font-body font-medium text-white relative placeholder-white/20 min-h-[80px] resize-y custom-scrollbar"
           disabled={loading}
         />
+      </div>
+
+      {/* Options Row (Rebuttals) */}
+      <div className="mt-6 flex items-center gap-3 bg-[#05070a] border border-panel-line rounded-xl p-4 select-none">
+        <input
+          type="checkbox"
+          id="enableRebuttals"
+          checked={enableRebuttals}
+          onChange={(e) => setEnableRebuttals(e.target.checked)}
+          className="w-4 h-4 rounded text-teal focus:ring-teal bg-panel border-panel-line transition-all cursor-pointer"
+          disabled={loading}
+        />
+        <label htmlFor="enableRebuttals" className="text-sm font-body font-semibold text-ink hover:text-white cursor-pointer transition-colors flex items-center gap-2">
+          <span>Enable Cross-Examination (Rebuttals)</span>
+          <span className="text-[9px] font-mono text-teal font-bold uppercase tracking-widest bg-teal/10 px-2 py-0.5 rounded border border-teal/20">
+            DEBATE MODE
+          </span>
+        </label>
       </div>
     </div>
   );

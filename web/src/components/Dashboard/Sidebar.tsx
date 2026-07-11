@@ -16,10 +16,10 @@ import {
 
 const navItems = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  { name: "History", href: "/dashboard/history", icon: History },
   { name: "Predictions", href: "/dashboard/predictions", icon: TrendingUp },
   { name: "Batch Analysis", href: "/dashboard/batch", icon: Layers },
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar },
-  { name: "History", href: "/dashboard/history", icon: History },
   { name: "Performance", href: "/dashboard/performance", icon: Gauge },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
@@ -62,7 +62,7 @@ export default function Sidebar() {
       </div>
 
       {/* Nav List */}
-      <nav className="flex-1 flex flex-col gap-1 overflow-y-auto custom-scrollbar select-none py-2">
+      <nav className="flex-1 flex flex-col gap-2.5 overflow-y-auto custom-scrollbar select-none py-2">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
@@ -71,7 +71,7 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-body font-semibold text-[14.5px] focus-visible:ring-2 focus-visible:ring-teal outline-none
+              className={`flex items-center gap-3.5 px-4 py-3 rounded-xl transition-all font-body font-semibold text-[14.5px] focus-visible:ring-2 focus-visible:ring-teal outline-none
                 ${
                   isActive
                     ? "bg-teal/10 border-l-2 border-teal text-teal shadow-lg shadow-teal/5"

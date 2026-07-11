@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const [ticker, setTicker] = useState("");
   const [reportDate, setReportDate] = useState("");
   const [userAnalysis, setUserAnalysis] = useState("");
+  const [enableRebuttals, setEnableRebuttals] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Prediction | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +139,7 @@ export default function DashboardPage() {
       if (!token) throw new Error("Not authenticated");
 
       // 1. Start Analysis
-      const { task_id } = await api.predictTicker(ticker, reportDate, token, userAnalysis);
+      const { task_id } = await api.predictTicker(ticker, reportDate, token, userAnalysis, enableRebuttals);
 
       // Setup WebSocket
       const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
@@ -232,6 +233,8 @@ export default function DashboardPage() {
         setReportDate={setReportDate}
         userAnalysis={userAnalysis}
         setUserAnalysis={setUserAnalysis}
+        enableRebuttals={enableRebuttals}
+        setEnableRebuttals={setEnableRebuttals}
         onRunAnalysis={handleRunAnalysis}
         loading={loading}
       />

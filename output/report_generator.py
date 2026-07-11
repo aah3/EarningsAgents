@@ -17,6 +17,8 @@ try:
     FPDF_AVAILABLE = True
 except ImportError:
     FPDF_AVAILABLE = False
+    class FPDF:
+        pass
     logger.warning("fpdf2 library not installed. PDF generation will be unavailable.")
 
 
@@ -51,6 +53,30 @@ def sanitize_for_pdf(text: str) -> str:
     except Exception:
         # Fallback to ascii replacement
         return text.encode('ascii', 'replace').decode('ascii')
+
+
+def ensure_list(val: Any) -> List[str]:
+    """Safely convert any JSON-string or list representing factors into a list of strings."""
+    if not val:
+        return []
+    if isinstance(val, list):
+        return [str(item) for item in val]
+    if isinstance(val, str):
+        import json
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+            return [str(parsed)]
+        except Exception:
+            # Maybe it's a comma-separated list or a single string
+            if val.startswith("[") and val.endswith("]"):
+                # Clean up brackets manually if JSON parse failed
+                cleaned = val.strip("[]").replace('"', '').replace("'", "")
+                return [item.strip() for item in cleaned.split(",") if item.strip()]
+            return [val]
+    return [str(val)]
+
 
 
 class PDFReport(FPDF):
@@ -119,17 +145,11 @@ def generate_markdown_report(
 """
 
     # Bull/Bear factors
-    bull_factors_str = ""
-    if prediction.bull_factors:
-        bull_factors_str = "\n".join([f"- **✓** {f}" for f in prediction.bull_factors])
-    else:
-        bull_factors_str = "*No specific bullish factors logged.*"
+    bull_list = ensure_list(prediction.bull_factors)
+    bull_factors_str = "\n".join([f"- **✓** {f}" for f in bull_list]) if bull_list else "*No specific bullish factors logged.*"
         
-    bear_factors_str = ""
-    if prediction.bear_factors:
-        bear_factors_str = "\n".join([f"- **×** {f}" for f in prediction.bear_factors])
-    else:
-        bear_factors_str = "*No specific bearish factors logged.*"
+    bear_list = ensure_list(prediction.bear_factors)
+    bear_factors_str = "\n".join([f"- **×** {f}" for f in bear_list]) if bear_list else "*No specific bearish factors logged.*"
 
     debate_sect = ""
     if prediction.debate_summary:
@@ -343,8 +363,9 @@ def generate_pdf_report(
     pdf.ln(4)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(0, 0, 0)
-    if prediction.bull_factors:
-        for f in prediction.bull_factors:
+    bull_list = ensure_list(prediction.bull_factors)
+    if bull_list:
+        for f in bull_list:
             pdf.multi_cell(pdf.epw, 5, f"- {sanitize_for_pdf(f)}")
     else:
         pdf.cell(pdf.epw, 5, "No specific bullish factors logged.", new_x="LMARGIN", new_y="NEXT")
@@ -357,8 +378,9 @@ def generate_pdf_report(
     pdf.ln(4)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(0, 0, 0)
-    if prediction.bear_factors:
-        for f in prediction.bear_factors:
+    bear_list = ensure_list(prediction.bear_factors)
+    if bear_list:
+        for f in bear_list:
             pdf.multi_cell(pdf.epw, 5, f"- {sanitize_for_pdf(f)}")
     else:
         pdf.cell(pdf.epw, 5, "No specific bearish factors logged.", new_x="LMARGIN", new_y="NEXT")

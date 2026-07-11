@@ -236,6 +236,7 @@ from celery.result import AsyncResult
 class PredictRequest(BaseModel):
     report_date: date
     user_analysis: Optional[str] = None
+    enable_rebuttals: Optional[bool] = None
 
 class BatchPredictItem(BaseModel):
     ticker: str
@@ -289,7 +290,8 @@ async def predict_ticker(
             ticker.upper(), 
             request.report_date.isoformat(), 
             clerk_id,
-            request.user_analysis or ""
+            request.user_analysis or "",
+            request.enable_rebuttals
         )
         
         return {
