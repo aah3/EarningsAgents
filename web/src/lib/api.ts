@@ -12,17 +12,22 @@ export interface Prediction {
     expected_price_move?: string;
     move_vs_implied?: string;
     guidance_expectation?: string;
+    likely_guidance?: string;
     bull_factors: string[];
     bear_factors: string[];
     debate_summary?: string;
     rebuttal_summary?: string;
     agent_votes?: Record<string, string>;
+    options_features?: Record<string, any>;
+    sector?: string | null;
     // Evaluation fields (populated by scoring task after earnings are reported)
     actual_direction?: string;
     actual_eps?: number;
+    expected_eps?: number;
     actual_price_move_pct?: number;
     accuracy_score?: number;  // Brier score — lower is better
     scored_at?: string;
+    report_timing?: string;
 }
 
 export interface PredictionMetrics {
@@ -75,7 +80,7 @@ export const api = {
         return this.fetchWithAuth(`${API_BASE_URL}/health`);
     },
 
-    async predictTicker(ticker: string, reportDate: string, token?: string, userAnalysis?: string): Promise<TaskResponse> {
+    async predictTicker(ticker: string, reportDate: string, token?: string, userAnalysis?: string, enableRebuttals?: boolean): Promise<TaskResponse> {
         const url = `${API_BASE_URL}/earnings/predict/${ticker}`;
         return this.fetchWithAuth(url, token, {
             method: 'POST',
@@ -84,7 +89,8 @@ export const api = {
             },
             body: JSON.stringify({
                 report_date: reportDate,
-                user_analysis: userAnalysis
+                user_analysis: userAnalysis,
+                enable_rebuttals: enableRebuttals
             })
         });
     },
@@ -131,7 +137,7 @@ export const api = {
         return this.fetchWithAuth(url.toString(), token);
     },
 
-    async getCalendar(startDate?: string, endDate?: string, tickers?: string, useFinviz: boolean = false, timeframe: string = "This Week", indexName: string = "S&P 500", token?: string) {
+    async getCalendar(startDate?: string, endDate?: string, tickers?: string, useFinviz: boolean = false, timeframe: string = "This Week", indexName: string = "S&P 500", token?: string, options: RequestInit = {}) {
         const url = new URL(`${API_BASE_URL}/earnings/calendar`);
         if (startDate) url.searchParams.append("start_date", startDate);
         if (endDate) url.searchParams.append("end_date", endDate);
@@ -141,7 +147,7 @@ export const api = {
             url.searchParams.append("timeframe", timeframe);
             url.searchParams.append("index_name", indexName);
         }
-        return this.fetchWithAuth(url.toString(), token);
+        return this.fetchWithAuth(url.toString(), token, options);
     },
 
     async getSentiment(ticker: string, daysBack: number = 30, token?: string) {
@@ -167,6 +173,54 @@ export const api = {
     async getMetrics(token: string): Promise<PredictionMetrics> {
         const url = `${API_BASE_URL}/earnings/metrics`;
         return this.fetchWithAuth(url, token);
+    },
+
+    async verifyPrediction(predictionId: number, token?: string) {
+        const url = `${API_BASE_URL}/earnings/${predictionId}/verify`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST'
+        });
+    },
+
+    async downloadReport(predictionId: number, format: 'md' | 'pdf', ticker: string, token?: string): Promise<void> {
+        const url = `${API_BASE_URL}/earnings/${predictionId}/report?format=${format}`;
+        const headers = new Headers();
+        if (token) {
+            headers.set("Authorization", `Bearer ${token}`);
+        }
+        
+        const res = await fetch(url, { headers });
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ detail: "Failed to download report" }));
+            throw new Error(error.detail || "Failed to download report");
+        }
+        
+        const blob = await res.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.setAttribute('download', `${ticker}_earnings_debate_report.${format}`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+    },
+
+    async getSettings(token: string) {
+        const url = `${API_BASE_URL}/earnings/settings`;
+        return this.fetchWithAuth(url, token);
+    },
+
+    async updateSettings(settingsData: any, token: string) {
+        const url = `${API_BASE_URL}/earnings/settings`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(settingsData)
+        });
     }
 };
+
 

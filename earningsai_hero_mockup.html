@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EarningsAI — hero mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070A12;
+    --bg-2:#0A0F1C;
+    --panel:#0E1524;
+    --panel-line:#1B2436;
+    --ink:#F5F8FF;
+    --ink-mute:#9AA7BE;
+    --ink-dim:#5E6B84;
+    --teal:#2DD4BF;
+    --teal-deep:#12A594;
+    --bull:#34D399;
+    --bear:#F87171;
+    --quant:#60A5FA;
+    --human:#FBBF24;
+    --radius:14px;
+    --maxw:1240px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:
+      radial-gradient(1100px 600px at 78% 34%, rgba(45,212,191,.10), transparent 60%),
+      radial-gradient(900px 500px at 12% 8%, rgba(96,165,250,.06), transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+
+  /* ---------- NAV ---------- */
+  nav{
+    max-width:var(--maxw);margin:0 auto;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:22px 40px;
+  }
+  .brand{display:flex;align-items:center;gap:11px;font-family:'Space Grotesk';font-weight:700;font-size:19px;letter-spacing:-.01em}
+  .brand .logo{
+    width:30px;height:30px;border-radius:9px;
+    background:linear-gradient(135deg,var(--teal),var(--teal-deep));
+    display:grid;place-items:center;color:#04231F;font-weight:700;
+    box-shadow:0 0 22px rgba(45,212,191,.45);
+  }
+  .brand .logo svg{width:16px;height:16px}
+  .nav-links{display:flex;gap:34px;list-style:none}
+  .nav-links a{color:var(--ink-mute);text-decoration:none;font-size:14.5px;font-weight:450;transition:color .18s}
+  .nav-links a:hover{color:var(--ink)}
+  .nav-cta{
+    font-family:'Inter';font-size:14.5px;font-weight:600;color:#04231F;
+    background:linear-gradient(135deg,var(--teal),var(--teal-deep));
+    padding:10px 20px;border-radius:10px;text-decoration:none;
+    box-shadow:0 6px 22px rgba(45,212,191,.28);transition:transform .15s, box-shadow .15s;
+  }
+  .nav-cta:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(45,212,191,.4)}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    max-width:var(--maxw);margin:0 auto;
+    display:grid;grid-template-columns:minmax(0,0.86fr) minmax(0,1.14fr);
+    gap:56px;align-items:center;
+    padding:56px 40px 90px;
+  }
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:9px;
+    font-family:'Space Mono';font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--teal);
+    border:1px solid var(--panel-line);background:rgba(45,212,191,.05);
+    padding:7px 13px;border-radius:999px;margin-bottom:26px;
+  }
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px var(--teal);animation:blink 2.2s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+  h1{
+    font-family:'Space Grotesk';
+    font-weight:600;
+    font-size:clamp(2.4rem,4.4vw,3.7rem);
+    line-height:1.04;letter-spacing:-.025em;
+    background:linear-gradient(180deg,#FFFFFF 0%,#B9C4DA 130%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    margin-bottom:22px;
+  }
+  h1 .accent{
+    background:linear-gradient(120deg,var(--teal),#7DE8DA);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .sub{
+    font-size:17.5px;line-height:1.62;color:var(--ink-mute);
+    max-width:46ch;margin-bottom:34px;
+  }
+  .sub b{color:var(--ink);font-weight:600}
+  .cta-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:26px}
+  .btn-primary{
+    font-family:'Inter';font-size:15.5px;font-weight:600;color:#04231F;
+    background:linear-gradient(135deg,var(--teal),var(--teal-deep));
+    padding:14px 26px;border-radius:12px;border:none;text-decoration:none;cursor:pointer;
+    box-shadow:0 8px 26px rgba(45,212,191,.32);transition:transform .15s,box-shadow .15s;
+  }
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(45,212,191,.44)}
+  .btn-ghost{
+    font-family:'Inter';font-size:15.5px;font-weight:500;color:var(--ink);
+    background:transparent;padding:14px 22px;border-radius:12px;
+    border:1px solid var(--panel-line);text-decoration:none;cursor:pointer;
+    display:inline-flex;align-items:center;gap:9px;transition:border-color .18s,background .18s;
+  }
+  .btn-ghost:hover{border-color:var(--ink-dim);background:rgba(255,255,255,.02)}
+  .btn-ghost .play{width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.08);display:grid;place-items:center;font-size:9px}
+  .proof{
+    display:flex;align-items:center;gap:10px;
+    font-family:'Space Mono';font-size:12.5px;color:var(--ink-dim);letter-spacing:.02em;
+  }
+  .proof .live{width:6px;height:6px;border-radius:50%;background:var(--bull);box-shadow:0 0 8px var(--bull)}
+
+  /* ---------- DIAGRAM ---------- */
+  .diagram-wrap{
+    position:relative;
+    border:1px solid var(--panel-line);border-radius:20px;
+    background:linear-gradient(180deg,rgba(14,21,36,.9),rgba(7,10,18,.6));
+    padding:20px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 30px 80px rgba(0,0,0,.5);
+    overflow:hidden;
+  }
+  .diagram-wrap::before{
+    content:"";position:absolute;inset:0;
+    background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:34px 34px;pointer-events:none;
+  }
+  .diagram-head{
+    position:relative;display:flex;justify-content:space-between;align-items:center;
+    font-family:'Space Mono';font-size:11px;letter-spacing:.12em;color:var(--ink-dim);
+    text-transform:uppercase;margin-bottom:6px;padding:2px 4px;
+  }
+  .diagram-head .status{color:var(--teal)}
+  svg.flow{display:block;width:100%;height:auto}
+
+  .node{cursor:default}
+  .chip-bg{rx:12}
+  .node-label{font-family:'Space Grotesk';font-weight:600;font-size:15px;fill:var(--ink)}
+  .node-sub{font-family:'Space Mono';font-size:9.5px;letter-spacing:.06em;fill:var(--ink-dim)}
+  .node-tag{font-family:'Space Mono';font-size:9px;letter-spacing:.1em}
+  .core-title{font-family:'Space Grotesk';font-weight:700;font-size:15px;fill:var(--teal)}
+  .core-sub{font-family:'Space Mono';font-size:9px;letter-spacing:.08em;fill:var(--ink-mute)}
+  .verdict-k{font-family:'Space Mono';font-size:9px;letter-spacing:.14em;fill:var(--ink-dim)}
+  .verdict-v{font-family:'Space Grotesk';font-weight:700;font-size:18px;fill:var(--ink)}
+  .verdict-c{font-family:'Space Grotesk';font-weight:700;font-size:22px;fill:var(--teal)}
+
+  .flowline{fill:none;stroke-width:1.6;stroke-dasharray:5 6;animation:dash 1.1s linear infinite}
+  @keyframes dash{to{stroke-dashoffset:-22}}
+  .flowline.dashed-opt{stroke-dasharray:3 5;opacity:.9}
+  .core-ring{transform-origin:center;animation:pulse 3s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+
+  @media (prefers-reduced-motion:reduce){
+    .flowline,.core-ring,.eyebrow .dot{animation:none}
+  }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width:940px){
+    .hero{grid-template-columns:1fr;gap:40px;padding:40px 24px 70px}
+    .nav-links{display:none}
+    nav{padding:18px 24px}
+    .diagram-wrap{order:2}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand">
+    <span class="logo">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z" fill="#04231F"/><path d="M4 12l8 4.5 8-4.5" stroke="#04231F" stroke-width="1.6" fill="none"/><path d="M4 16.2l8 4.5 8-4.5" stroke="#04231F" stroke-width="1.6" fill="none"/></svg>
+    </span>
+    EarningsAI
+  </div>
+  <ul class="nav-links">
+    <li><a href="#">How it works</a></li>
+    <li><a href="#">Live</a></li>
+    <li><a href="#">Predictions</a></li>
+    <li><a href="#">Leaderboard</a></li>
+    <li><a href="#">API</a></li>
+  </ul>
+  <a href="#" class="nav-cta">Run a prediction</a>
+</nav>
+
+<section class="hero">
+  <div class="copy">
+    <span class="eyebrow"><span class="dot"></span>Multi-agent earnings intelligence</span>
+    <h1>Earnings predictions,<br>settled by <span class="accent">debate.</span></h1>
+    <p class="sub">
+      Bull, Bear, and Quant agents each build a case, then argue it out in a rebuttal round —
+      with <b>your own research</b> thrown into the debate. A <b>Consensus agent</b> weighs the
+      arguments into one confidence-scored call. And it's not a one-shot verdict: keep questioning
+      the Consensus agent to unpack its reasoning until you trust the decision.
+    </p>
+    <div class="cta-row">
+      <a href="#" class="btn-primary">Run a live prediction</a>
+      <a href="#" class="btn-ghost"><span class="play">▶</span> Watch 2-min demo</a>
+    </div>
+    <div class="proof"><span class="live"></span>Every call scored on a public Brier leaderboard — no cherry-picking.</div>
+  </div>
+
+  <div class="diagram-wrap">
+    <div class="diagram-head">
+      <span>PIPELINE · AVGO Q3</span>
+      <span class="status">● ANALYZING</span>
+    </div>
+    <svg class="flow" viewBox="0 0 700 600" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#2DD4BF" stop-opacity="0.35"/>
+          <stop offset="70%" stop-color="#2DD4BF" stop-opacity="0.05"/>
+          <stop offset="100%" stop-color="#2DD4BF" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <!-- connectors: agents -> debate -->
+      <path class="flowline" style="stroke:var(--bull)"  d="M170,116 C230,116 235,270 292,285"/>
+      <path class="flowline" style="stroke:var(--quant)" d="M170,300 C220,300 235,300 292,300"/>
+      <path class="flowline" style="stroke:var(--bear)"  d="M170,484 C230,484 235,330 292,315"/>
+      <!-- debate -> consensus -->
+      <path class="flowline" style="stroke:var(--teal)"  d="M420,300 C470,300 480,270 502,258"/>
+      <!-- analyst -> debate (optional) -->
+      <path class="flowline dashed-opt" style="stroke:var(--human)" d="M368,472 C368,432 356,392 356,350"/>
+      <!-- consensus -> verdict -->
+      <path class="flowline" style="stroke:var(--teal)"  d="M565,330 C565,370 565,388 565,410"/>
+
+      <!-- AGENT CHIPS -->
+      <!-- Bull -->
+      <g class="node">
+        <rect x="30" y="82" width="140" height="68" rx="12" fill="var(--panel)" stroke="var(--bull)" stroke-opacity="0.55"/>
+        <circle cx="52" cy="106" r="5" fill="var(--bull)"/>
+        <text x="68" y="111" class="node-label">Bull</text>
+        <text x="46" y="132" class="node-sub">BUYSIDE CASE</text>
+      </g>
+      <!-- Quant -->
+      <g class="node">
+        <rect x="30" y="266" width="140" height="68" rx="12" fill="var(--panel)" stroke="var(--quant)" stroke-opacity="0.55"/>
+        <circle cx="52" cy="290" r="5" fill="var(--quant)"/>
+        <text x="68" y="295" class="node-label">Quant</text>
+        <text x="46" y="316" class="node-sub">OPTIONS · MAX PAIN</text>
+      </g>
+      <!-- Bear -->
+      <g class="node">
+        <rect x="30" y="450" width="140" height="68" rx="12" fill="var(--panel)" stroke="var(--bear)" stroke-opacity="0.55"/>
+        <circle cx="52" cy="474" r="5" fill="var(--bear)"/>
+        <text x="68" y="479" class="node-label">Bear</text>
+        <text x="46" y="500" class="node-sub">SHORT CASE</text>
+      </g>
+
+      <!-- DEBATE -->
+      <g class="node">
+        <rect x="292" y="252" width="128" height="96" rx="12" fill="var(--panel)" stroke="var(--panel-line)"/>
+        <text x="356" y="292" text-anchor="middle" class="node-label">Debate</text>
+        <text x="356" y="312" text-anchor="middle" class="node-sub">&amp; REBUTTAL</text>
+        <text x="356" y="330" text-anchor="middle" class="node-tag" fill="var(--ink-dim)">round 1 of 1</text>
+      </g>
+
+      <!-- CONSENSUS CORE -->
+      <circle cx="565" cy="255" r="115" fill="url(#coreGlow)"/>
+      <circle class="core-ring" cx="565" cy="255" r="82" fill="none" stroke="var(--teal)" stroke-opacity="0.5" stroke-width="1.3"/>
+      <circle cx="565" cy="255" r="66" fill="var(--panel)" stroke="var(--teal)" stroke-opacity="0.8" stroke-width="1.6"/>
+      <text x="565" y="250" text-anchor="middle" class="core-title">Consensus</text>
+      <text x="565" y="270" text-anchor="middle" class="core-sub">CONFIDENCE-WEIGHTED</text>
+      <!-- AI AGENT badge -->
+      <rect x="524" y="158" width="82" height="21" rx="10.5" fill="rgba(45,212,191,.12)" stroke="var(--teal)" stroke-opacity="0.7"/>
+      <circle cx="540" cy="168.5" r="3.3" fill="var(--teal)"/>
+      <text x="550" y="172" class="node-tag" fill="var(--teal)">AI AGENT</text>
+
+      <!-- ANALYST INPUT (optional / human) -->
+      <g class="node">
+        <rect x="300" y="472" width="140" height="66" rx="12" fill="rgba(251,191,36,.04)" stroke="var(--human)" stroke-opacity="0.6" stroke-dasharray="4 4"/>
+        <text x="316" y="500" class="node-label" style="fill:var(--human)">Your research</text>
+        <text x="316" y="520" class="node-sub" style="fill:var(--human);opacity:.8">OPTIONAL HUMAN INPUT</text>
+      </g>
+
+      <!-- VERDICT CARD -->
+      <g class="node">
+        <rect x="470" y="410" width="190" height="130" rx="14" fill="var(--panel)" stroke="var(--teal)" stroke-opacity="0.35"/>
+        <text x="490" y="440" class="verdict-k">VERDICT · AVGO</text>
+        <text x="490" y="470" class="verdict-v">Beat &amp; raise</text>
+        <line x1="490" y1="484" x2="640" y2="484" stroke="var(--panel-line)"/>
+        <text x="490" y="508" class="verdict-k">CONFIDENCE</text>
+        <text x="490" y="530" class="verdict-c">72%</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+</body>
+</html>

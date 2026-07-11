@@ -1,17 +1,7 @@
 import type { Metadata } from "next";
-import { Inter, Outfit } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { display, body, mono } from "@/lib/fonts";
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
-
-const outfit = Outfit({
-  variable: "--font-outfit",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Earnings AI | Advanced Multi-Agent Analytics",
@@ -25,11 +15,12 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" suppressHydrationWarning>
-        <body
-          className={`${inter.variable} ${outfit.variable} antialiased`}
-          suppressHydrationWarning
-        >
+      <html
+        lang="en"
+        className={`${display.variable} ${body.variable} ${mono.variable}`}
+        suppressHydrationWarning
+      >
+        <body className="antialiased" suppressHydrationWarning>
           {children}
         </body>
       </html>

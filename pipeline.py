@@ -142,6 +142,11 @@ class EarningsPipeline:
                 except Exception as e:
                     self.logger.warning(f"Failed to publish to redis: {e}")
 
+        import time
+        from pathlib import Path
+        from output.report_generator import export_report
+        
+        start_time = time.time()
         prediction_date = prediction_date or date.today()
         
         self.logger.info(f"Generating prediction for {ticker} (reports {report_date})")
@@ -151,6 +156,102 @@ class EarningsPipeline:
         company_data = self.aggregator.get_company_data(
             ticker, report_date, include_news=False, options_df=options_df
         )
+        
+        # --- Attach persisted earnings enrichment for the agents ---
+        try:
+            from database.db import Session, engine
+            from database.earnings_repo import get_reaction_summary_and_history, sync_ticker_history
+            from data.earningsapi_source import EarningsAPIDataSource, RateLimitError
+            from database.models import EarningsCalendarEvent
+            from sqlmodel import select
+            with Session(engine) as session:
+                summary, hist = get_reaction_summary_and_history(session, ticker)
+                
+                cal_event = session.exec(
+                    select(EarningsCalendarEvent).where(
+                        EarningsCalendarEvent.ticker == ticker.upper(),
+                        EarningsCalendarEvent.report_date == report_date
+                    )
+                ).first()
+                
+                if not hist or not cal_event:
+                    try:
+                        src = EarningsAPIDataSource(self.config.earningsapi); src.connect()
+                        try:
+                            if not hist:
+                                sync_ticker_history(session, ticker, src)
+                                summary, hist = get_reaction_summary_and_history(session, ticker)
+                            if not cal_event:
+                                earnings = src.get_company_earnings(ticker)
+                                for row in earnings:
+                                    if row.get("date") == report_date.isoformat():
+                                        cal_event = session.exec(
+                                            select(EarningsCalendarEvent).where(
+                                                EarningsCalendarEvent.ticker == ticker.upper(),
+                                                EarningsCalendarEvent.report_date == report_date
+                                            )
+                                        ).first()
+                                        if not cal_event:
+                                            cal_event = EarningsCalendarEvent(
+                                                ticker=ticker.upper(),
+                                                report_date=report_date
+                                            )
+                                        cal_event.company_name = company_data.company_name
+                                        cal_event.eps_estimate = row.get("epsEstimate")
+                                        cal_event.revenue_estimate = row.get("revenueEstimate")
+                                        session.add(cal_event)
+                                        session.commit()
+                                        session.refresh(cal_event)
+                                        break
+                        finally:
+                            src.disconnect()
+                    except RateLimitError:
+                        self.logger.warning(f"429 on lazy-populate for {ticker}; enqueuing background sync")
+                        from api.tasks import sync_ticker_history_task          # lazy import (avoids cycle)
+                        sync_ticker_history_task.delay(ticker)                   # autoretries w/ backoff
+                
+                # Apply fallbacks for missing consensus revenue/EPS from calendar event
+                if cal_event and cal_event.revenue_estimate:
+                    if not company_data.consensus_revenue or company_data.consensus_revenue == 0.0:
+                        company_data.consensus_revenue = cal_event.revenue_estimate
+                if cal_event and cal_event.eps_estimate:
+                    if not company_data.consensus_eps or company_data.consensus_eps == 0.0:
+                        company_data.consensus_eps = cal_event.eps_estimate
+                        
+            company_data.reaction_summary = summary
+            company_data.enriched_history = hist or []
+        except Exception as e:
+            self.logger.warning(f"Reaction enrichment unavailable for {ticker}: {e}")
+
+        # --- Current implied move & live options for realized-vs-implied comparison ---
+        analytics = None
+        try:
+            analytics = self.aggregator.get_option_analytics(ticker, earnings_date=report_date)
+        except Exception as e:
+            self.logger.warning(f"Implied move unavailable for {ticker}: {e}")
+
+        try:
+            from data.market_hours import is_market_open
+            company_data.market_open = is_market_open()
+            if analytics and analytics.get("available"):
+                im = analytics.get("implied_move", {}) or {}
+                osum = analytics.get("option_summary", {}) or {}
+                company_data.live_options = {
+                    "implied_move_pct": im.get("straddle_implied_move_pct"),
+                    "confidence_score": im.get("confidence_score"),
+                    "upper_range": im.get("upper_range"),
+                    "lower_range": im.get("lower_range"),
+                    "days_to_expiry": im.get("days_to_expiry"),
+                    "put_call_ratio": osum.get("put_call_ratio"),
+                    "avg_iv": osum.get("avg_iv"),
+                    "total_volume": osum.get("total_volume"),
+                }
+                company_data.implied_move_pct = im.get("straddle_implied_move_pct")
+            else:
+                company_data.live_options = None
+                company_data.implied_move_pct = None
+        except Exception as e:
+            self.logger.warning(f"Failed to populate market open or live options for {ticker}: {e}")
         
         publish(f"Fetching recent news and performing sentiment analysis...")
         
@@ -171,7 +272,29 @@ class EarningsPipeline:
         
         publish(f"Debate concluded. Finalizing decision...")
         
+        elapsed_time = time.time() - start_time
+        
+        # Automatically export report if save_report config is enabled
+        if getattr(self.config, "save_report", True):
+            try:
+                reports_dir = getattr(self.config, "reports_dir", Path("./reports"))
+                llm_info = {
+                    "provider": self.config.agent.provider,
+                    "model_name": self.config.agent.model_name,
+                    "enable_rebuttals": self.config.agent.enable_rebuttals
+                }
+                export_report(
+                    prediction=prediction,
+                    reports_dir=reports_dir,
+                    elapsed_time=elapsed_time,
+                    db_sync_status="PENDING", # DB sync happens after predict_single in API/CLI
+                    llm_info=llm_info
+                )
+            except Exception as re:
+                self.logger.error(f"Failed to auto-export report: {re}", exc_info=True)
+                
         return prediction
+
     
     def predict_batch(
         self,

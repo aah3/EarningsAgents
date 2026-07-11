@@ -7,6 +7,23 @@ from typing import Optional, List, Any
 # Configure logging
 logger = logging.getLogger(__name__)
 
+FALLBACK_MAP = {
+    "gemini": [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest"
+    ],
+    "openai": [
+        "gpt-4o",
+        "gpt-4o-mini"
+    ],
+    "anthropic": [
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-haiku-20241022"
+    ]
+}
+
 
 class _ProviderRateLimiter:
     """Thread-safe minimum-interval rate limiter shared across all LLMClient instances.
@@ -16,16 +33,16 @@ class _ProviderRateLimiter:
     """
     # Conservative limits (calls/min).  Gemini free tier is 10-15 RPM;
     # we use 10 to leave headroom for retries.
-    _DEFAULT_RPM = {
-        "gemini":    10,
-        "openai":    50,
-        "anthropic": 50,
-    }
-
     def __init__(self):
         self._lock = threading.Lock()
         self._last: dict = {}  # provider -> last call monotonic time
         self._global_pause_until: dict = {}  # provider -> paused until this monotonic time
+        gemini_rpm = int(os.getenv("GEMINI_RPM", "10"))
+        self._DEFAULT_RPM = {
+            "gemini":    gemini_rpm,
+            "openai":    50,
+            "anthropic": 50,
+        }
 
     def wait(self, provider: str) -> None:
         """Block until it is safe to make one more call for *provider*."""
@@ -54,6 +71,11 @@ class _ProviderRateLimiter:
             if new_pause > self._global_pause_until.get(provider, 0.0):
                 self._global_pause_until[provider] = new_pause
                 logger.warning(f"Global rate limit pause triggered for {provider} ({penalty_seconds}s)")
+
+    def clear_pause(self, provider: str) -> None:
+        """Clears any active global pause for *provider*."""
+        with self._lock:
+            self._global_pause_until[provider] = 0.0
 
 
 # Module-level singleton — shared by every LLMClient instance / thread.
@@ -98,11 +120,48 @@ class LLMClient:
         except ImportError as e:
             raise ImportError(f"Missing library for {self.provider}. Please install it. Error: {e}")
 
+    def _get_fallback_model(self, current_model: str) -> Optional[str]:
+        """Returns the next fallback model in the chain for the current provider."""
+        if not current_model:
+            return None
+        chain = FALLBACK_MAP.get(self.provider, [])
+        normalized = current_model.lower()
+        
+        # Try to locate current model in the chain
+        idx = -1
+        for i, m in enumerate(chain):
+            if m.lower() in normalized or normalized in m.lower():
+                idx = i
+                break
+                
+        if idx != -1:
+            if idx + 1 < len(chain):
+                return chain[idx + 1]
+            else:
+                return None
+            
+        # Hardcoded default fallbacks if the model name didn't match the chain
+        if self.provider == "gemini":
+            if "3.5-flash" in normalized:
+                return "gemini-2.5-flash"
+            if "2.5-flash" in normalized:
+                return "gemini-2.0-flash"
+            if "2.0-flash" in normalized:
+                return "gemini-flash-latest"
+            if "flash-latest" in normalized:
+                return "gemini-flash-lite-latest"
+        elif self.provider == "openai" and "mini" not in normalized:
+            return "gpt-4o-mini"
+        elif self.provider == "anthropic" and "haiku" not in normalized:
+            return "claude-3-5-haiku-20241022"
+            
+        return None
+
     def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.3,
                  max_tokens: int = 2048, on_retry=None, **kwargs) -> str:
         """
         Generates content from the LLM based on system and user prompts.
-        Includes basic retry logic for rate limits.
+        Includes basic retry logic for rate limits and fallbacks for quota/transient errors.
         Raises RuntimeError if the client is not initialized or retries are exhausted.
         """
         if not self.client:
@@ -110,7 +169,7 @@ class LLMClient:
                 f"LLM client not initialized. Check API key for provider '{self.provider}'."
             )
 
-        max_retries = 3
+        max_retries = 6
         base_delay = 5  # seconds
         last_exc: Exception = RuntimeError("Unknown error")
 
@@ -127,15 +186,34 @@ class LLMClient:
                     return self._call_openai(system_prompt, user_prompt, temperature, max_tokens, **kwargs)
             except Exception as e:
                 err_msg = str(e)
-                if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg
-                        or "rate_limit" in err_msg.lower() or "quota" in err_msg.lower()):
+                is_quota = ("quota" in err_msg.lower() or "resource_exhausted" in err_msg or "limit" in err_msg.lower())
+                is_transient = ("503" in err_msg or "500" in err_msg or "unavailable" in err_msg.lower() or "internal" in err_msg.lower())
+                
+                if is_quota or is_transient or "429" in err_msg or "rate_limit" in err_msg.lower():
+                    # If it's a quota issue, OR if we've already retried at least once, try model fallback
+                    if is_quota or attempt > 0:
+                        fallback_model = self._get_fallback_model(self.model)
+                        if fallback_model:
+                            logger.warning(
+                                f"Encountered quota/transient error on {self.provider} model '{self.model}': {err_msg}. "
+                                f"Falling back to '{fallback_model}'..."
+                            )
+                            if on_retry:
+                                on_retry(f"Falling back to {fallback_model} due to error: {err_msg[:60]}...")
+                            self.model = fallback_model
+                            _rate_limiter.clear_pause(self.provider)
+                            continue
+                        elif is_quota:
+                            logger.error(f"Quota exceeded and no fallback model available for {self.provider} ({self.model}).")
+                            raise e
+                            
                     penalty = 20.0 * (2 ** attempt)
                     _rate_limiter.report_429(self.provider, penalty_seconds=penalty)
                     logger.warning(
-                        f"Rate limit hit on {self.provider} (attempt {attempt+1}/{max_retries}). Retrying..."
+                        f"Rate limit / transient error hit on {self.provider} (attempt {attempt+1}/{max_retries}). Retrying..."
                     )
                     if on_retry:
-                        on_retry(f"API Rate Limit hit. Retrying attempt {attempt+1} of {max_retries}...")
+                        on_retry(f"API Error hit. Retrying attempt {attempt+1} of {max_retries}...")
                     last_exc = e
                     continue
 
@@ -149,14 +227,14 @@ class LLMClient:
     def generate_stream(self, system_prompt: str, user_prompt: str, temperature: float = 0.3,
                         max_tokens: int = 2048, on_retry=None, **kwargs):
         """
-        Generates content from the LLM based on system and user prompts, yielding chunks as they arrive.
+        Generates content from the LLM based on system and user prompts, yielding chunks as they arrive, with quota/transient fallbacks.
         """
         if not self.client:
             raise RuntimeError(
                 f"LLM client not initialized. Check API key for provider '{self.provider}'."
             )
 
-        max_retries = 3
+        max_retries = 6
         base_delay = 5
 
         for attempt in range(max_retries):
@@ -178,15 +256,33 @@ class LLMClient:
 
             except Exception as e:
                 err_msg = str(e)
-                if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg
-                        or "rate_limit" in err_msg.lower() or "quota" in err_msg.lower()):
+                is_quota = ("quota" in err_msg.lower() or "resource_exhausted" in err_msg or "limit" in err_msg.lower())
+                is_transient = ("503" in err_msg or "500" in err_msg or "unavailable" in err_msg.lower() or "internal" in err_msg.lower())
+                
+                if is_quota or is_transient or "429" in err_msg or "rate_limit" in err_msg.lower():
+                    if is_quota or attempt > 0:
+                        fallback_model = self._get_fallback_model(self.model)
+                        if fallback_model:
+                            logger.warning(
+                                f"Encountered quota/transient error on {self.provider} streaming model '{self.model}': {err_msg}. "
+                                f"Falling back to '{fallback_model}'..."
+                            )
+                            if on_retry:
+                                on_retry(f"Streaming fallback to {fallback_model} due to error...")
+                            self.model = fallback_model
+                            _rate_limiter.clear_pause(self.provider)
+                            continue
+                        elif is_quota:
+                            logger.error(f"Quota exceeded and no fallback model available for {self.provider} ({self.model}).")
+                            raise e
+                            
                     penalty = 20.0 * (2 ** attempt)
                     _rate_limiter.report_429(self.provider, penalty_seconds=penalty)
                     logger.warning(
-                        f"Rate limit hit on {self.provider} streaming (attempt {attempt+1}/{max_retries}). Retrying..."
+                        f"Rate limit / transient error hit on {self.provider} streaming (attempt {attempt+1}/{max_retries}). Retrying..."
                     )
                     if on_retry:
-                        on_retry(f"API Rate Limit hit. Retrying attempt {attempt+1} of {max_retries}...")
+                        on_retry(f"API Error hit in stream. Retrying attempt {attempt+1} of {max_retries}...")
                     if attempt == max_retries - 1:
                         raise RuntimeError(
                             f"Maximum retries ({max_retries}) exceeded for {self.provider} stream(). Last error: {e}"
@@ -199,7 +295,7 @@ class LLMClient:
     def chat(self, system_prompt: str, messages: List[dict], temperature: float = 0.3,
              max_tokens: int = 2048, on_retry=None) -> str:
         """
-        Continues a conversation using a list of messages: [{"role": "user"|"model", "content": "..."}]
+        Continues a conversation using a list of messages: [{"role": "user"|"model", "content": "..."}] with quota/transient fallbacks.
         Raises RuntimeError if the client is not initialized or retries are exhausted.
         """
         if not self.client:
@@ -207,7 +303,7 @@ class LLMClient:
                 f"LLM client not initialized. Check API key for provider '{self.provider}'."
             )
 
-        max_retries = 3
+        max_retries = 6
         base_delay = 5
         last_exc: Exception = RuntimeError("Unknown error")
 
@@ -224,15 +320,33 @@ class LLMClient:
                     return self._chat_openai(system_prompt, messages, temperature, max_tokens)
             except Exception as e:
                 err_msg = str(e)
-                if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg
-                        or "rate_limit" in err_msg.lower() or "quota" in err_msg.lower()):
+                is_quota = ("quota" in err_msg.lower() or "resource_exhausted" in err_msg or "limit" in err_msg.lower())
+                is_transient = ("503" in err_msg or "500" in err_msg or "unavailable" in err_msg.lower() or "internal" in err_msg.lower())
+                
+                if is_quota or is_transient or "429" in err_msg or "rate_limit" in err_msg.lower():
+                    if is_quota or attempt > 0:
+                        fallback_model = self._get_fallback_model(self.model)
+                        if fallback_model:
+                            logger.warning(
+                                f"Encountered quota/transient error on {self.provider} chat model '{self.model}': {err_msg}. "
+                                f"Falling back to '{fallback_model}'..."
+                            )
+                            if on_retry:
+                                on_retry(f"Chat fallback to {fallback_model} due to error...")
+                            self.model = fallback_model
+                            _rate_limiter.clear_pause(self.provider)
+                            continue
+                        elif is_quota:
+                            logger.error(f"Quota exceeded and no fallback model available for {self.provider} ({self.model}).")
+                            raise e
+                            
                     penalty = 20.0 * (2 ** attempt)
                     _rate_limiter.report_429(self.provider, penalty_seconds=penalty)
                     logger.warning(
-                        f"Rate limit hit on {self.provider} (chat attempt {attempt+1}/{max_retries}). Retrying..."
+                        f"Rate limit / transient error hit on {self.provider} chat (attempt {attempt+1}/{max_retries}). Retrying..."
                     )
                     if on_retry:
-                        on_retry(f"API Rate Limit hit in chat. Retrying attempt {attempt+1} of {max_retries}...")
+                        on_retry(f"API Error hit in chat. Retrying attempt {attempt+1} of {max_retries}...")
                     last_exc = e
                     continue
                 logger.error(f"Error calling {self.provider} API: {e}")
@@ -321,9 +435,13 @@ class LLMClient:
             contents=user_prompt,
             config=config,
         )
+        yielded_any = False
         for chunk in response:
             if chunk.text:
+                yielded_any = True
                 yield chunk.text
+        if not yielded_any:
+            raise ValueError(f"Gemini stream returned empty response for model {self.model}.")
 
     def _stream_anthropic(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
         _rate_limiter.wait("anthropic")
@@ -346,10 +464,14 @@ class LLMClient:
             call_kwargs["tools"] = kwargs["tools"]
         if "tool_choice" in kwargs:
             call_kwargs["tool_choice"] = kwargs["tool_choice"]
+        yielded_any = False
         with self.client.messages.stream(**call_kwargs) as stream:
             for text in stream.text_stream:
                 if text:
+                    yielded_any = True
                     yield text
+        if not yielded_any:
+            raise ValueError(f"Anthropic stream returned empty response for model {self.model}.")
 
     def _stream_openai(self, sys_prompt, user_prompt, temperature, max_tokens, **kwargs):
         _rate_limiter.wait("openai")
@@ -366,9 +488,14 @@ class LLMClient:
         if "response_format" in kwargs:
             call_kwargs["response_format"] = kwargs["response_format"]
         response = self.client.chat.completions.create(**call_kwargs)
+        yielded_any = False
         for chunk in response:
-            if getattr(chunk.choices[0].delta, "content", None):
-                yield chunk.choices[0].delta.content
+            content = getattr(chunk.choices[0].delta, "content", None)
+            if content:
+                yielded_any = True
+                yield content
+        if not yielded_any:
+            raise ValueError(f"OpenAI stream returned empty response for model {self.model}.")
 
     def _chat_gemini(self, sys_prompt, messages, temperature, max_tokens):
         _rate_limiter.wait("gemini")

@@ -137,10 +137,23 @@ class SECEdgarDataSource(BaseDataSource):
     
     def connect(self) -> bool:
         """Connect to SEC EDGAR."""
+        if not self.user_agent or "example.com" in self.user_agent.lower():
+            raise ValueError(
+                "SEC EDGAR requires a specific, valid email-based User-Agent (e.g. 'MyCompany/1.0 contact@mycompany.com'). "
+                "Please configure a valid SEC_USER_AGENT in your .env file."
+            )
+
         try:
             import requests
             
-            self.session = requests.Session()
+            try:
+                from .base import create_retry_session
+            except (ImportError, ValueError):
+                from base import create_retry_session
+
+            self.session = create_retry_session(
+                max_retries=getattr(self.config, 'max_retries', 3)
+            )
             self.session.headers.update({
                 'User-Agent': self.user_agent,
                 'Accept-Encoding': 'gzip, deflate'
@@ -533,7 +546,7 @@ if __name__ == "__main__":
     # Initialize with user agent
     sec = SECEdgarDataSource(
         config,
-        user_agent="EarningsPredictor/1.0 (test@example.com)"
+        user_agent="EarningsPredictor/1.0 (test@earningspredictor.org)"
     )
     sec.connect()
     

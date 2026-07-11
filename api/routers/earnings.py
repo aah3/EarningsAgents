@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Response, Request
 from datetime import date, datetime
 from typing import List, Optional
 from pydantic import BaseModel
@@ -12,8 +12,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from pipeline import EarningsPipeline
 from config.settings import PipelineConfig, load_config
 from database.db import get_session
-from database.models import User, Prediction, PredictionChat
+from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings
 from api.dependencies.auth import get_current_user
+from api.rate_limit import limiter, RATE_LIMIT_PREDICT, RATE_LIMIT_CHAT, RATE_LIMIT_BATCH
+from database.crypto import encrypt, decrypt
 
 router = APIRouter(
     prefix="/earnings",
@@ -43,16 +45,215 @@ def get_pipeline():
         _pipeline_instance.initialize()
     return _pipeline_instance
 
+def mask_api_key(key: Optional[str]) -> Optional[str]:
+    if not key:
+        return None
+    if len(key) <= 8:
+        return "********"
+    return f"{key[:4]}...{key[-4:]}"
+
+def is_masked(key: Optional[str]) -> bool:
+    if not key:
+        return False
+    if "..." in key or "*" in key:
+        return True
+    return False
+
+def get_pipeline_for_user(session: Session, clerk_id: str) -> EarningsPipeline:
+    user = get_or_create_user(session, clerk_id)
+    statement = select(UserSettings).where(UserSettings.user_id == user.id)
+    user_settings = session.exec(statement).first()
+    
+    if not user_settings:
+        # Create default user settings in DB so they are initialized
+        user_settings = UserSettings(user_id=user.id)
+        session.add(user_settings)
+        session.commit()
+        session.refresh(user_settings)
+        return get_pipeline()
+        
+    has_overrides = any([
+        user_settings.provider != "gemini",
+        user_settings.model_name != "gemini-flash-latest",
+        user_settings.temperature != 0.3,
+        user_settings.max_tokens != 8192,
+        user_settings.use_react is True,
+        user_settings.enable_rebuttals is True,
+        user_settings.gemini_api_key is not None,
+        user_settings.openai_api_key is not None,
+        user_settings.anthropic_api_key is not None,
+        user_settings.newsapi_api_key is not None,
+        user_settings.alphavantage_api_key is not None,
+        user_settings.earningsapi_api_key is not None
+    ])
+    
+    if not has_overrides:
+        return get_pipeline()
+        
+    # Instantiate user-specific pipeline
+    config = load_config()
+    config.output_dir = "api_output"
+    
+    # Apply agent settings overrides
+    if user_settings.provider:
+        config.agent.provider = user_settings.provider.lower()
+    if user_settings.model_name:
+        config.agent.model_name = user_settings.model_name
+    if user_settings.temperature is not None:
+        config.agent.temperature = user_settings.temperature
+    if user_settings.max_tokens is not None:
+        config.agent.max_tokens = user_settings.max_tokens
+    if user_settings.use_react is not None:
+        config.agent.use_react = user_settings.use_react
+    if user_settings.react_max_turns is not None:
+        config.agent.react_max_turns = user_settings.react_max_turns
+    if user_settings.enable_rebuttals is not None:
+        config.agent.enable_rebuttals = user_settings.enable_rebuttals
+        
+    # Apply API Key overrides - stored values are encrypted at rest, decrypt
+    # before handing them to the pipeline/agent config.
+    gemini_key = decrypt(user_settings.gemini_api_key)
+    openai_key = decrypt(user_settings.openai_api_key)
+    anthropic_key = decrypt(user_settings.anthropic_api_key)
+    newsapi_key = decrypt(user_settings.newsapi_api_key)
+    alphavantage_key = decrypt(user_settings.alphavantage_api_key)
+    earningsapi_key = decrypt(user_settings.earningsapi_api_key)
+
+    if config.agent.provider == "gemini" and gemini_key:
+        config.agent.api_key = gemini_key
+    elif config.agent.provider == "openai" and openai_key:
+        config.agent.api_key = openai_key
+    elif config.agent.provider == "anthropic" and anthropic_key:
+        config.agent.api_key = anthropic_key
+
+    if newsapi_key:
+        config.newsapi.api_key = newsapi_key
+        config.newsapi.enabled = True
+    if alphavantage_key:
+        config.alphavantage.api_key = alphavantage_key
+        config.alphavantage.enabled = True
+    if earningsapi_key:
+        config.earningsapi.api_key = earningsapi_key
+        config.earningsapi.enabled = True
+
+    pipeline = EarningsPipeline(config)
+    pipeline.initialize()
+    return pipeline
+
+
+class SettingsUpdateRequest(BaseModel):
+    provider: Optional[str] = None
+    model_name: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    use_react: Optional[bool] = None
+    react_max_turns: Optional[int] = None
+    enable_rebuttals: Optional[bool] = None
+    
+    gemini_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    newsapi_api_key: Optional[str] = None
+    alphavantage_api_key: Optional[str] = None
+    earningsapi_api_key: Optional[str] = None
+
+
+@router.get("/settings")
+async def get_user_settings(
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    user = get_or_create_user(session, clerk_id)
+    statement = select(UserSettings).where(UserSettings.user_id == user.id)
+    user_settings = session.exec(statement).first()
+    
+    if not user_settings:
+        user_settings = UserSettings(user_id=user.id)
+        session.add(user_settings)
+        session.commit()
+        session.refresh(user_settings)
+        
+    return {
+        "provider": user_settings.provider,
+        "model_name": user_settings.model_name,
+        "temperature": user_settings.temperature,
+        "max_tokens": user_settings.max_tokens,
+        "use_react": user_settings.use_react,
+        "react_max_turns": user_settings.react_max_turns,
+        "enable_rebuttals": user_settings.enable_rebuttals,
+        # Mask keys - decrypt first so the mask reflects the real key
+        # (e.g. "AIza...xyz9"), not a mask derived from the ciphertext blob.
+        "gemini_api_key": mask_api_key(decrypt(user_settings.gemini_api_key)),
+        "openai_api_key": mask_api_key(decrypt(user_settings.openai_api_key)),
+        "anthropic_api_key": mask_api_key(decrypt(user_settings.anthropic_api_key)),
+        "newsapi_api_key": mask_api_key(decrypt(user_settings.newsapi_api_key)),
+        "alphavantage_api_key": mask_api_key(decrypt(user_settings.alphavantage_api_key)),
+        "earningsapi_api_key": mask_api_key(decrypt(user_settings.earningsapi_api_key)),
+    }
+
+
+@router.post("/settings")
+async def update_user_settings(
+    request: SettingsUpdateRequest,
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    user = get_or_create_user(session, clerk_id)
+    statement = select(UserSettings).where(UserSettings.user_id == user.id)
+    user_settings = session.exec(statement).first()
+    
+    if not user_settings:
+        user_settings = UserSettings(user_id=user.id)
+        session.add(user_settings)
+        
+    if request.provider is not None:
+        user_settings.provider = request.provider
+    if request.model_name is not None:
+        user_settings.model_name = request.model_name
+    if request.temperature is not None:
+        user_settings.temperature = request.temperature
+    if request.max_tokens is not None:
+        user_settings.max_tokens = request.max_tokens
+    if request.use_react is not None:
+        user_settings.use_react = request.use_react
+    if request.react_max_turns is not None:
+        user_settings.react_max_turns = request.react_max_turns
+    if request.enable_rebuttals is not None:
+        user_settings.enable_rebuttals = request.enable_rebuttals
+        
+    # Helper to update key if not masked or unset. Encrypts immediately
+    # before it's ever assigned to the model, so the plaintext key only
+    # exists in memory for this request and is never written to the DB.
+    def update_key(db_field_name: str, new_value: Optional[str]):
+        if new_value is None:
+            return
+        if new_value == "":
+            setattr(user_settings, db_field_name, None)
+        elif not is_masked(new_value):
+            setattr(user_settings, db_field_name, encrypt(new_value))
+            
+    update_key("gemini_api_key", request.gemini_api_key)
+    update_key("openai_api_key", request.openai_api_key)
+    update_key("anthropic_api_key", request.anthropic_api_key)
+    update_key("newsapi_api_key", request.newsapi_api_key)
+    update_key("alphavantage_api_key", request.alphavantage_api_key)
+    update_key("earningsapi_api_key", request.earningsapi_api_key)
+    
+    session.add(user_settings)
+    session.commit()
+    return {"status": "success", "message": "Settings updated successfully"}
+
 from api.tasks import analyze_ticker_task
 from celery.result import AsyncResult
 
 class PredictRequest(BaseModel):
-    report_date: date
+    report_date: Optional[date] = None
     user_analysis: Optional[str] = None
+    enable_rebuttals: Optional[bool] = None
 
 class BatchPredictItem(BaseModel):
     ticker: str
-    report_date: date
+    report_date: Optional[date] = None
     user_analysis: Optional[str] = None
 
 class BatchPredictRequest(BaseModel):
@@ -69,9 +270,11 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
 
 @router.post("/predict/{ticker}")
+@limiter.limit(RATE_LIMIT_PREDICT)
 async def predict_ticker(
-    ticker: str, 
-    request: PredictRequest,
+    request: Request,
+    ticker: str,
+    body: PredictRequest,
     force_refresh: bool = Query(False, description="Force new analysis and bypass cache"),
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
@@ -79,32 +282,33 @@ async def predict_ticker(
     try:
         # Ensure user exists in DB
         user = get_or_create_user(session, clerk_id)
-        
+
         # 1. Check for cached prediction if not forcing refresh and no custom analysis
-        if not force_refresh and not request.user_analysis:
+        if not force_refresh and not body.user_analysis:
             statement = select(Prediction).where(
                 Prediction.user_id == user.id,
                 Prediction.ticker == ticker.upper()
             ).order_by(Prediction.prediction_date.desc())
             existing_predictions = session.exec(statement).all()
-            
+
             for p in existing_predictions:
                 # Check if we already ran it today for this report
-                if p.report_date.date() == request.report_date and p.prediction_date.date() == date.today():
+                if body.report_date is not None and p.report_date.date() == body.report_date and p.prediction_date.date() == date.today():
                     return {
                         "task_id": f"cached-{p.id}",
                         "status": "PENDING",
                         "message": f"Cached analysis found for {ticker}"
                     }
-        
+
         # Dispatch background task
         task = analyze_ticker_task.delay(
-            ticker.upper(), 
-            request.report_date.isoformat(), 
+            ticker.upper(),
+            body.report_date.isoformat() if body.report_date else "",
             clerk_id,
-            request.user_analysis or ""
+            body.user_analysis or "",
+            body.enable_rebuttals
         )
-        
+
         return {
             "task_id": task.id,
             "status": "PENDING",
@@ -180,36 +384,38 @@ async def get_prediction_history(
 ):
     try:
         user = get_or_create_user(session, clerk_id)
-        statement = select(Prediction).where(Prediction.user_id == user.id).order_by(Prediction.prediction_date.desc())
+        statement = select(Prediction).order_by(Prediction.prediction_date.desc())
         predictions = session.exec(statement).all()
         return predictions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/chat")
+@limiter.limit(RATE_LIMIT_CHAT)
 async def chat_with_consensus(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     clerk_id: str = Depends(get_current_user),
-    session: Session = Depends(get_session),
-    pipeline: EarningsPipeline = Depends(get_pipeline)
+    session: Session = Depends(get_session)
 ):
     try:
         user = get_or_create_user(session, clerk_id)
-        
+        pipeline = get_pipeline_for_user(session, clerk_id)
+
         # format messages for LLM
-        messages_dict = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-        
+        messages_dict = [{"role": msg.role, "content": msg.content} for msg in body.messages]
+
         # query ConsensusAgent
         response_text = pipeline.agent_system.consensus_agent.chat(messages_dict)
-        
+
         # append agent response
         messages_dict.append({"role": "model", "content": response_text})
-        
+
         # persist chat locally
         chat_session = PredictionChat(
             user_id=user.id,
-            prediction_id=request.prediction_id,
-            ticker=request.ticker,
+            prediction_id=body.prediction_id,
+            ticker=body.ticker,
             messages=messages_dict
         )
         session.add(chat_session)
@@ -264,34 +470,122 @@ async def get_daily_predictions(
 
 @router.get("/calendar")
 def get_earnings_calendar(
+    start: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    sector: Optional[str] = Query(None, description="Filter by sector"),
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     tickers: Optional[str] = None,
     use_finviz: bool = False,
     timeframe: str = "This Week",
     index_name: str = "S&P 500",
+    session: Session = Depends(get_session),
     pipeline: EarningsPipeline = Depends(get_pipeline)
 ):
     """
     Get the earnings calendar.
-    If 'use_finviz' is true, it uses 'timeframe' and 'index_name'.
-    Otherwise, uses Yahoo Finance via 'start_date', 'end_date', and 'tickers'.
+    Reads from EarningsCalendarEvent in the database, falling back to the aggregator
+    if no database rows match.
     """
     try:
+        eff_start = start or start_date
+        eff_end = end or end_date
+        
         if use_finviz:
             events = pipeline.aggregator.get_finviz_earnings(index_name, timeframe)
             return events
 
-        if not start_date or not end_date:
+        if not eff_start or not eff_end:
             raise HTTPException(status_code=400, detail="start_date and end_date required if not using finviz")
+
+        stmt = select(EarningsCalendarEvent).where(
+            EarningsCalendarEvent.report_date >= eff_start,
+            EarningsCalendarEvent.report_date <= eff_end
+        )
+        if sector:
+            stmt = stmt.where(EarningsCalendarEvent.sector == sector)
+        
+        if tickers:
+            ticker_list = [t.strip().upper() for t in tickers.split(",")]
+            stmt = stmt.where(EarningsCalendarEvent.ticker.in_(ticker_list))
+            
+        stmt = stmt.order_by(EarningsCalendarEvent.report_date)
+        db_events = session.exec(stmt).all()
+        
+        # If no events found, enqueue calendar sync in background
+        if not db_events:
+            try:
+                from api.tasks import sync_earnings_calendar_task
+                days_forward = max(14, (eff_end - date.today()).days)
+                sync_earnings_calendar_task.delay(days_forward)
+            except Exception as se:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to enqueue calendar sync: {se}")
+
+        if db_events:
+            results = []
+            for e in db_events:
+                mapped_time = "unknown"
+                if e.report_time == "BMO":
+                    mapped_time = "before_market_open"
+                elif e.report_time == "AMC":
+                    mapped_time = "after_market_close"
+                
+                results.append({
+                    "ticker": e.ticker,
+                    "company_name": e.company_name,
+                    "report_date": e.report_date.isoformat() if hasattr(e.report_date, 'isoformat') else str(e.report_date),
+                    "report_time": mapped_time,
+                    "eps_estimate": e.eps_estimate,
+                    "consensus_eps": e.eps_estimate,
+                    "revenue_estimate": e.revenue_estimate,
+                    "consensus_revenue": e.revenue_estimate,
+                    "num_estimates": e.num_estimates,
+                    "sector": e.sector,
+                    "industry": e.industry,
+                    "market_cap": e.market_cap,
+                    "updated_at": e.updated_at.isoformat() if hasattr(e.updated_at, 'isoformat') else str(e.updated_at),
+                })
+            return results
 
         if tickers:
             ticker_list = [t.strip().upper() for t in tickers.split(",")]
         else:
             ticker_list = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA"]
             
-        events = pipeline.aggregator.get_earnings_calendar(ticker_list, start_date, end_date)
+        events = pipeline.aggregator.get_earnings_calendar(ticker_list, eff_start, eff_end)
         return events
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history/{ticker}")
+async def get_ticker_earnings_history(
+    ticker: str,
+    session: Session = Depends(get_session)
+):
+    """
+    Get historical earnings and price reactions for a ticker.
+    Reads from the EarningsHistory database table, enqueuing a background
+    sync task on a cache miss rather than blocking.
+    """
+    ticker_upper = ticker.upper()
+    try:
+        stmt = select(EarningsHistory).where(
+            EarningsHistory.ticker == ticker_upper
+        ).order_by(EarningsHistory.report_date.desc())
+        
+        rows = session.exec(stmt).all()
+        
+        if not rows:
+            from api.tasks import sync_ticker_history_task
+            sync_ticker_history_task.delay(ticker_upper)
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=202, content={"status": "queued", "data": []})
+            
+        return {"status": "ready", "data": [r.model_dump() for r in rows]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -327,26 +621,30 @@ async def get_sentiment(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/batch")
+@limiter.limit(RATE_LIMIT_BATCH)
 async def predict_batch(
-    request: BatchPredictRequest,
-    pipeline: EarningsPipeline = Depends(get_pipeline)
+    request: Request,
+    body: BatchPredictRequest,
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
 ):
     """
     Run predictions for a bespoke list of tickers and reporting dates.
     """
     try:
+        pipeline = get_pipeline_for_user(session, clerk_id)
         companies_dicts = [
             {
                 "ticker": item.ticker.upper(),
                 "report_date": item.report_date,
                 "user_analysis": item.user_analysis
             }
-            for item in request.companies
+            for item in body.companies
         ]
-        
+
         predictions = pipeline.predict_batch(
             companies_dicts,
-            prediction_date=request.prediction_date
+            prediction_date=body.prediction_date
         )
         return predictions
     except Exception as e:
@@ -368,8 +666,7 @@ async def get_performance_metrics(
         user = get_or_create_user(session, clerk_id)
 
         all_preds = session.exec(
-            select(Prediction).where(Prediction.user_id == user.id)
-            .order_by(Prediction.prediction_date)
+            select(Prediction).order_by(Prediction.prediction_date)
         ).all()
 
         total = len(all_preds)
@@ -458,6 +755,127 @@ async def get_performance_metrics(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/{prediction_id}/report")
+def download_prediction_report(
+    prediction_id: int,
+    format: str = Query("md", pattern="^(md|pdf)$"),
+    session: Session = Depends(get_session),
+    pipeline: EarningsPipeline = Depends(get_pipeline)
+):
+    """
+    Generate and download the earnings debate report for a prediction in either MD or PDF format.
+    """
+    prediction = session.get(Prediction, prediction_id)
+    if not prediction:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+        
+    llm_info = {
+        "provider": pipeline.config.agent.provider,
+        "model_name": pipeline.config.agent.model_name,
+        "enable_rebuttals": pipeline.config.agent.enable_rebuttals
+    }
+    
+    db_sync_status = f"SUCCESSFUL (Record Saved with ID: {prediction.id})"
+    
+    if format == "md":
+        from output.report_generator import generate_markdown_report
+        md_content = generate_markdown_report(prediction, db_sync_status=db_sync_status, llm_info=llm_info)
+        
+        headers = {
+            "Content-Disposition": f"attachment; filename={prediction.ticker}_{prediction.report_date.strftime('%Y-%m-%d')}_report.md"
+        }
+        return Response(content=md_content, media_type="text/markdown", headers=headers)
+        
+    elif format == "pdf":
+        from output.report_generator import FPDF_AVAILABLE
+        if not FPDF_AVAILABLE:
+            raise HTTPException(status_code=500, detail="PDF generation is currently unavailable on the server.")
+            
+        from output.report_generator import generate_pdf_report
+        import tempfile
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir) / f"report.pdf"
+            try:
+                generate_pdf_report(prediction, temp_path, db_sync_status=db_sync_status, llm_info=llm_info)
+                pdf_bytes = temp_path.read_bytes()
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+                
+        headers = {
+            "Content-Disposition": f"attachment; filename={prediction.ticker}_{prediction.report_date.strftime('%Y-%m-%d')}_report.pdf"
+        }
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+
+@router.post("/{prediction_id}/verify")
+async def verify_prediction(
+    prediction_id: int,
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Trigger outcome verification/scoring for a specific prediction.
+    """
+    try:
+        # Get prediction
+        prediction = session.get(Prediction, prediction_id)
+        if not prediction:
+            raise HTTPException(status_code=404, detail=f"Prediction with ID {prediction_id} not found")
+
+        from database.scoring_service import PredictionScorer
+        from data.yahoo_finance import YahooFinanceDataSource, DataSourceConfig
+
+        yahoo = None
+        try:
+            config = DataSourceConfig(rate_limit_calls=100, rate_limit_period=60)
+            yahoo = YahooFinanceDataSource(config)
+            yahoo.connect()
+            scorer = PredictionScorer(yahoo)
+            
+            result = scorer.score_prediction(prediction)
+            
+            if result.get("scored") is True:
+                prediction.actual_direction = result["actual_direction"]
+                prediction.actual_eps = result.get("actual_eps")
+                prediction.actual_price_move_pct = result.get("actual_price_move_pct")
+                prediction.accuracy_score = result.get("accuracy_score")
+                prediction.scored_at = result.get("scored_at", datetime.utcnow())
+                
+                session.add(prediction)
+                session.commit()
+                session.refresh(prediction)
+                
+                return {
+                    "success": True,
+                    "message": f"Successfully verified/scored prediction for {prediction.ticker}",
+                    "result": {
+                        "actual_direction": prediction.actual_direction,
+                        "actual_eps": prediction.actual_eps,
+                        "actual_price_move_pct": prediction.actual_price_move_pct,
+                        "accuracy_score": prediction.accuracy_score,
+                        "scored_at": prediction.scored_at.isoformat() if prediction.scored_at else None
+                    }
+                }
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Could not score prediction: {result.get('reason', 'Unknown reason')}"
+                )
+        finally:
+            if yahoo:
+                try:
+                    yahoo.disconnect()
+                except Exception:
+                    pass
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+
+
 @router.get("/health")
+
 async def health():
     return {"status": "Earnings router is up"}

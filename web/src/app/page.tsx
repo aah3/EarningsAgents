@@ -1,19 +1,11 @@
-import Navbar from "@/components/Landing/Navbar";
-import HeroSection from "@/components/Landing/HeroSection";
-import AgentCommittee from "@/components/Landing/AgentCommittee";
-import LivePreview from "@/components/Landing/LivePreview";
-import DataSources from "@/components/Landing/DataSources";
-import Footer from "@/components/Landing/Footer";
+import SiteNav from "@/components/marketing/SiteNav";
+import Hero from "@/components/marketing/Hero";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-background">
-      <Navbar />
-      <HeroSection />
-      <AgentCommittee />
-      <LivePreview />
-      <DataSources />
-      <Footer />
+    <main className="min-h-screen bg-bg">
+      <SiteNav />
+      <Hero />
     </main>
   );
 }

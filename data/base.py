@@ -46,7 +46,7 @@ class HistoricalEarning(BaseModel):
     date: date
     actual_eps: float
     estimate_eps: float
-    surprise_pct: float
+    surprise_pct: Optional[float] = None
     beat: bool
     fiscal_quarter: Optional[str] = None
     fiscal_year: Optional[int] = None
@@ -55,11 +55,11 @@ class HistoricalEarning(BaseModel):
     def calculate_surprise(cls, v, values):
         """Calculate surprise percentage if not provided."""
         if v is None and 'actual_eps' in values and 'estimate_eps' in values:
-            actual = values['actual_eps']
-            estimate = values['estimate_eps']
-            if estimate != 0:
-                return ((actual - estimate) / abs(estimate)) * 100
-        return v or 0.0
+            from data.metrics import safe_surprise_pct
+            return safe_surprise_pct(values['actual_eps'], values['estimate_eps'])
+        if v is not None:
+            return max(-100.0, min(100.0, float(v)))
+        return v
 
 
 class EstimateRevision(BaseModel):
@@ -76,10 +76,11 @@ class EstimateRevision(BaseModel):
     def calculate_change(cls, v, values):
         """Calculate change percentage if not provided."""
         if v is None and 'old_estimate' in values and 'new_estimate' in values:
-            old = values['old_estimate']
-            new = values['new_estimate']
-            if old != 0:
-                return ((new - old) / abs(old)) * 100
+            from data.metrics import safe_surprise_pct
+            res = safe_surprise_pct(values['new_estimate'], values['old_estimate'])
+            return res if res is not None else 0.0
+        if v is not None:
+            return max(-100.0, min(100.0, float(v)))
         return v or 0.0
 
 
@@ -176,6 +177,7 @@ class CompanyData(BaseModel):
     """Complete company data structure."""
     ticker: str
     company_name: str
+    company_description: Optional[str] = None
     sector: str
     industry: str
     market_cap: float
@@ -208,6 +210,13 @@ class CompanyData(BaseModel):
     recent_transcripts: List[Dict[str, Any]] = Field(default_factory=list)
     company_facts: Dict[str, Any] = Field(default_factory=dict)
     options_features: Optional[Dict[str, Any]] = None
+    
+    # --- Persisted earnings enrichment (from EarningsHistory) ---
+    enriched_history: List[Dict[str, Any]] = Field(default_factory=list)
+    reaction_summary: Optional[Dict[str, Any]] = None
+    implied_move_pct: Optional[float] = None   # current straddle-implied move, decimal (0.06 = 6%)
+    market_open: Optional[bool] = None
+    live_options: Optional[Dict[str, Any]] = None
 
 
 # ============================================================================
@@ -447,3 +456,31 @@ def safe_int(value: Any, default: int = 0) -> int:
         return int(value) if value is not None else default
     except (ValueError, TypeError):
         return default
+
+
+def create_retry_session(
+    max_retries: int = 3,
+    backoff_factor: float = 0.5,
+    status_forcelist: tuple = (429, 500, 502, 503, 504)
+) -> "requests.Session":
+    """
+    Create a requests Session with HTTP retry middleware for transient status codes.
+    """
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util import Retry
+
+    session = requests.Session()
+    
+    retry_strategy = Retry(
+        total=max_retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+        raise_on_status=False  # Allow raise_for_status() to handle failures downstream
+    )
+    
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    return session

@@ -1,7 +1,7 @@
 import logging
 from api.celery_app import celery_app
 from datetime import date, datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import sys
 import os
 
@@ -10,8 +10,11 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from pipeline import EarningsPipeline
 from settings import load_config
+from database.earnings_repo import _refresh_profile, sync_ticker_history
+from data.earningsapi_source import RateLimitError
 from database.db import Session, engine
-from database.models import User, Prediction
+from database.models import User, Prediction, CompanyProfile, EarningsHistory, EarningsCalendarEvent, UserSettings
+from database.crypto import decrypt
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -29,15 +32,165 @@ def get_pipeline():
     return _pipeline
 
 @celery_app.task(bind=True, name="api.tasks.analyze_ticker_task")
-def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, user_analysis: str = ""):
+def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, user_analysis: str = "", enable_rebuttals: Optional[bool] = None):
     """
     Background task to analyze a ticker and save results.
     """
     task_id = self.request.id
     logger.info(f"Starting background analysis for {ticker} (Task ID: {task_id})")
     
-    report_date = date.fromisoformat(report_date_str)
-    pipeline = get_pipeline()
+    report_date = None
+    if report_date_str:
+        report_date = date.fromisoformat(report_date_str)
+    
+    # Check for user-specific settings overrides
+    pipeline = None
+    has_overrides = False
+    user_settings = None
+    with Session(engine) as session:
+        statement = select(User).where(User.clerk_id == clerk_id)
+        user = session.exec(statement).first()
+        if user:
+            statement_settings = select(UserSettings).where(UserSettings.user_id == user.id)
+            user_settings = session.exec(statement_settings).first()
+            if user_settings:
+                # check if there are overrides
+                has_overrides = any([
+                    user_settings.provider != "gemini",
+                    user_settings.model_name != "gemini-flash-latest",
+                    user_settings.temperature != 0.3,
+                    user_settings.max_tokens != 8192,
+                    user_settings.use_react is True,
+                    user_settings.enable_rebuttals is True,
+                    user_settings.gemini_api_key is not None,
+                    user_settings.openai_api_key is not None,
+                    user_settings.anthropic_api_key is not None,
+                    user_settings.newsapi_api_key is not None,
+                    user_settings.alphavantage_api_key is not None,
+                    user_settings.earningsapi_api_key is not None,
+                    enable_rebuttals is not None
+                ])
+            else:
+                has_overrides = enable_rebuttals is not None
+        else:
+            has_overrides = enable_rebuttals is not None
+            
+    if has_overrides:
+        logger.info(f"Custom overrides or parameters found for user {clerk_id}. Initializing bespoke pipeline.")
+        config = load_config()
+        config.output_dir = "worker_output"
+        
+        if user_settings:
+            if user_settings.provider:
+                config.agent.provider = user_settings.provider.lower()
+            if user_settings.model_name:
+                config.agent.model_name = user_settings.model_name
+            if user_settings.temperature is not None:
+                config.agent.temperature = user_settings.temperature
+            if user_settings.max_tokens is not None:
+                config.agent.max_tokens = user_settings.max_tokens
+            if user_settings.use_react is not None:
+                config.agent.use_react = user_settings.use_react
+            if user_settings.react_max_turns is not None:
+                config.agent.react_max_turns = user_settings.react_max_turns
+            if user_settings.enable_rebuttals is not None:
+                config.agent.enable_rebuttals = user_settings.enable_rebuttals
+                
+        # Task parameter override takes precedence
+        if enable_rebuttals is not None:
+            config.agent.enable_rebuttals = enable_rebuttals
+
+        # Apply keys - stored values are encrypted at rest, decrypt before
+        # handing them to the pipeline/agent config.
+        if user_settings:
+            gemini_key = decrypt(user_settings.gemini_api_key)
+            openai_key = decrypt(user_settings.openai_api_key)
+            anthropic_key = decrypt(user_settings.anthropic_api_key)
+            newsapi_key = decrypt(user_settings.newsapi_api_key)
+            alphavantage_key = decrypt(user_settings.alphavantage_api_key)
+            earningsapi_key = decrypt(user_settings.earningsapi_api_key)
+
+            if config.agent.provider == "gemini" and gemini_key:
+                config.agent.api_key = gemini_key
+            elif config.agent.provider == "openai" and openai_key:
+                config.agent.api_key = openai_key
+            elif config.agent.provider == "anthropic" and anthropic_key:
+                config.agent.api_key = anthropic_key
+
+            if newsapi_key:
+                config.newsapi.api_key = newsapi_key
+                config.newsapi.enabled = True
+            if alphavantage_key:
+                config.alphavantage.api_key = alphavantage_key
+                config.alphavantage.enabled = True
+            if earningsapi_key:
+                config.earningsapi.api_key = earningsapi_key
+                config.earningsapi.enabled = True
+
+        pipeline = EarningsPipeline(config)
+        pipeline.initialize()
+
+    if pipeline is None:
+        logger.info(f"Using default pipeline configuration for user {clerk_id}.")
+        pipeline = get_pipeline()
+
+    # Resolve next earnings date from earningsapi.com
+    expected_eps = None
+    resolved_report_timing = "UNKNOWN"
+    
+    try:
+        from data.earningsapi_source import EarningsAPIDataSource
+        src = EarningsAPIDataSource(pipeline.config.earningsapi)
+        src.connect()
+        try:
+            logger.info(f"Fetching earnings history for {ticker} from earningsapi.com")
+            earnings = src.get_company_earnings(ticker)
+            if earnings:
+                today = date.today()
+                upcoming = []
+                for event in earnings:
+                    event_date_str = event.get("date")
+                    if not event_date_str:
+                        continue
+                    try:
+                        event_date = date.fromisoformat(event_date_str)
+                    except ValueError:
+                        continue
+                    if event_date >= today:
+                        upcoming.append((event_date, event))
+                
+                next_event = None
+                if upcoming:
+                    upcoming.sort(key=lambda x: x[0])
+                    next_event = upcoming[0][1]
+                else:
+                    next_event = earnings[0]
+                
+                if next_event:
+                    next_date_str = next_event.get("date")
+                    logger.info(f"Resolved next earnings date for {ticker} as {next_date_str}")
+                    report_date = date.fromisoformat(next_date_str)
+                    report_date_str = next_date_str
+                    expected_eps = next_event.get("epsEstimate")
+                    time_str = next_event.get("time") or ""
+                    
+                    if "after" in time_str.lower():
+                        resolved_report_timing = "AMC"
+                    elif "before" in time_str.lower() or "pre" in time_str.lower():
+                        resolved_report_timing = "BMO"
+                    else:
+                        resolved_report_timing = "UNKNOWN"
+        finally:
+            src.disconnect()
+    except Exception as e:
+        logger.error(f"Failed to fetch next earnings date for {ticker} from earningsapi.com: {e}")
+        if report_date_str:
+            report_date = date.fromisoformat(report_date_str)
+        else:
+            raise ValueError(f"Could not resolve report date for {ticker} and none was provided.") from e
+
+    if report_date is None:
+        raise ValueError(f"Could not resolve report date for {ticker} and none was provided.")
     
     try:
         import redis
@@ -82,30 +235,61 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                 user_id=user.id,
                 ticker=ticker.upper(),
                 company_name=result.get("company_name", "Unknown"),
+                company_description=result.get("company_description"),
+                sector=result.get("sector"),
                 report_date=datetime.combine(report_date, datetime.min.time()),
+                report_timing=resolved_report_timing if resolved_report_timing != "UNKNOWN" else result.get("report_time", "UNKNOWN"),
                 direction=result.get("direction", "NEUTRAL").upper(),
                 confidence=result.get("confidence", 0.0),
                 expected_price_move=result.get("expected_price_move", ""),
                 move_vs_implied=result.get("move_vs_implied", ""),
                 guidance_expectation=result.get("guidance_expectation", ""),
+                likely_guidance=result.get("likely_guidance", ""),
                 reasoning_summary=result.get("reasoning_summary", ""),
                 bull_factors=result.get("bull_factors", []),
                 bear_factors=result.get("bear_factors", []),
                 debate_summary=result.get("debate_summary"),
                 rebuttal_summary=result.get("rebuttal_summary"),
+                agent_votes=result.get("agent_votes"),
+                options_features=result.get("options_features"),
+                expected_eps=expected_eps,
             )
             
             session.add(db_prediction)
             session.commit()
+            session.refresh(db_prediction)
+            
+            # Enqueue ticker history sync on active user analysis
+            sync_ticker_history_task.delay(ticker.upper())
+            
+            # Re-export report to update DB sync details (successful save with record ID)
+            if getattr(pipeline.config, "save_report", True):
+                try:
+                    from output.report_generator import export_report
+                    llm_info = {
+                        "provider": pipeline.config.agent.provider,
+                        "model_name": pipeline.config.agent.model_name,
+                        "enable_rebuttals": pipeline.config.agent.enable_rebuttals
+                    }
+                    export_report(
+                        prediction=db_prediction,
+                        reports_dir=getattr(pipeline.config, "reports_dir", "reports"),
+                        elapsed_time=None,
+                        db_sync_status=f"SUCCESSFUL (Record Saved with ID: {db_prediction.id})",
+                        llm_info=llm_info
+                    )
+                except Exception as re:
+                    logger.warning(f"Failed to update report with DB sync details: {re}")
             
         logger.info(f"Successfully completed analysis for {ticker}")
         return {"status": "SUCCESS", "ticker": ticker, "result": result}
+
         
     except Exception as e:
         logger.error(f"Task failed for {ticker}: {str(e)}")
         return {"status": "FAILURE", "error": str(e)}
 
-from scoring_service import PredictionScorer
+from database.scoring_service import PredictionScorer
 from data.yahoo_finance import YahooFinanceDataSource, DataSourceConfig
 from datetime import timedelta as _timedelta
 
@@ -188,3 +372,129 @@ def beat_heartbeat():
     """Lightweight liveness probe — fired every minute by Celery Beat."""
     logger.debug("[beat_heartbeat] alive")
     return {"alive": True, "ts": datetime.utcnow().isoformat()}
+
+
+# Removed local _refresh_profile (imported from database.earnings_repo)
+
+
+@celery_app.task(bind=True, name="api.tasks.sync_earnings_calendar_task",
+                 autoretry_for=(RateLimitError,), retry_backoff=True,
+                 retry_backoff_max=600, max_retries=5)
+def sync_earnings_calendar_task(self, days_forward: int = 14):
+    """
+    Sync upcoming earnings calendar events.
+    """
+    logger.info(f"Starting earnings calendar sync for the next {days_forward} days")
+    config = load_config()
+    from data.earningsapi_source import EarningsAPIDataSource
+    source = EarningsAPIDataSource(config.earningsapi)
+    if not source.connect():
+        logger.error("Failed to connect to EarningsAPIDataSource")
+        return {"status": "FAILURE", "error": "Connection failed"}
+        
+    try:
+        today = date.today()
+        all_events = []
+        for i in range(days_forward + 1):
+            target_date = today + _timedelta(days=i)
+            day_events = source.get_calendar_by_date(target_date)
+            all_events.extend(day_events)
+            
+        with Session(engine) as session:
+            distinct_tickers = set()
+            for ev in all_events:
+                ticker = ev["ticker"].upper()
+                report_date = ev["report_date"]
+                distinct_tickers.add(ticker)
+                
+                # Check for existing event
+                stmt = select(EarningsCalendarEvent).where(
+                    EarningsCalendarEvent.ticker == ticker,
+                    EarningsCalendarEvent.report_date == report_date
+                )
+                db_event = session.exec(stmt).first()
+                if not db_event:
+                    db_event = EarningsCalendarEvent(
+                        ticker=ticker,
+                        report_date=report_date
+                    )
+                
+                db_event.company_name = ev.get("company_name")
+                db_event.report_time = ev.get("report_time")
+                db_event.eps_estimate = ev.get("eps_estimate")
+                db_event.revenue_estimate = ev.get("revenue_estimate")
+                db_event.num_estimates = ev.get("num_estimates")
+                db_event.updated_at = datetime.utcnow()
+                
+                session.add(db_event)
+            session.commit()
+            
+            # Refresh profiles and denormalize
+            rate_limited = False
+            for ticker in distinct_tickers:
+                profile = None
+                if not rate_limited:
+                    try:
+                        profile = _refresh_profile(session, ticker)
+                    except Exception as e:
+                        import requests
+                        if isinstance(e, requests.exceptions.HTTPError) and e.response is not None and e.response.status_code == 429:
+                            logger.warning(f"Rate limit (429) hit, skipping further API profile fetches: {e}")
+                            rate_limited = True
+                
+                # Fallback to local profile if API was skipped or failed
+                if not profile:
+                    profile = session.exec(select(CompanyProfile).where(CompanyProfile.ticker == ticker)).first()
+                    
+                if profile:
+                    stmt = select(EarningsCalendarEvent).where(
+                        EarningsCalendarEvent.ticker == ticker
+                    )
+                    ticker_events = session.exec(stmt).all()
+                    for te in ticker_events:
+                        te.sector = profile.sector
+                        te.industry = profile.industry
+                        te.market_cap = profile.market_cap
+                        session.add(te)
+            session.commit()
+            
+        logger.info(f"Successfully synced earnings calendar: {len(all_events)} events")
+        return {"status": "SUCCESS", "events_synced": len(all_events)}
+    except Exception as e:
+        logger.error(f"Failed to sync earnings calendar: {e}", exc_info=True)
+        return {"status": "FAILURE", "error": str(e)}
+    finally:
+        source.disconnect()
+
+
+@celery_app.task(bind=True, name="api.tasks.sync_ticker_history_task",
+                 autoretry_for=(RateLimitError,), retry_backoff=True,
+                 retry_backoff_max=600, max_retries=5)
+def sync_ticker_history_task(self, ticker: str):
+    """
+    Celery task wrapper around repository sync.
+    """
+    from database.earnings_repo import sync_ticker_history
+    from data.earningsapi_source import EarningsAPIDataSource
+    from config.settings import load_config
+    src = EarningsAPIDataSource(load_config().earningsapi)
+    src.connect()
+    try:
+        with Session(engine) as session:
+            return sync_ticker_history(session, ticker.upper(), src)
+    finally:
+        src.disconnect()
+
+sync_earnings_calendar_task.override_options = {
+    'autoretry_for': (RateLimitError,),
+    'retry_backoff': True,
+    'retry_backoff_max': 600,
+    'max_retries': 5
+}
+
+sync_ticker_history_task.override_options = {
+    'autoretry_for': (RateLimitError,),
+    'retry_backoff': True,
+    'retry_backoff_max': 600,
+    'max_retries': 5
+}

@@ -1,7 +1,7 @@
 "use client";
 
 const sources = [
-    "Bloomberg", "Alpha Vantage", "SEC Edgar", "News APIs", "Yahoo Finance"
+    "FinViz", "Alpha Vantage", "SEC Edgar", "News APIs", "Yahoo Finance"
 ];
 
 export default function DataSources() {

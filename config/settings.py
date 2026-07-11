@@ -36,10 +36,10 @@ class BloombergConfig:
 class AgentConfig:
     """Agent configuration for LLMs."""
     provider: str = "gemini"  # or "anthropic", "openai"
-    model_name: str = "gemini-2.0-flash"
+    model_name: str = "gemini-flash-latest"
     api_key: Optional[str] = None
     temperature: float = 0.3
-    max_tokens: int = 2048
+    max_tokens: int = 8192
     use_local: bool = False
     use_react: bool = False           # when True, analyze() delegates to _react_analyze()
     react_max_turns: int = 6          # maximum tool-call turns per ReAct loop
@@ -69,6 +69,7 @@ class PipelineConfig:
     yahoo: DataSourceConfig = field(default_factory=lambda: DataSourceConfig(rate_limit_calls=2000))
     newsapi: DataSourceConfig = field(default_factory=DataSourceConfig)
     alphavantage: DataSourceConfig = field(default_factory=DataSourceConfig)
+    earningsapi: DataSourceConfig = field(default_factory=DataSourceConfig)
     sec: DataSourceConfig = field(default_factory=lambda: DataSourceConfig(enabled=False))
     
     # Bloomberg is legacy or optional now
@@ -82,11 +83,14 @@ class PipelineConfig:
     
     # Output settings
     output_dir: Path = field(default_factory=lambda: Path("./output"))
+    reports_dir: Path = field(default_factory=lambda: Path("./reports"))
+    save_report: bool = True
     
     # News settings
     news_lookback_days: int = 30
     max_news_articles: int = 50
     redis_url: str = "redis://localhost:6379/0"
+
 
 
 @dataclass
@@ -100,6 +104,7 @@ class CompanyData:
     
     # Earnings info
     report_date: date
+    company_description: Optional[str] = None
     report_time: ReportTime = ReportTime.UNKNOWN
     fiscal_quarter: str = ""
     fiscal_year: int = 0
@@ -123,6 +128,14 @@ class CompanyData:
     short_interest: Optional[float] = None
     estimate_revisions: List[Dict[str, Any]] = field(default_factory=list)
     options_features: Optional[Dict[str, Any]] = None
+    analyst_recommendations: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Enrichment fields
+    enriched_history: List[Dict[str, Any]] = field(default_factory=list)
+    reaction_summary: Optional[Dict[str, Any]] = None
+    implied_move_pct: Optional[float] = None
+    market_open: Optional[bool] = None
+    live_options: Optional[Dict[str, Any]] = None
 
     # SEC XBRL company facts (keyed by metric name; values may be dicts or raw scalars)
     company_facts: Optional[Dict[str, Any]] = None
@@ -158,6 +171,7 @@ class EarningsPrediction:
     expected_price_move: str = ""
     move_vs_implied: str = ""
     guidance_expectation: str = ""
+    likely_guidance: str = ""
 
     # Reasoning
     reasoning_summary: str = ""
@@ -170,6 +184,10 @@ class EarningsPrediction:
 
     # Rebuttal cross-examination transcript (populated when enable_rebuttals=True)
     rebuttal_summary: Optional[str] = None
+    options_features: Optional[Dict[str, Any]] = None
+    report_time: str = "UNKNOWN"
+    company_description: Optional[str] = None
+    sector: Optional[str] = None
 
 
 def load_config() -> PipelineConfig:
@@ -202,9 +220,15 @@ def load_config() -> PipelineConfig:
             api_key=os.getenv("ALPHAVANTAGE_API_KEY"),
             enabled=os.getenv("ALPHAVANTAGE_API_KEY") is not None
         ),
+        earningsapi=DataSourceConfig(
+            api_key=os.getenv("EARNINGSAPI_API_KEY"),
+            enabled=os.getenv("EARNINGSAPI_API_KEY") is not None,
+            rate_limit_calls=60,
+            rate_limit_period=60.0,
+        ),
         agent=AgentConfig(
             provider=provider,
-            model_name=os.getenv("LLM_MODEL_NAME") or "gemini-2.5-flash",
+            model_name=os.getenv("LLM_MODEL_NAME") or "gemini-flash-latest",
             api_key=agent_api_key,
             use_react=os.getenv("USE_REACT", "false").lower() in ("1", "true", "yes"),
             react_max_turns=int(os.getenv("USE_REACT_MAX_TURNS", "6")),

@@ -84,13 +84,13 @@ test:
 
 smoke:
 	@echo "── Phase 1 ────────────────────────────────────────────────"
-	.venv/Scripts/python smoke_test_phase1.py
+	.venv/Scripts/python tests/smoke_test_phase1.py
 	@echo "── Phase 2 ────────────────────────────────────────────────"
-	.venv/Scripts/python smoke_test_phase2.py
+	.venv/Scripts/python tests/smoke_test_phase2.py
 	@echo "── Combined ───────────────────────────────────────────────"
-	.venv/Scripts/python smoke_test_combined.py
+	.venv/Scripts/python tests/smoke_test_combined.py
 	@echo "── Phase 4 ────────────────────────────────────────────────"
-	.venv/Scripts/python smoke_test_phase4.py
+	.venv/Scripts/python tests/smoke_test_phase4.py
 
 # ─── Ops ─────────────────────────────────────────────────────────────────────
 

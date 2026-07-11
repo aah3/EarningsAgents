@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import date, datetime
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
@@ -52,6 +53,104 @@ except ImportError:
 
 
 # ============================================================================
+# UTILITIES
+# ============================================================================
+
+def clean_json_response(response: str) -> str:
+    """Extract and sanitize JSON from response string, with robust error correction."""
+    if not response:
+        return ""
+    s = response.strip()
+    # Strip markdown code blocks if present
+    if "```" in s:
+        import re
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", s, re.DOTALL)
+        if match:
+            s = match.group(1).strip()
+            
+    # Locate outermost braces if start/end are not braces
+    if not (s.startswith("{") and s.endswith("}")):
+        first_brace = s.find("{")
+        last_brace = s.rfind("}")
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            s = s[first_brace:last_brace + 1].strip()
+
+    # Try loading JSON. If it works, return as is.
+    try:
+        import json
+        json.loads(s)
+        return s
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt repairs
+    import re
+    
+    # 1. Remove trailing commas in objects and arrays
+    s = re.sub(r',\s*\}', '}', s)
+    s = re.sub(r',\s*\]', ']', s)
+    
+    # 2. Escape unescaped control characters and fix nested double quotes inside string values.
+    in_string = False
+    escape = False
+    repaired_chars = []
+    i = 0
+    n = len(s)
+    while i < n:
+        char = s[i]
+        if escape:
+            repaired_chars.append(char)
+            escape = False
+            i += 1
+            continue
+        if char == '\\':
+            repaired_chars.append(char)
+            escape = True
+            i += 1
+            continue
+        if char == '"':
+            is_closing_or_opening = True
+            if in_string:
+                # Look ahead for optional whitespace then structural chars
+                j = i + 1
+                while j < n and s[j].isspace():
+                    j += 1
+                if j < n and s[j] not in (',', '}', ']', ':'):
+                    is_closing_or_opening = False
+            else:
+                # Look behind for structural chars
+                j = i - 1
+                while j >= 0 and s[j].isspace():
+                    j -= 1
+                if j >= 0 and s[j] not in ('{', '[', ':', ','):
+                    is_closing_or_opening = False
+            
+            if is_closing_or_opening:
+                in_string = not in_string
+                repaired_chars.append(char)
+            else:
+                repaired_chars.append('\\"')
+            i += 1
+            continue
+            
+        if in_string:
+            if char == '\n':
+                repaired_chars.append('\\n')
+            elif char == '\t':
+                repaired_chars.append('\\t')
+            elif char == '\r':
+                repaired_chars.append('\\r')
+            else:
+                repaired_chars.append(char)
+        else:
+            repaired_chars.append(char)
+        i += 1
+        
+    s = "".join(repaired_chars)
+    return s
+
+
+# ============================================================================
 # AGENT RESPONSE STRUCTURE
 # ============================================================================
 
@@ -67,6 +166,7 @@ class AgentResponse:
     bull_factors: List[str]
     bear_factors: List[str]
     key_signals: Dict[str, Any]
+    likely_guidance: str = ""
     raw_response: str = ""
 
 
@@ -78,6 +178,7 @@ AGENT_RESPONSE_SCHEMA = {
         "expected_price_move": {"type": "string"},
         "move_vs_implied": {"type": "string"},
         "guidance_expectation": {"type": "string"},
+        "likely_guidance": {"type": "string"},
         "reasoning": {"type": "string"},
         "bull_factors": {"type": "array", "items": {"type": "string"}},
         "bear_factors": {"type": "array", "items": {"type": "string"}},
@@ -185,6 +286,29 @@ Then, output your final decision in the following exact JSON format, enclosed in
 QUANT_PROMPT = """You are a QUANTITATIVE analyst focused on statistical patterns and numerical signals.
 
 YOUR MISSION: Provide objective, data-driven prediction based on quantitative factors only.
+When a "Post-Earnings Reaction Pattern" is provided, compare the historical average
+ABSOLUTE next-day move (realized) against the current implied move (straddle):
+- If realized avg abs move > implied move, the options market is UNDER-pricing the event
+  → set "move_vs_implied": "exceeds implied move".
+- If realized avg abs move <= implied move → "inside implied move".
+Ground "expected_price_move" in this realized distribution (avg, range, and the beat/miss
+split), not a generic guess. Note any pattern where beats and misses move asymmetrically.
+
+SAMPLE DEPTH — weight the realized reaction distribution by its quarter count (n) / sample depth:
+- high (n>=8): let the realized next-day distribution drive expected_price_move and the
+  move_vs_implied call; state high confidence.
+- moderate (n 4-7): use realized as primary, but hedge.
+- low (n<4) or none: defer to the implied move and lower your confidence explicitly.
+
+MARKET STATE — option signals are labeled LIVE or last-close:
+- LIVE (market OPEN): treat implied move, put/call, IV and confidence as current and
+  actionable; give the realized-vs-implied comparison full weight.
+- last close (market CLOSED): treat option data as stale; do not over-anchor on it and
+  note the reduced confidence in your reasoning.
+
+If the options block says DATA UNAVAILABLE, do not treat the implied move as 0% — treat it
+as unknown, skip the realized-vs-implied comparison, and base expected_price_move on the
+realized next-day reaction distribution alone (weighted by sample depth).
 
 ANALYSIS FOCUS:
 1. Historical beat/miss rate (last 4-8 quarters)
@@ -227,6 +351,7 @@ RULES:
 - If historical pattern is very consistent: Respect it
 - If User (Analyst) analysis provides verified unique insight, incorporate it into final reasoning
 - When rebuttals are provided, give extra weight to whichever side successfully refuted the other's weakest argument
+- Evaluate the company's business focus and product exposure (from the company description) in light of current macroeconomic trends, news headlines, and geopolitical events (e.g., Middle East tensions affecting energy prices, inflation pressures, interest rate movements, supply chain friction). Determine if these macro forces present a short-term headwind or tailwind for this specific company's earnings.
 
 INSTRUCTIONS:
 First, provide a brief paragraph explaining your thoughts and reasoning (your "thinking process").
@@ -237,6 +362,7 @@ Then, output your final decision in the following exact JSON format, enclosed in
     "expected_price_move": "positive" | "negative" | "neutral",
     "move_vs_implied": "inside implied move" | "exceeds implied move",
     "guidance_expectation": "positive" | "negative" | "neutral",
+    "likely_guidance": "<specific details on what guidance ranges or outlook the company is likely to provide, including qualitative and quantitative expectations>",
     "reasoning": "<2-3 sentence final decision rationale>",
     "bull_factors": ["<accepted bull points>"],
     "bear_factors": ["<accepted bear points>"],
@@ -320,10 +446,75 @@ class BaseAgent:
         """Format company data into analysis prompt."""
         # Format historical earnings
         hist_str = ""
-        if company.historical_eps:
+        if company.enriched_history:
+            for h in company.enriched_history[:8]:
+                eps_beat = h.get("eps_beat")
+                if eps_beat is None:
+                    actual = h.get("eps_actual")
+                    estimate = h.get("eps_estimate")
+                    eps_beat = (actual > estimate) if (actual is not None and estimate is not None) else False
+                eps_dir = "BEAT" if eps_beat else "MISS"
+                
+                rev_beat = h.get("revenue_beat")
+                if rev_beat is None:
+                    actual = h.get("revenue_actual")
+                    estimate = h.get("revenue_estimate")
+                    rev_beat = (actual > estimate) if (actual is not None and estimate is not None) else False
+                rev_dir = "BEAT" if rev_beat else "MISS"
+                
+                def _pct(v): return f"{v:+.1f}%" if v is not None else "N/A"
+                
+                prov = h.get("provenance") or {}
+                eps_tag = " (computed)" if prov.get("eps_surprise_pct") == "computed" else ""
+                
+                eps_surp = h.get("eps_surprise_pct")
+                if eps_surp is None:
+                    actual = h.get("eps_actual")
+                    estimate = h.get("eps_estimate")
+                    if actual is not None and estimate is not None:
+                        diff = actual - estimate
+                        eps_surp_str = f"${diff:+.2f} (low base){eps_tag}"
+                    else:
+                        eps_surp_str = f"N/A{eps_tag}"
+                else:
+                    eps_surp_str = f"{max(-100.0, min(100.0, float(eps_surp))):+.1f}%{eps_tag}"
+                    
+                rev_tag = " (computed)" if prov.get("revenue_surprise_pct") == "computed" else ""
+                rev_surp = h.get("revenue_surprise_pct")
+                if rev_surp is None:
+                    rev_surp_str = f"N/A{rev_tag}"
+                else:
+                    rev_surp_str = f"{max(-100.0, min(100.0, float(rev_surp))):+.1f}%{rev_tag}"
+                
+                def _yoy_pct(val, field_name):
+                    if val is None:
+                        return "N/A"
+                    tag = " (computed)" if prov.get(field_name) == "computed" else ""
+                    return f"{val:+.1f}%{tag}"
+                
+                hist_str += (
+                    f"  - {h.get('report_date')}: "
+                    f"EPS {eps_dir} {eps_surp_str} (YoY {_yoy_pct(h.get('eps_yoy'), 'eps_yoy')}) | "
+                    f"Rev {rev_dir} {rev_surp_str} (YoY {_yoy_pct(h.get('revenue_yoy'), 'revenue_yoy')}) | "
+                    f"Next-day move {_pct(h.get('reaction_1d_pct'))}\n"
+                )
+        elif company.historical_eps:
             for h in company.historical_eps[:4]:
-                beat = "BEAT" if h.get("surprise_pct", 0) > 0 else "MISS"
-                hist_str += f"  - {h.get('date')}: {beat} by {h.get('surprise_pct', 0):.1f}%\n"
+                actual_eps = h.get("actual_eps")
+                estimate_eps = h.get("estimate_eps")
+                surprise_pct = h.get("surprise_pct")
+                date_val = h.get("date")
+                beat = "BEAT" if (surprise_pct or 0) > 0 or ((actual_eps or 0) > (estimate_eps or 0)) else "MISS"
+                
+                if surprise_pct is None:
+                    if actual_eps is not None and estimate_eps is not None:
+                        diff = actual_eps - estimate_eps
+                        surp_str = f"${diff:+.2f} (low base)"
+                    else:
+                        surp_str = "N/A"
+                else:
+                    surp_str = f"{max(-100.0, min(100.0, float(surprise_pct))):+.1f}%"
+                hist_str += f"  - {date_val}: {beat} by {surp_str}\n"
         
         # Format estimate revisions
         rev_str = ""
@@ -398,23 +589,58 @@ class BaseAgent:
                 suffix = f" (as of {period} via {form})" if period else ""
                 facts_str += f"  - {fact_name}: {val_fmt}{suffix}\n"
         
+        reaction_str = ""
+        rs = company.reaction_summary
+        if rs:
+            reaction_str += f"  - Avg next-day move: {rs['avg_1d_pct']:+.1f}% (abs {rs['avg_abs_1d_pct']:.1f}%), σ {rs['std_1d_pct']:.1f}%\n"
+            reaction_str += f"  - Range over {rs['n']} quarters: {rs['min_1d_pct']:+.1f}% to {rs['max_1d_pct']:+.1f}%\n"
+            reaction_str += f"  - Sample depth: {rs.get('sample_depth', 'n/a')} (n={rs.get('n')})\n"
+            if rs.get("beat_move_avg") is not None:
+                reaction_str += f"  - Avg move when EPS beat: {rs['beat_move_avg']:+.1f}%\n"
+            if rs.get("miss_move_avg") is not None:
+                reaction_str += f"  - Avg move when EPS missed: {rs['miss_move_avg']:+.1f}%\n"
+        implied_str = (f"  - Current implied move (straddle): {company.implied_move_pct*100:.1f}%\n"
+                       if company.implied_move_pct is not None else "")
+        
+        state = "market OPEN" if company.market_open else "market CLOSED"
+        if company.live_options:
+            options_header = f"### Options Market Signals (LIVE — {state})"
+            
+            def _p(v, pct=False): 
+                return ("N/A" if v is None else (f"{v*100:.1f}%" if pct else f"{v:.2f}"))
+            
+            options_body = ""
+            options_body += f"  - Implied move (straddle): {_p(company.live_options.get('implied_move_pct'), pct=True)}\n"
+            options_body += f"  - Put/Call ratio: {_p(company.live_options.get('put_call_ratio'))} | Avg IV: {_p(company.live_options.get('avg_iv'), pct=True)}\n"
+            options_body += f"  - Signal confidence: {_p(company.live_options.get('confidence_score'))}/10 | DTE: {company.live_options.get('days_to_expiry')}\n"
+        else:
+            options_header = f"### Options Market Signals ({state} — DATA UNAVAILABLE)"
+            options_body = ("  Options chain unavailable this fetch. Do NOT infer an implied move of 0%; "
+                            "treat implied move as unknown and rely on the realized reaction distribution.\n")
+        
         prompt = f"""
 ## Company Analysis Request
 
 **Company:** {company.company_name} ({company.ticker})
 **Sector:** {company.sector} | **Industry:** {company.industry}
+**Company Description:** {company.company_description or 'No description available.'}
 **Market Cap:** ${mc_val:.1f}B
 **Report Date:** {company.report_date}
 
 ### Consensus Estimates
 - EPS Estimate: ${company.consensus_eps:.2f}
-- Revenue Estimate: ${company.consensus_revenue/1e9 if company.consensus_revenue else 0:.1f}B
+- Revenue Estimate: {f"${company.consensus_revenue/1e9:.2f}B" if company.consensus_revenue else "N/A"}
 - Number of Analysts: {company.num_analysts}
 
-### Historical Earnings (Last 4 Quarters)
+### Historical Earnings (EPS + Revenue + Reaction)
+(computed) = derived locally, not reported by the provider
 {hist_str if hist_str else "  No historical data available"}
 - Beat Rate: {f"{company.beat_rate_4q:.0%}" if company.beat_rate_4q is not None else "N/A"}
-- Avg Surprise: {f"{company.avg_surprise_4q:.1f}%" if company.avg_surprise_4q is not None else "N/A"}
+- Median Surprise (4Q): {f"{company.avg_surprise_4q:.1f}%" if company.avg_surprise_4q is not None else "N/A"}
+
+### Post-Earnings Reaction Pattern (realized)
+{reaction_str if reaction_str else "  No reaction history available"}
+{implied_str}
 
 ### Recent Estimate Revisions
 {rev_str if rev_str else "  No recent revisions"}
@@ -425,8 +651,8 @@ class BaseAgent:
 - 21-Day Change: {f"{company.price_change_21d:.1%}" if company.price_change_21d is not None else "N/A"}
 - Short Interest: {f"{company.short_interest:.1%}" if company.short_interest is not None else "N/A"}
 
-### Options Market Signals
-{options_str if options_str else "  No options data available"}
+{options_header}
+{options_body}
 
 ### Recent News Headlines
 {news_str if news_str else "  No recent news"}
@@ -627,7 +853,7 @@ Stop calling tools once you have enough information to form a confident predicti
 
             # Parse the response — must be valid JSON
             try:
-                parsed = json.loads(response)
+                parsed = json.loads(clean_json_response(response))
             except json.JSONDecodeError as exc:
                 raise AgentResponseError(
                     agent=self.__class__.__name__,
@@ -757,7 +983,7 @@ Stop calling tools once you have enough information to form a confident predicti
     def _parse_response(self, response: str) -> AgentResponse:
         """Parse JSON response from model directly into typed AgentResponse."""
         try:
-            data = json.loads(response)
+            data = json.loads(clean_json_response(response))
 
             # --- 1. Validate required top-level keys ---
             required_keys = AGENT_RESPONSE_SCHEMA["required"]
@@ -813,12 +1039,16 @@ Stop calling tools once you have enough information to form a confident predicti
                 bull_factors=data.get("bull_factors", []),
                 bear_factors=data.get("bear_factors", []),
                 key_signals=data.get("key_signals", {}),
+                likely_guidance=data.get("likely_guidance", ""),
                 raw_response=response,
             )
         except AgentResponseError:
             raise
         except Exception as e:
-            raise AgentResponseError(agent=self.__class__.__name__, cause=e)
+            raise AgentResponseError(
+                agent=self.__class__.__name__,
+                cause=Exception(f"{e}. Raw response (first 300 chars): {response[:300]!r}")
+            )
 
     def rebuttal_analyze(
         self,
@@ -926,6 +1156,7 @@ class ConsensusAgent(BaseAgent):
         status_callback=None,
         bull_rebuttal: Optional[AgentResponse] = None,
         bear_rebuttal: Optional[AgentResponse] = None,
+        news: Optional[List[NewsArticle]] = None,
     ) -> AgentResponse:
         """Synthesize agent responses (and optional rebuttals) into a final prediction."""
         successful_agents = []
@@ -979,11 +1210,23 @@ class ConsensusAgent(BaseAgent):
                 f"\n### ANALYST (USER PROVIDED) ANALYSIS\n- Analysis: {user_analysis}\n"
             )
 
+        company_context = (
+            f"Company: {company.company_name} ({company.ticker})\n"
+            f"Sector: {company.sector} | Industry: {company.industry}\n"
+            f"Business Summary: {company.company_description or 'No description available.'}\n"
+        )
+        news_headlines = ""
+        if news:
+            news_headlines = "Recent News Headlines:\n" + "\n".join([f"- {n.headline}" for n in news[:8]]) + "\n"
+
         synthesis_prompt = (
-            f"## Synthesis Request for {company.ticker}\n"
+            f"## Consensus Prediction Request for {company.ticker}\n"
+            f"### Company Profile\n{company_context}\n"
+            f"### Geopolitical & Macro News Context\n{news_headlines}\n"
+            f"### Agent Debates\n"
             f"{bull_section}{bear_section}{quant_section}"
             f"{rebuttal_section}{user_analysis_section}"
-            f"\n---\nBased on this {'multi-round debate' if rebuttal_section else 'debate'}, "
+            f"\n---\nBased on the company profile, geopolitical/macro news context, and the agent debates/rebuttals, "
             "provide your FINAL consensus prediction. Weigh the evidence and make a decisive call."
         )
 
@@ -1039,7 +1282,7 @@ class ThreeAgentSystem:
     
     def __init__(self, config: AgentConfig, enable_rebuttals: bool = False):
         self.config = config
-        self.enable_rebuttals = enable_rebuttals
+        self.enable_rebuttals = enable_rebuttals or getattr(config, "enable_rebuttals", False)
         self.logger = logging.getLogger(self.__class__.__name__)
         
         self.bull_agent = BullAgent(config)
@@ -1067,6 +1310,50 @@ class ThreeAgentSystem:
         user_analysis: Optional[str] = None
     ) -> EarningsPrediction:
         """Run full three-agent prediction with optional rebuttal pass.
+        This wrapper runs the async implementation on the event loop, ensuring
+        compatibility with running event loops (FastAPI) and Celery worker threads.
+        """
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            from concurrent.futures import Future
+            import threading
+            
+            future = Future()
+            def run_in_thread():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result = new_loop.run_until_complete(
+                        self._predict_async(company, news, prediction_date, task_id, user_analysis)
+                    )
+                    future.set_result(result)
+                except Exception as e:
+                    future.set_exception(e)
+                finally:
+                    new_loop.close()
+                    
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            return future.result()
+        else:
+            return asyncio.run(
+                self._predict_async(company, news, prediction_date, task_id, user_analysis)
+            )
+
+    async def _predict_async(
+        self,
+        company: CompanyData,
+        news: List[NewsArticle],
+        prediction_date: Optional[date] = None,
+        task_id: Optional[str] = None,
+        user_analysis: Optional[str] = None
+    ) -> EarningsPrediction:
+        """Run full three-agent prediction asynchronously.
 
         Execution flow
         --------------
@@ -1086,13 +1373,12 @@ class ThreeAgentSystem:
         ReAct tool-loop mode composes with the rebuttal pass — they are
         independent flags that can both be enabled simultaneously.
         """
-        from concurrent.futures import ThreadPoolExecutor
-
         prediction_date = prediction_date or date.today()
 
         import redis
         import json
         import os
+        import asyncio
         r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=5)
 
         def publish(msg: str, agent: str = "System", msg_type: str = "status"):
@@ -1165,7 +1451,7 @@ class ThreeAgentSystem:
                     messages.append({"role": "assistant", "content": response})
 
                     try:
-                        parsed = json.loads(response)
+                        parsed = json.loads(clean_json_response(response))
                     except json.JSONDecodeError as exc:
                         raise AgentResponseError(agent=agent.__class__.__name__, cause=exc)
 
@@ -1231,31 +1517,31 @@ class ThreeAgentSystem:
         if user_analysis:
             publish(f"User Analyst provided an analysis: {user_analysis[:50]}...", "Analyst", "status")
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            future_bull  = executor.submit(run_agent, self.bull_agent,  "Bull")
-            future_bear  = executor.submit(run_agent, self.bear_agent,  "Bear")
-            future_quant = executor.submit(run_agent, self.quant_agent, "Quant")
+        loop = asyncio.get_running_loop()
 
-            bull_response = None
-            try:
-                bull_response = future_bull.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Bull agent error: {e}")
-                publish(f"Bull agent failed: {e.cause}", "System", "status")
+        # Run agent executions concurrently in threadpool executors via asyncio
+        tasks = [
+            loop.run_in_executor(None, lambda: run_agent(self.bull_agent, "Bull")),
+            loop.run_in_executor(None, lambda: run_agent(self.bear_agent, "Bear")),
+            loop.run_in_executor(None, lambda: run_agent(self.quant_agent, "Quant"))
+        ]
 
-            bear_response = None
-            try:
-                bear_response = future_bear.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Bear agent error: {e}")
-                publish(f"Bear agent failed: {e.cause}", "System", "status")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            quant_response = None
-            try:
-                quant_response = future_quant.result()
-            except AgentResponseError as e:
-                self.logger.error(f"Quant agent error: {e}")
-                publish(f"Quant agent failed: {e.cause}", "System", "status")
+        bull_response = results[0] if not isinstance(results[0], Exception) else None
+        if isinstance(results[0], Exception):
+            self.logger.error(f"Bull agent error: {results[0]}")
+            publish(f"Bull agent failed: {getattr(results[0], 'cause', results[0])}", "System", "status")
+
+        bear_response = results[1] if not isinstance(results[1], Exception) else None
+        if isinstance(results[1], Exception):
+            self.logger.error(f"Bear agent error: {results[1]}")
+            publish(f"Bear agent failed: {getattr(results[1], 'cause', results[1])}", "System", "status")
+
+        quant_response = results[2] if not isinstance(results[2], Exception) else None
+        if isinstance(results[2], Exception):
+            self.logger.error(f"Quant agent error: {results[2]}")
+            publish(f"Quant agent failed: {getattr(results[2], 'cause', results[2])}", "System", "status")
 
         # ================================================================
         # PASS 2 — Rebuttal cross-examination (optional)
@@ -1265,32 +1551,35 @@ class ThreeAgentSystem:
 
         if do_rebuttals and bull_response and bear_response:
             publish("Pass 2: Cross-examination rebuttal round starting...", "System", "status")
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                future_bull_rebuttal = executor.submit(
-                    run_rebuttal,
-                    self.bull_agent, "Bull-Rebuttal",
-                    bear_response, BULL_REBUTTAL_PROMPT,
-                )
-                time.sleep(1.2)
-                future_bear_rebuttal = executor.submit(
-                    run_rebuttal,
-                    self.bear_agent, "Bear-Rebuttal",
-                    bull_response, BEAR_REBUTTAL_PROMPT,
+            
+            async def run_rebuttal_delayed(agent, agent_name, opposing, rebuttal_prompt, delay):
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                return await loop.run_in_executor(
+                    None,
+                    lambda: run_rebuttal(agent, agent_name, opposing, rebuttal_prompt)
                 )
 
-                try:
-                    bull_rebuttal = future_bull_rebuttal.result()
-                    publish("Bull rebuttal complete.", "Bull-Rebuttal", "status")
-                except AgentResponseError as e:
-                    self.logger.error(f"Bull rebuttal error: {e}")
-                    publish(f"Bull rebuttal failed: {e.cause}", "System", "status")
+            rebuttal_tasks = [
+                run_rebuttal_delayed(self.bull_agent, "Bull-Rebuttal", bear_response, BULL_REBUTTAL_PROMPT, 0.0),
+                run_rebuttal_delayed(self.bear_agent, "Bear-Rebuttal", bull_response, BEAR_REBUTTAL_PROMPT, 1.2)
+            ]
 
-                try:
-                    bear_rebuttal = future_bear_rebuttal.result()
-                    publish("Bear rebuttal complete.", "Bear-Rebuttal", "status")
-                except AgentResponseError as e:
-                    self.logger.error(f"Bear rebuttal error: {e}")
-                    publish(f"Bear rebuttal failed: {e.cause}", "System", "status")
+            rebuttal_results = await asyncio.gather(*rebuttal_tasks, return_exceptions=True)
+
+            bull_rebuttal = rebuttal_results[0] if not isinstance(rebuttal_results[0], Exception) else None
+            if isinstance(rebuttal_results[0], Exception):
+                self.logger.error(f"Bull rebuttal error: {rebuttal_results[0]}")
+                publish(f"Bull rebuttal failed: {getattr(rebuttal_results[0], 'cause', rebuttal_results[0])}", "System", "status")
+            else:
+                publish("Bull rebuttal complete.", "Bull-Rebuttal", "status")
+
+            bear_rebuttal = rebuttal_results[1] if not isinstance(rebuttal_results[1], Exception) else None
+            if isinstance(rebuttal_results[1], Exception):
+                self.logger.error(f"Bear rebuttal error: {rebuttal_results[1]}")
+                publish(f"Bear rebuttal failed: {getattr(rebuttal_results[1], 'cause', rebuttal_results[1])}", "System", "status")
+            else:
+                publish("Bear rebuttal complete.", "Bear-Rebuttal", "status")
         elif do_rebuttals:
             publish(
                 "Rebuttal pass skipped: both Bull and Bear required for cross-examination.",
@@ -1303,20 +1592,24 @@ class ThreeAgentSystem:
         # ================================================================
         publish("Consensus Agent synthesizing debate for final prediction...", "System", "status")
         try:
-            consensus_response = self.consensus_agent.synthesize(
-                company,
-                bull_response,
-                bear_response,
-                quant_response,
-                user_analysis,
-                get_stream_callback("Consensus"),
-                get_status_callback("Consensus"),
-                bull_rebuttal=bull_rebuttal,
-                bear_rebuttal=bear_rebuttal,
+            consensus_response = await loop.run_in_executor(
+                None,
+                lambda: self.consensus_agent.synthesize(
+                    company,
+                    bull_response=bull_response,
+                    bear_response=bear_response,
+                    quant_response=quant_response,
+                    user_analysis=user_analysis,
+                    stream_callback=get_stream_callback("Consensus"),
+                    status_callback=get_status_callback("Consensus"),
+                    bull_rebuttal=bull_rebuttal,
+                    bear_rebuttal=bear_rebuttal,
+                    news=news,
+                )
             )
-        except AgentResponseError as e:
+        except Exception as e:
             self.logger.error(f"Consensus agent error: {e}")
-            publish(f"Consensus agent failed: {e.cause}", "System", "status")
+            publish(f"Consensus agent failed: {getattr(e, 'cause', e)}", "System", "status")
             raise e
         publish(f"Consensus Reached: {consensus_response.direction.value.upper()}", "System", "status")
 
@@ -1357,16 +1650,31 @@ class ThreeAgentSystem:
                     f"{bear_rebuttal.confidence:.0f}%):  {bear_rebuttal.reasoning}\n"
                 )
 
+        # Map company.report_time to a short code: BMO | AMC | UNKNOWN
+        rt_val = company.report_time
+        if hasattr(rt_val, "value"):
+            rt_val = rt_val.value
+        rt_str = str(rt_val).lower().strip()
+        if "open" in rt_str or "bmo" in rt_str:
+            report_time_short = "BMO"
+        elif "close" in rt_str or "amc" in rt_str:
+            report_time_short = "AMC"
+        else:
+            report_time_short = "UNKNOWN"
+
         return EarningsPrediction(
             ticker=company.ticker,
             company_name=company.company_name,
+            company_description=company.company_description,
+            sector=company.sector,
             report_date=company.report_date,
             prediction_date=prediction_date,
             direction=consensus_response.direction,
-            confidence=consensus_response.confidence,
+            confidence=consensus_response.confidence / 100.0 if consensus_response.confidence > 1.0 else consensus_response.confidence,
             expected_price_move=consensus_response.expected_price_move,
             move_vs_implied=consensus_response.move_vs_implied,
             guidance_expectation=consensus_response.guidance_expectation,
+            likely_guidance=consensus_response.likely_guidance,
             reasoning_summary=consensus_response.reasoning,
             bull_factors=bull_response.bull_factors if bull_response else [],
             bear_factors=bear_response.bear_factors if bear_response else [],
@@ -1379,6 +1687,8 @@ class ThreeAgentSystem:
             },
             debate_summary=debate_summary,
             rebuttal_summary=rebuttal_summary,
+            options_features=company.options_features,
+            report_time=report_time_short,
         )
 
 
@@ -1438,7 +1748,7 @@ if __name__ == "__main__":
         print("\n" + "="*50)
         print(f"PREDICTION FOR {prediction.ticker}")
         print(f"Direction: {prediction.direction.value.upper()}")
-        print(f"Confidence: {prediction.confidence:.1f}%")
+        print(f"Confidence: {prediction.confidence * 100:.1f}%")
         print(f"Reasoning: {prediction.reasoning_summary[:200]}...")
         print("="*50 + "\n")
         

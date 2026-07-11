@@ -21,7 +21,7 @@ import logging
 from datetime import date, datetime
 from pathlib import Path
 
-from settings import PipelineConfig, AgentConfig, DataSourceConfig
+from settings import PipelineConfig, AgentConfig, DataSourceConfig, load_config
 from pipeline import EarningsPipeline
 
 
@@ -94,7 +94,7 @@ def cmd_single(args, pipeline: EarningsPipeline):
     print(f"{'='*60}")
     print(f"Company: {prediction.company_name}")
     print(f"Prediction: {prediction.direction.value.upper()}")
-    print(f"Confidence: {prediction.confidence:.0%}")
+    print(f"Confidence: {prediction.confidence * 100:.1f}%")
     print(f"\nReasoning: {prediction.reasoning_summary}")
     
     if prediction.agent_votes:
@@ -135,6 +135,12 @@ def main():
                        help='Output format')
     parser.add_argument('--output-dir', default='./output',
                        help='Output directory')
+    parser.add_argument('--reports-dir', default='./reports',
+                       help='Reports export directory')
+    parser.add_argument('--save-report', action='store_true', default=True,
+                       help='Generate and save report in MD and PDF')
+    parser.add_argument('--no-save-report', action='store_false', dest='save_report',
+                       help='Do not generate/save report')
     
     # Data source API keys
     parser.add_argument('--newsapi-key', help='NewsAPI.org API key')
@@ -166,26 +172,46 @@ def main():
     
     setup_logging(args.verbose)
     
-    # Build config
-    config = PipelineConfig(
-        benchmark=args.benchmark,
-        yahoo=DataSourceConfig(enabled=True, rate_limit_calls=2000),
-        newsapi=DataSourceConfig(
-            api_key=args.newsapi_key, 
-            enabled=args.newsapi_key is not None
-        ),
-        alphavantage=DataSourceConfig(
-            api_key=args.av_key, 
-            enabled=args.av_key is not None
-        ),
-        sec=DataSourceConfig(enabled=args.enable_sec),
-        agent=AgentConfig(
-            model_name=args.model,
-            use_local=args.local,
-        ),
-        enable_debate=True,
-        output_dir=Path(args.output_dir),
-    )
+    # Load base config from environment variables
+    config = load_config()
+    
+    # Apply command-line overrides if explicitly passed
+    import sys
+    import os
+    if any(arg.startswith('--model') for arg in sys.argv):
+        config.agent.model_name = args.model
+        # If model is overridden, make sure the API key and provider are set appropriately
+        provider = "gemini"
+        if "anthropic" in args.model.lower():
+            provider = "anthropic"
+        elif "gpt" in args.model.lower():
+            provider = "openai"
+        config.agent.provider = provider
+        
+        if provider == "gemini":
+            config.agent.api_key = os.getenv("GEMINI_API_KEY")
+        elif provider == "anthropic":
+            config.agent.api_key = os.getenv("ANTHROPIC_API_KEY")
+        elif provider == "openai":
+            config.agent.api_key = os.getenv("OPENAI_API_KEY")
+            
+    if any(arg.startswith('--newsapi-key') for arg in sys.argv):
+        config.newsapi.api_key = args.newsapi_key
+        config.newsapi.enabled = True
+    if any(arg.startswith('--av-key') for arg in sys.argv):
+        config.alphavantage.api_key = args.av_key
+        config.alphavantage.enabled = True
+    if '--local' in sys.argv:
+        config.agent.use_local = True
+    if '--enable-sec' in sys.argv:
+        config.sec.enabled = True
+    if any(arg.startswith('--benchmark') for arg in sys.argv):
+        config.benchmark = args.benchmark
+    if any(arg.startswith('--output-dir') for arg in sys.argv):
+        config.output_dir = Path(args.output_dir)
+    if any(arg.startswith('--reports-dir') for arg in sys.argv):
+        config.reports_dir = Path(args.reports_dir)
+    config.save_report = args.save_report
     
     # Create and run pipeline
     pipeline = EarningsPipeline(config)
