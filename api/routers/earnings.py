@@ -15,6 +15,7 @@ from database.db import get_session
 from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings
 from api.dependencies.auth import get_current_user
 from api.rate_limit import limiter, RATE_LIMIT_PREDICT, RATE_LIMIT_CHAT, RATE_LIMIT_BATCH
+from database.crypto import encrypt, decrypt
 
 router = APIRouter(
     prefix="/earnings",
@@ -109,24 +110,32 @@ def get_pipeline_for_user(session: Session, clerk_id: str) -> EarningsPipeline:
     if user_settings.enable_rebuttals is not None:
         config.agent.enable_rebuttals = user_settings.enable_rebuttals
         
-    # Apply API Key overrides
-    if config.agent.provider == "gemini" and user_settings.gemini_api_key:
-        config.agent.api_key = user_settings.gemini_api_key
-    elif config.agent.provider == "openai" and user_settings.openai_api_key:
-        config.agent.api_key = user_settings.openai_api_key
-    elif config.agent.provider == "anthropic" and user_settings.anthropic_api_key:
-        config.agent.api_key = user_settings.anthropic_api_key
-        
-    if user_settings.newsapi_api_key:
-        config.newsapi.api_key = user_settings.newsapi_api_key
+    # Apply API Key overrides - stored values are encrypted at rest, decrypt
+    # before handing them to the pipeline/agent config.
+    gemini_key = decrypt(user_settings.gemini_api_key)
+    openai_key = decrypt(user_settings.openai_api_key)
+    anthropic_key = decrypt(user_settings.anthropic_api_key)
+    newsapi_key = decrypt(user_settings.newsapi_api_key)
+    alphavantage_key = decrypt(user_settings.alphavantage_api_key)
+    earningsapi_key = decrypt(user_settings.earningsapi_api_key)
+
+    if config.agent.provider == "gemini" and gemini_key:
+        config.agent.api_key = gemini_key
+    elif config.agent.provider == "openai" and openai_key:
+        config.agent.api_key = openai_key
+    elif config.agent.provider == "anthropic" and anthropic_key:
+        config.agent.api_key = anthropic_key
+
+    if newsapi_key:
+        config.newsapi.api_key = newsapi_key
         config.newsapi.enabled = True
-    if user_settings.alphavantage_api_key:
-        config.alphavantage.api_key = user_settings.alphavantage_api_key
+    if alphavantage_key:
+        config.alphavantage.api_key = alphavantage_key
         config.alphavantage.enabled = True
-    if user_settings.earningsapi_api_key:
-        config.earningsapi.api_key = user_settings.earningsapi_api_key
+    if earningsapi_key:
+        config.earningsapi.api_key = earningsapi_key
         config.earningsapi.enabled = True
-        
+
     pipeline = EarningsPipeline(config)
     pipeline.initialize()
     return pipeline
@@ -172,13 +181,14 @@ async def get_user_settings(
         "use_react": user_settings.use_react,
         "react_max_turns": user_settings.react_max_turns,
         "enable_rebuttals": user_settings.enable_rebuttals,
-        # Mask keys
-        "gemini_api_key": mask_api_key(user_settings.gemini_api_key),
-        "openai_api_key": mask_api_key(user_settings.openai_api_key),
-        "anthropic_api_key": mask_api_key(user_settings.anthropic_api_key),
-        "newsapi_api_key": mask_api_key(user_settings.newsapi_api_key),
-        "alphavantage_api_key": mask_api_key(user_settings.alphavantage_api_key),
-        "earningsapi_api_key": mask_api_key(user_settings.earningsapi_api_key),
+        # Mask keys - decrypt first so the mask reflects the real key
+        # (e.g. "AIza...xyz9"), not a mask derived from the ciphertext blob.
+        "gemini_api_key": mask_api_key(decrypt(user_settings.gemini_api_key)),
+        "openai_api_key": mask_api_key(decrypt(user_settings.openai_api_key)),
+        "anthropic_api_key": mask_api_key(decrypt(user_settings.anthropic_api_key)),
+        "newsapi_api_key": mask_api_key(decrypt(user_settings.newsapi_api_key)),
+        "alphavantage_api_key": mask_api_key(decrypt(user_settings.alphavantage_api_key)),
+        "earningsapi_api_key": mask_api_key(decrypt(user_settings.earningsapi_api_key)),
     }
 
 
@@ -211,14 +221,16 @@ async def update_user_settings(
     if request.enable_rebuttals is not None:
         user_settings.enable_rebuttals = request.enable_rebuttals
         
-    # Helper to update key if not masked or unset
+    # Helper to update key if not masked or unset. Encrypts immediately
+    # before it's ever assigned to the model, so the plaintext key only
+    # exists in memory for this request and is never written to the DB.
     def update_key(db_field_name: str, new_value: Optional[str]):
         if new_value is None:
             return
         if new_value == "":
             setattr(user_settings, db_field_name, None)
         elif not is_masked(new_value):
-            setattr(user_settings, db_field_name, new_value)
+            setattr(user_settings, db_field_name, encrypt(new_value))
             
     update_key("gemini_api_key", request.gemini_api_key)
     update_key("openai_api_key", request.openai_api_key)

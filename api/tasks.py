@@ -14,6 +14,7 @@ from database.earnings_repo import _refresh_profile, sync_ticker_history
 from data.earningsapi_source import RateLimitError
 from database.db import Session, engine
 from database.models import User, Prediction, CompanyProfile, EarningsHistory, EarningsCalendarEvent, UserSettings
+from database.crypto import decrypt
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -99,23 +100,31 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
         if enable_rebuttals is not None:
             config.agent.enable_rebuttals = enable_rebuttals
 
-        # Apply keys
+        # Apply keys - stored values are encrypted at rest, decrypt before
+        # handing them to the pipeline/agent config.
         if user_settings:
-            if config.agent.provider == "gemini" and user_settings.gemini_api_key:
-                config.agent.api_key = user_settings.gemini_api_key
-            elif config.agent.provider == "openai" and user_settings.openai_api_key:
-                config.agent.api_key = user_settings.openai_api_key
-            elif config.agent.provider == "anthropic" and user_settings.anthropic_api_key:
-                config.agent.api_key = user_settings.anthropic_api_key
+            gemini_key = decrypt(user_settings.gemini_api_key)
+            openai_key = decrypt(user_settings.openai_api_key)
+            anthropic_key = decrypt(user_settings.anthropic_api_key)
+            newsapi_key = decrypt(user_settings.newsapi_api_key)
+            alphavantage_key = decrypt(user_settings.alphavantage_api_key)
+            earningsapi_key = decrypt(user_settings.earningsapi_api_key)
 
-            if user_settings.newsapi_api_key:
-                config.newsapi.api_key = user_settings.newsapi_api_key
+            if config.agent.provider == "gemini" and gemini_key:
+                config.agent.api_key = gemini_key
+            elif config.agent.provider == "openai" and openai_key:
+                config.agent.api_key = openai_key
+            elif config.agent.provider == "anthropic" and anthropic_key:
+                config.agent.api_key = anthropic_key
+
+            if newsapi_key:
+                config.newsapi.api_key = newsapi_key
                 config.newsapi.enabled = True
-            if user_settings.alphavantage_api_key:
-                config.alphavantage.api_key = user_settings.alphavantage_api_key
+            if alphavantage_key:
+                config.alphavantage.api_key = alphavantage_key
                 config.alphavantage.enabled = True
-            if user_settings.earningsapi_api_key:
-                config.earningsapi.api_key = user_settings.earningsapi_api_key
+            if earningsapi_key:
+                config.earningsapi.api_key = earningsapi_key
                 config.earningsapi.enabled = True
 
         pipeline = EarningsPipeline(config)
