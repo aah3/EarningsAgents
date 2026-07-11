@@ -20,7 +20,10 @@ def get_current_user(auth: HTTPAuthorizationCredentials = Security(security)):
     Returns the Clerk user_id if valid.
     """
     token = auth.credentials
-    if token.startswith("mock_") or token.startswith("test_"):
+    # Dev-only bypass: lets local scripts/tests call the API without a real
+    # Clerk JWT. Gated on ENV=dev so it can never fire in staging/production
+    # even if a caller sends a mock_/test_-prefixed bearer token.
+    if os.getenv("ENV") == "dev" and (token.startswith("mock_") or token.startswith("test_")):
         return token
     try:
         # Get the signing key from the JWT
