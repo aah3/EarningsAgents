@@ -42,7 +42,6 @@ Thumbs.db
 
 # Project Specific
 output/
-*.txt
 *.png
 *.csv
 *.json
@@ -54,6 +53,10 @@ output/
 !eslint.config.mjs
 !postcss.config.mjs
 Earnings_MultiAgent.docx
+last_prompt.txt
+testing_steps.txt
+final_test.txt
+test_output.txt
 
 # Specifically excluding versioned files if necessary
 data/data_aggregator_v0.py
