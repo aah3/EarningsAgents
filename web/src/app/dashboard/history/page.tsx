@@ -184,6 +184,8 @@ export default function HistoryPage() {
         confidence: Math.round(p.confidence * 100),
         actualEps:
           p.actual_eps !== undefined && p.actual_eps !== null ? p.actual_eps : null,
+        expectedEps:
+          p.expected_eps !== undefined && p.expected_eps !== null ? p.expected_eps : null,
         postEarningsMove:
           p.actual_price_move_pct !== undefined && p.actual_price_move_pct !== null
             ? p.actual_price_move_pct * 100
@@ -619,6 +621,15 @@ export default function HistoryPage() {
                       {renderSortIndicator("confidence")}
                     </button>
                   </th>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("expectedEps")}>
+                    <button
+                      onClick={() => handleSort("expectedEps")}
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                    >
+                      Expected EPS
+                      {renderSortIndicator("expectedEps")}
+                    </button>
+                  </th>
                   <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("actualEps")}>
                     <button
                       onClick={() => handleSort("actualEps")}
@@ -734,6 +745,15 @@ export default function HistoryPage() {
                           {row.confidence}%
                         </span>
                       </div>
+                    </td>
+
+                    {/* Expected EPS */}
+                    <td className="px-6 py-4 font-mono text-sm text-white/70">
+                      {row.expectedEps !== null ? (
+                        `$${row.expectedEps.toFixed(2)}`
+                      ) : (
+                        <span className="text-ink-dim/40">—</span>
+                      )}
                     </td>
 
                     {/* Actual EPS */}

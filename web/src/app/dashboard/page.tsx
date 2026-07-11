@@ -121,8 +121,8 @@ export default function DashboardPage() {
   }, [getToken]);
 
   const handleRunAnalysis = async () => {
-    if (!ticker || !reportDate) {
-      setError("Please provide both ticker and report date.");
+    if (!ticker) {
+      setError("Please provide a stock ticker.");
       return;
     }
 

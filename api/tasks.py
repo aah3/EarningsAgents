@@ -38,7 +38,9 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
     task_id = self.request.id
     logger.info(f"Starting background analysis for {ticker} (Task ID: {task_id})")
     
-    report_date = date.fromisoformat(report_date_str)
+    report_date = None
+    if report_date_str:
+        report_date = date.fromisoformat(report_date_str)
     
     # Check for user-specific settings overrides
     pipeline = None
@@ -121,6 +123,64 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
     if pipeline is None:
         logger.info(f"Using default pipeline configuration for user {clerk_id}.")
         pipeline = get_pipeline()
+
+    # Resolve next earnings date from earningsapi.com
+    expected_eps = None
+    resolved_report_timing = "UNKNOWN"
+    
+    try:
+        from data.earningsapi_source import EarningsAPIDataSource
+        src = EarningsAPIDataSource(pipeline.config.earningsapi)
+        src.connect()
+        try:
+            logger.info(f"Fetching earnings history for {ticker} from earningsapi.com")
+            earnings = src.get_company_earnings(ticker)
+            if earnings:
+                today = date.today()
+                upcoming = []
+                for event in earnings:
+                    event_date_str = event.get("date")
+                    if not event_date_str:
+                        continue
+                    try:
+                        event_date = date.fromisoformat(event_date_str)
+                    except ValueError:
+                        continue
+                    if event_date >= today:
+                        upcoming.append((event_date, event))
+                
+                next_event = None
+                if upcoming:
+                    upcoming.sort(key=lambda x: x[0])
+                    next_event = upcoming[0][1]
+                else:
+                    next_event = earnings[0]
+                
+                if next_event:
+                    next_date_str = next_event.get("date")
+                    logger.info(f"Resolved next earnings date for {ticker} as {next_date_str}")
+                    report_date = date.fromisoformat(next_date_str)
+                    report_date_str = next_date_str
+                    expected_eps = next_event.get("epsEstimate")
+                    time_str = next_event.get("time") or ""
+                    
+                    if "after" in time_str.lower():
+                        resolved_report_timing = "AMC"
+                    elif "before" in time_str.lower() or "pre" in time_str.lower():
+                        resolved_report_timing = "BMO"
+                    else:
+                        resolved_report_timing = "UNKNOWN"
+        finally:
+            src.disconnect()
+    except Exception as e:
+        logger.error(f"Failed to fetch next earnings date for {ticker} from earningsapi.com: {e}")
+        if report_date_str:
+            report_date = date.fromisoformat(report_date_str)
+        else:
+            raise ValueError(f"Could not resolve report date for {ticker} and none was provided.") from e
+
+    if report_date is None:
+        raise ValueError(f"Could not resolve report date for {ticker} and none was provided.")
     
     try:
         import redis
@@ -168,7 +228,7 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                 company_description=result.get("company_description"),
                 sector=result.get("sector"),
                 report_date=datetime.combine(report_date, datetime.min.time()),
-                report_timing=result.get("report_time", "UNKNOWN"),
+                report_timing=resolved_report_timing if resolved_report_timing != "UNKNOWN" else result.get("report_time", "UNKNOWN"),
                 direction=result.get("direction", "NEUTRAL").upper(),
                 confidence=result.get("confidence", 0.0),
                 expected_price_move=result.get("expected_price_move", ""),
@@ -182,6 +242,7 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                 rebuttal_summary=result.get("rebuttal_summary"),
                 agent_votes=result.get("agent_votes"),
                 options_features=result.get("options_features"),
+                expected_eps=expected_eps,
             )
             
             session.add(db_prediction)

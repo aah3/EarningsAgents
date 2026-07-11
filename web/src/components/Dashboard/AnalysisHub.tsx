@@ -27,7 +27,7 @@ export default function AnalysisHub({
   loading,
 }: AnalysisHubProps) {
   // Derive if debate launch is disabled
-  const isLaunchDisabled = loading || !ticker.trim() || !reportDate;
+  const isLaunchDisabled = loading || !ticker.trim();
 
   return (
     <div className="relative p-[22px_24px] rounded-[16px] border border-[#26334A] bg-panel shadow-[0_20px_60px_rgba(0,0,0,0.35)] overflow-hidden group">
@@ -65,7 +65,7 @@ export default function AnalysisHub({
         {/* Date Input */}
         <div className="lg:col-span-3 space-y-3">
           <label className="block text-[11px] font-mono font-bold uppercase tracking-widest text-ink-mute">
-            Report Date
+            Report Date (Optional)
           </label>
           <input
             type="date"

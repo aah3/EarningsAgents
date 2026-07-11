@@ -234,13 +234,13 @@ from api.tasks import analyze_ticker_task
 from celery.result import AsyncResult
 
 class PredictRequest(BaseModel):
-    report_date: date
+    report_date: Optional[date] = None
     user_analysis: Optional[str] = None
     enable_rebuttals: Optional[bool] = None
 
 class BatchPredictItem(BaseModel):
     ticker: str
-    report_date: date
+    report_date: Optional[date] = None
     user_analysis: Optional[str] = None
 
 class BatchPredictRequest(BaseModel):
@@ -278,7 +278,7 @@ async def predict_ticker(
             
             for p in existing_predictions:
                 # Check if we already ran it today for this report
-                if p.report_date.date() == request.report_date and p.prediction_date.date() == date.today():
+                if request.report_date is not None and p.report_date.date() == request.report_date and p.prediction_date.date() == date.today():
                     return {
                         "task_id": f"cached-{p.id}",
                         "status": "PENDING",
@@ -288,7 +288,7 @@ async def predict_ticker(
         # Dispatch background task
         task = analyze_ticker_task.delay(
             ticker.upper(), 
-            request.report_date.isoformat(), 
+            request.report_date.isoformat() if request.report_date else "", 
             clerk_id,
             request.user_analysis or "",
             request.enable_rebuttals

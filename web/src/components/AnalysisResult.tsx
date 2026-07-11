@@ -159,7 +159,19 @@ ${userText}`
 
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
+                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                    <span className="label-caps text-ink-dim mb-1">Expected EPS</span>
+                    <span className="text-lg font-display font-semibold text-ink font-data">
+                        {result.expected_eps !== undefined && result.expected_eps !== null ? `$${result.expected_eps.toFixed(2)}` : "—"}
+                    </span>
+                </div>
+                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                    <span className="label-caps text-ink-dim mb-1">Actual EPS</span>
+                    <span className="text-lg font-display font-semibold text-ink font-data">
+                        {result.actual_eps !== undefined && result.actual_eps !== null ? `$${result.actual_eps.toFixed(2)}` : "—"}
+                    </span>
+                </div>
                 <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Expected Price Move</span>
                     <span className="text-lg font-display font-semibold text-ink capitalize">{result.expected_price_move || "Pending"}</span>

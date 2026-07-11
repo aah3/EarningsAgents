@@ -23,6 +23,7 @@ export interface Prediction {
     // Evaluation fields (populated by scoring task after earnings are reported)
     actual_direction?: string;
     actual_eps?: number;
+    expected_eps?: number;
     actual_price_move_pct?: number;
     accuracy_score?: number;  // Brier score — lower is better
     scored_at?: string;

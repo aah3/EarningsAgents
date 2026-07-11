@@ -13,6 +13,7 @@ export type HistoryRow = {
   prediction: Prediction;
   confidence: number;                   // 0–100
   actualEps: number | null;
+  expectedEps: number | null;
   postEarningsMove: number | null;      // %
   brier: number | null;
   outcome: Outcome;                     // UNVERIFIED until scored

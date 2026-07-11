@@ -76,6 +76,7 @@ class Prediction(SQLModel, table=True):
     # Outcome tracking (populated by the scoring task after earnings are reported)
     actual_direction: Optional[str] = Field(default=None)          # "beat", "miss", or "meet"
     actual_eps: Optional[float] = Field(default=None)              # Reported EPS
+    expected_eps: Optional[float] = Field(default=None)            # Consensus EPS estimate from earningsapi.com
     actual_price_move_pct: Optional[float] = Field(default=None)   # % price change day-after earnings
     accuracy_score: Optional[float] = Field(default=None)          # Brier score: (confidence - correct)^2, lower = better
     scored_at: Optional[datetime] = Field(default=None)            # When the scoring task ran
