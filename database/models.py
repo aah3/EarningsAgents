@@ -30,7 +30,10 @@ class UserSettings(SQLModel, table=True):
     react_max_turns: int = Field(default=6)
     enable_rebuttals: bool = Field(default=False)
     
-    # API Keys (stored locally in plain text/unmasked in database)
+    # API Keys - encrypted at rest with Fernet (see database/crypto.py).
+    # Encrypted before session.add/commit in the POST /settings handler and
+    # decrypted after read in get_pipeline_for_user / GET /settings. Never
+    # store or return a plaintext or masked-from-ciphertext value here.
     gemini_api_key: Optional[str] = Field(default=None)
     openai_api_key: Optional[str] = Field(default=None)
     anthropic_api_key: Optional[str] = Field(default=None)

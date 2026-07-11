@@ -116,7 +116,9 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      # Must be set in .env - no hardcoded default, so compose fails loudly
+      # instead of silently starting an insecure/mismatched local database.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: earnings_agents
     ports:
       - "5432:5432"

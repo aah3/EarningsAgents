@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Depends, Response
+from fastapi import APIRouter, HTTPException, Query, Depends, Response, Request
 from datetime import date, datetime
 from typing import List, Optional
 from pydantic import BaseModel
@@ -14,6 +14,8 @@ from config.settings import PipelineConfig, load_config
 from database.db import get_session
 from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings
 from api.dependencies.auth import get_current_user
+from api.rate_limit import limiter, RATE_LIMIT_PREDICT, RATE_LIMIT_CHAT, RATE_LIMIT_BATCH
+from database.crypto import encrypt, decrypt
 
 router = APIRouter(
     prefix="/earnings",
@@ -108,24 +110,32 @@ def get_pipeline_for_user(session: Session, clerk_id: str) -> EarningsPipeline:
     if user_settings.enable_rebuttals is not None:
         config.agent.enable_rebuttals = user_settings.enable_rebuttals
         
-    # Apply API Key overrides
-    if config.agent.provider == "gemini" and user_settings.gemini_api_key:
-        config.agent.api_key = user_settings.gemini_api_key
-    elif config.agent.provider == "openai" and user_settings.openai_api_key:
-        config.agent.api_key = user_settings.openai_api_key
-    elif config.agent.provider == "anthropic" and user_settings.anthropic_api_key:
-        config.agent.api_key = user_settings.anthropic_api_key
-        
-    if user_settings.newsapi_api_key:
-        config.newsapi.api_key = user_settings.newsapi_api_key
+    # Apply API Key overrides - stored values are encrypted at rest, decrypt
+    # before handing them to the pipeline/agent config.
+    gemini_key = decrypt(user_settings.gemini_api_key)
+    openai_key = decrypt(user_settings.openai_api_key)
+    anthropic_key = decrypt(user_settings.anthropic_api_key)
+    newsapi_key = decrypt(user_settings.newsapi_api_key)
+    alphavantage_key = decrypt(user_settings.alphavantage_api_key)
+    earningsapi_key = decrypt(user_settings.earningsapi_api_key)
+
+    if config.agent.provider == "gemini" and gemini_key:
+        config.agent.api_key = gemini_key
+    elif config.agent.provider == "openai" and openai_key:
+        config.agent.api_key = openai_key
+    elif config.agent.provider == "anthropic" and anthropic_key:
+        config.agent.api_key = anthropic_key
+
+    if newsapi_key:
+        config.newsapi.api_key = newsapi_key
         config.newsapi.enabled = True
-    if user_settings.alphavantage_api_key:
-        config.alphavantage.api_key = user_settings.alphavantage_api_key
+    if alphavantage_key:
+        config.alphavantage.api_key = alphavantage_key
         config.alphavantage.enabled = True
-    if user_settings.earningsapi_api_key:
-        config.earningsapi.api_key = user_settings.earningsapi_api_key
+    if earningsapi_key:
+        config.earningsapi.api_key = earningsapi_key
         config.earningsapi.enabled = True
-        
+
     pipeline = EarningsPipeline(config)
     pipeline.initialize()
     return pipeline
@@ -171,13 +181,14 @@ async def get_user_settings(
         "use_react": user_settings.use_react,
         "react_max_turns": user_settings.react_max_turns,
         "enable_rebuttals": user_settings.enable_rebuttals,
-        # Mask keys
-        "gemini_api_key": mask_api_key(user_settings.gemini_api_key),
-        "openai_api_key": mask_api_key(user_settings.openai_api_key),
-        "anthropic_api_key": mask_api_key(user_settings.anthropic_api_key),
-        "newsapi_api_key": mask_api_key(user_settings.newsapi_api_key),
-        "alphavantage_api_key": mask_api_key(user_settings.alphavantage_api_key),
-        "earningsapi_api_key": mask_api_key(user_settings.earningsapi_api_key),
+        # Mask keys - decrypt first so the mask reflects the real key
+        # (e.g. "AIza...xyz9"), not a mask derived from the ciphertext blob.
+        "gemini_api_key": mask_api_key(decrypt(user_settings.gemini_api_key)),
+        "openai_api_key": mask_api_key(decrypt(user_settings.openai_api_key)),
+        "anthropic_api_key": mask_api_key(decrypt(user_settings.anthropic_api_key)),
+        "newsapi_api_key": mask_api_key(decrypt(user_settings.newsapi_api_key)),
+        "alphavantage_api_key": mask_api_key(decrypt(user_settings.alphavantage_api_key)),
+        "earningsapi_api_key": mask_api_key(decrypt(user_settings.earningsapi_api_key)),
     }
 
 
@@ -210,14 +221,16 @@ async def update_user_settings(
     if request.enable_rebuttals is not None:
         user_settings.enable_rebuttals = request.enable_rebuttals
         
-    # Helper to update key if not masked or unset
+    # Helper to update key if not masked or unset. Encrypts immediately
+    # before it's ever assigned to the model, so the plaintext key only
+    # exists in memory for this request and is never written to the DB.
     def update_key(db_field_name: str, new_value: Optional[str]):
         if new_value is None:
             return
         if new_value == "":
             setattr(user_settings, db_field_name, None)
         elif not is_masked(new_value):
-            setattr(user_settings, db_field_name, new_value)
+            setattr(user_settings, db_field_name, encrypt(new_value))
             
     update_key("gemini_api_key", request.gemini_api_key)
     update_key("openai_api_key", request.openai_api_key)
@@ -257,9 +270,11 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
 
 @router.post("/predict/{ticker}")
+@limiter.limit(RATE_LIMIT_PREDICT)
 async def predict_ticker(
-    ticker: str, 
-    request: PredictRequest,
+    request: Request,
+    ticker: str,
+    body: PredictRequest,
     force_refresh: bool = Query(False, description="Force new analysis and bypass cache"),
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
@@ -267,33 +282,33 @@ async def predict_ticker(
     try:
         # Ensure user exists in DB
         user = get_or_create_user(session, clerk_id)
-        
+
         # 1. Check for cached prediction if not forcing refresh and no custom analysis
-        if not force_refresh and not request.user_analysis:
+        if not force_refresh and not body.user_analysis:
             statement = select(Prediction).where(
                 Prediction.user_id == user.id,
                 Prediction.ticker == ticker.upper()
             ).order_by(Prediction.prediction_date.desc())
             existing_predictions = session.exec(statement).all()
-            
+
             for p in existing_predictions:
                 # Check if we already ran it today for this report
-                if request.report_date is not None and p.report_date.date() == request.report_date and p.prediction_date.date() == date.today():
+                if body.report_date is not None and p.report_date.date() == body.report_date and p.prediction_date.date() == date.today():
                     return {
                         "task_id": f"cached-{p.id}",
                         "status": "PENDING",
                         "message": f"Cached analysis found for {ticker}"
                     }
-        
+
         # Dispatch background task
         task = analyze_ticker_task.delay(
-            ticker.upper(), 
-            request.report_date.isoformat() if request.report_date else "", 
+            ticker.upper(),
+            body.report_date.isoformat() if body.report_date else "",
             clerk_id,
-            request.user_analysis or "",
-            request.enable_rebuttals
+            body.user_analysis or "",
+            body.enable_rebuttals
         )
-        
+
         return {
             "task_id": task.id,
             "status": "PENDING",
@@ -376,29 +391,31 @@ async def get_prediction_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/chat")
+@limiter.limit(RATE_LIMIT_CHAT)
 async def chat_with_consensus(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     try:
         user = get_or_create_user(session, clerk_id)
         pipeline = get_pipeline_for_user(session, clerk_id)
-        
+
         # format messages for LLM
-        messages_dict = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-        
+        messages_dict = [{"role": msg.role, "content": msg.content} for msg in body.messages]
+
         # query ConsensusAgent
         response_text = pipeline.agent_system.consensus_agent.chat(messages_dict)
-        
+
         # append agent response
         messages_dict.append({"role": "model", "content": response_text})
-        
+
         # persist chat locally
         chat_session = PredictionChat(
             user_id=user.id,
-            prediction_id=request.prediction_id,
-            ticker=request.ticker,
+            prediction_id=body.prediction_id,
+            ticker=body.ticker,
             messages=messages_dict
         )
         session.add(chat_session)
@@ -604,8 +621,10 @@ async def get_sentiment(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/batch")
+@limiter.limit(RATE_LIMIT_BATCH)
 async def predict_batch(
-    request: BatchPredictRequest,
+    request: Request,
+    body: BatchPredictRequest,
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -620,12 +639,12 @@ async def predict_batch(
                 "report_date": item.report_date,
                 "user_analysis": item.user_analysis
             }
-            for item in request.companies
+            for item in body.companies
         ]
-        
+
         predictions = pipeline.predict_batch(
             companies_dicts,
-            prediction_date=request.prediction_date
+            prediction_date=body.prediction_date
         )
         return predictions
     except Exception as e:
