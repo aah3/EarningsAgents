@@ -239,6 +239,9 @@ This report details the execution and results of the Multi-Agent AI Earnings Deb
 
 {rebuttal_sect}
 {outcome_sect}
+---
+
+> **Not investment advice.** This report is AI-generated and may be wrong. It is provided for informational and research purposes only and does not constitute financial, investment, or trading advice. Do your own research before making any financial decision.
 """
     return md
 
@@ -426,7 +429,17 @@ def generate_pdf_report(
             pdf.cell(col_width, 6, sanitize_for_pdf(val), border=1, new_x="LMARGIN", new_y="NEXT")
             
         pdf.ln(8)
-        
+
+    # Disclaimer footer
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(120, 120, 120)
+    pdf.multi_cell(
+        pdf.epw, 4,
+        "Not investment advice. This report is AI-generated and may be wrong. It is provided for "
+        "informational and research purposes only and does not constitute financial, investment, or "
+        "trading advice. Do your own research before making any financial decision."
+    )
+
     # Write to output file
     pdf.output(str(output_path))
 

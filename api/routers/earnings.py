@@ -12,9 +12,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from pipeline import EarningsPipeline
 from config.settings import PipelineConfig, load_config
 from database.db import get_session
-from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings, CompanyProfile
+from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings, CompanyProfile, Feedback
 from api.dependencies.auth import get_current_user
-from api.rate_limit import limiter, RATE_LIMIT_PREDICT, RATE_LIMIT_CHAT, RATE_LIMIT_BATCH
+from api.rate_limit import (
+    limiter,
+    RATE_LIMIT_PREDICT,
+    RATE_LIMIT_CHAT,
+    RATE_LIMIT_BATCH,
+    RATE_LIMIT_PREDICT_DAILY,
+    RATE_LIMIT_BATCH_DAILY,
+    MAX_BATCH_COMPANIES,
+)
 from database.crypto import encrypt, decrypt
 
 router = APIRouter(
@@ -269,8 +277,14 @@ class ChatRequest(BaseModel):
     prediction_id: Optional[int] = None
     messages: List[ChatMessage]
 
+class FeedbackRequest(BaseModel):
+    category: str = "other"  # "bug" | "idea" | "accuracy" | "other"
+    message: str
+    page_context: Optional[str] = None
+
 @router.post("/predict/{ticker}")
 @limiter.limit(RATE_LIMIT_PREDICT)
+@limiter.limit(RATE_LIMIT_PREDICT_DAILY)
 async def predict_ticker(
     request: Request,
     ticker: str,
@@ -639,6 +653,7 @@ async def get_sentiment(
 
 @router.post("/batch")
 @limiter.limit(RATE_LIMIT_BATCH)
+@limiter.limit(RATE_LIMIT_BATCH_DAILY)
 async def predict_batch(
     request: Request,
     body: BatchPredictRequest,
@@ -648,6 +663,11 @@ async def predict_batch(
     """
     Run predictions for a bespoke list of tickers and reporting dates.
     """
+    if len(body.companies) > MAX_BATCH_COMPANIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch size {len(body.companies)} exceeds the maximum of {MAX_BATCH_COMPANIES} companies per request.",
+        )
     try:
         pipeline = get_pipeline_for_user(session, clerk_id)
         companies_dicts = [
@@ -896,6 +916,28 @@ async def verify_prediction(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    body: FeedbackRequest,
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Store beta-tester feedback (bug report, feature idea, accuracy complaint, etc)."""
+    if not body.message or not body.message.strip():
+        raise HTTPException(status_code=400, detail="Feedback message cannot be empty.")
+
+    user = get_or_create_user(session, clerk_id)
+    feedback = Feedback(
+        user_id=user.id,
+        category=body.category or "other",
+        message=body.message.strip(),
+        page_context=body.page_context,
+    )
+    session.add(feedback)
+    session.commit()
+    return {"status": "received"}
 
 
 @router.get("/health")

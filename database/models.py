@@ -99,6 +99,15 @@ class PredictionChat(SQLModel, table=True):
     prediction: Optional[Prediction] = Relationship(back_populates="chats")
 
 
+class Feedback(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    category: str = Field(default="other")  # "bug" | "idea" | "accuracy" | "other"
+    message: str
+    page_context: Optional[str] = Field(default=None)  # e.g. ticker or route the feedback was submitted from
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class CompanyProfile(SQLModel, table=True):
     __tablename__ = "company_profile"
     ticker: str = Field(primary_key=True)

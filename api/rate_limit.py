@@ -39,3 +39,15 @@ limiter = Limiter(key_func=rate_limit_key)
 RATE_LIMIT_PREDICT = os.getenv("RATE_LIMIT_PREDICT", "10/hour")
 RATE_LIMIT_CHAT = os.getenv("RATE_LIMIT_CHAT", "30/hour")
 RATE_LIMIT_BATCH = os.getenv("RATE_LIMIT_BATCH", "3/hour")
+
+# Daily quota stacked on top of the hourly limits above, so a user can't
+# spend their whole day's LLM budget by simply spreading calls one hour
+# apart. Applied to /predict and /batch (batch companies count is also
+# separately capped - see MAX_BATCH_COMPANIES below).
+RATE_LIMIT_PREDICT_DAILY = os.getenv("RATE_LIMIT_PREDICT_DAILY", "20/day")
+RATE_LIMIT_BATCH_DAILY = os.getenv("RATE_LIMIT_BATCH_DAILY", "10/day")
+
+# Hard cap on companies per /batch request - RATE_LIMIT_BATCH only limits how
+# often the endpoint is called, not how many tickers (and therefore how many
+# full multi-agent debates) a single call can request.
+MAX_BATCH_COMPANIES = int(os.getenv("MAX_BATCH_COMPANIES", "10"))

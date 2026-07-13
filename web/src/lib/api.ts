@@ -220,6 +220,21 @@ export const api = {
             },
             body: JSON.stringify(settingsData)
         });
+    },
+
+    async submitFeedback(category: string, message: string, pageContext?: string, token?: string) {
+        const url = `${API_BASE_URL}/earnings/feedback`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                category,
+                message,
+                page_context: pageContext,
+            })
+        });
     }
 };
 
