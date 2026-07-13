@@ -115,6 +115,7 @@ rsa==4.9.1
 safetensors==0.7.0
 scipy==1.15.3
 sec-edgar-downloader==5.1.0
+sentry-sdk==2.65.0
 shellescape==3.8.1
 shellingham==1.5.4
 six==1.17.0

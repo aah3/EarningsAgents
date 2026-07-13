@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
+from api.sentry_init import init_sentry
+
+init_sentry()
+
 # ─── Broker / Backend ────────────────────────────────────────────────────────
 
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")

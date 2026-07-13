@@ -11,6 +11,9 @@ from fastapi_cache.backends.redis import RedisBackend
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from api.rate_limit import limiter
+from api.sentry_init import init_sentry
+
+init_sentry()
 
 # Allowed origins: comma-separated list from env, falls back to localhost only.
 # Example: CORS_ORIGINS=https://app.yourdomain.com,https://yourdomain.com

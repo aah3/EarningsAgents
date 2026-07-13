@@ -52,6 +52,10 @@ output/
 !next.config.ts
 !eslint.config.mjs
 !postcss.config.mjs
+!railway.api.json
+!railway.worker.json
+!railway.beat.json
+!web/vercel.json
 Earnings_MultiAgent.docx
 last_prompt.txt
 testing_steps.txt
