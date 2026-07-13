@@ -81,3 +81,9 @@ run_dal_debate.py
 run_nike_debate.py
 run_peng_debate.py
 alembic/versions/0d3fa7d9ca76_remove_company_description_and_sector_.py
+reports/BAC_2026-07-14_report.md
+reports/BAC_2026-07-14_report.pdf
+reports/JPM_2026-07-14_report.md
+reports/JPM_2026-07-14_report.pdf
+reports/WFC_2026-07-14_report.md
+reports/WFC_2026-07-14_report.pdf

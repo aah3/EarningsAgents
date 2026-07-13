@@ -364,7 +364,7 @@ async def get_task_status(
         if isinstance(result_data, dict) and result_data.get("status") == "FAILURE":
             return {
                 "task_id": task_id,
-                "status": "SUCCESS", # The task completed (even if with internal error)
+                "status": "FAILURE",
                 "ready": True,
                 "error": result_data.get("error")
             }

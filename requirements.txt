@@ -1,58 +1,146 @@
 # Earnings Prediction POC - Requirements
 # =====================================
-
-# Core
-pandas>=2.0.0
-numpy>=1.24.0
-pyarrow>=12.0.0
-pydantic>=2.0.0
-
-# HTTP and web scraping
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
-
-# Data Sources
-yfinance>=0.2.28  # Yahoo Finance
-sec-edgar-downloader>=5.0.0  # SEC EDGAR (optional)
-newsapi-python>=0.2.7
-
-# Hugging Face
-transformers>=4.35.0
-torch>=2.0.0
-huggingface_hub>=0.19.0
-accelerate>=0.24.0
-
-# Testing (optional)
-pytest>=7.4.0
-pytest-cov>=4.1.0
-
+# Exact-pinned, generated via `pip freeze` from a known-good venv so that a
+# deploy today and a deploy next month install identical versions. To
+# regenerate after intentionally upgrading a package:
+#   pip install -r requirements.txt --upgrade <package>
+#   pip freeze > requirements.txt
+#
 # API Keys required (get from providers):
 # - NewsAPI: https://newsapi.org/
 # - Alpha Vantage: https://www.alphavantage.co/
 
-# env
-python-dotenv>=1.2.1
-
-uvicorn>=0.41.0
-fastapi>=0.115.0
-sqlmodel>=0.0.37
-psycopg2-binary>=2.9.9
-scipy>=1.15.3
-python-jose[cryptography]>=3.3.0
-PyJWT>=2.8.0
-google-genai>=0.3.0
-anthropic>=0.37.0
-openai>=1.52.0
-alembic>=1.13.0
-
-# Task queue
-celery[redis]>=5.3.0
-redis>=5.0.0
-
-# API caching
-fastapi-cache2>=0.2.1
-
-# From Claude Agent
+accelerate==1.12.0
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.3
+aiosignal==1.4.0
+alembic==1.18.4
+amqp==5.3.1
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anthropic==0.83.0
+anyio==4.12.1
+async-timeout==5.0.1
+attrs==25.4.0
+beautifulsoup4==4.14.3
+billiard==4.2.4
+celery==5.6.2
+certifi==2026.1.4
+cffi==2.0.0
+charset-normalizer==3.4.4
+click==8.3.1
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
+colorama==0.4.6
+coverage==7.13.4
+crypto==1.4.1
+cryptography==46.0.5
+curl_cffi==0.13.0
+defusedxml==0.7.1
+Deprecated==1.3.1
+distro==1.9.0
+dnspython==2.8.0
+docstring_parser==0.17.0
+ecdsa==0.19.1
+eventlet==0.40.4
+exceptiongroup==1.3.1
+fastapi==0.133.0
+fastapi-cache2==0.2.2
+filelock==3.20.3
+finvizfinance==1.3.0
+fonttools==4.63.0
+fpdf2==2.8.7
+frozendict==2.4.7
+frozenlist==1.8.0
+fsspec==2026.2.0
+google-auth==2.48.0
+google-genai==1.64.0
+greenlet==3.3.2
+h11==0.16.0
+hf-xet==1.2.0
+httpcore==1.0.9
+httpx==0.28.1
+huggingface_hub==1.4.1
+idna==3.11
+iniconfig==2.3.0
+Jinja2==3.1.6
+jiter==0.13.0
+jose==1.0.0
+kombu==5.6.2
+limits==5.8.0
+lxml==6.0.2
+Mako==1.3.10
+MarkupSafe==3.0.3
+mpmath==1.3.0
+multidict==6.7.1
+multitasking==0.0.12
+Naked==0.1.32
+networkx==3.4.2
+newsapi-python==0.2.7
+numpy==2.2.6
+openai==2.24.0
+packaging==26.0
+pandas==2.3.3
+peewee==4.0.0
+pendulum==3.2.0
+pillow==12.3.0
+platformdirs==4.9.2
+pluggy==1.6.0
+prompt_toolkit==3.0.52
+propcache==0.4.1
+protobuf==6.33.5
+psutil==7.2.2
+psycopg2-binary==2.9.11
+pyarrow==23.0.0
+pyasn1==0.6.2
+pyasn1_modules==0.4.2
+pycparser==3.0
+pydantic==2.12.5
+pydantic_core==2.41.5
+Pygments==2.19.2
+PyJWT==2.11.0
+pyrate-limiter==4.0.2
+pytest==9.0.2
+pytest-cov==7.0.0
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.1
+python-jose==3.5.0
+pytz==2025.2
+PyYAML==6.0.3
+redis==6.4.0
+regex==2026.1.15
+requests==2.32.5
+rsa==4.9.1
+safetensors==0.7.0
+scipy==1.15.3
+sec-edgar-downloader==5.1.0
+shellescape==3.8.1
+shellingham==1.5.4
+six==1.17.0
 slowapi==0.1.10
-cryptography==46.0.5 
+sniffio==1.3.1
+soupsieve==2.8.3
+SQLAlchemy==2.0.47
+sqlmodel==0.0.37
+starlette==0.52.1
+sympy==1.14.0
+tenacity==9.1.4
+tokenizers==0.22.2
+tomli==2.4.0
+torch==2.10.0
+tqdm==4.67.3
+transformers==5.1.0
+typer-slim==0.21.1
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+tzdata==2025.3
+tzlocal==5.3.1
+urllib3==2.6.3
+uvicorn==0.41.0
+vine==5.1.0
+wcwidth==0.6.0
+websockets==15.0.1
+wrapt==2.2.2
+yarl==1.22.0
+yfinance==1.2.0
