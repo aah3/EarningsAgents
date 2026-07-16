@@ -154,6 +154,8 @@ class EarningsEvent:
     report_date: date
     report_time: ReportTime = ReportTime.UNKNOWN
     consensus_eps: Optional[float] = None
+    fiscal_quarter: Optional[str] = None
+    fiscal_year: Optional[int] = None
 
 
 def normalize_ticker(ticker: str) -> str:

@@ -1393,6 +1393,8 @@ class ThreeAgentSystem:
 
         # --- streaming callbacks (single-shot path) ---
         def get_stream_callback(agent: str):
+            if not task_id:
+                return None
             def callback(chunk: str):
                 publish(chunk, agent, "stream")
             return callback

@@ -48,20 +48,26 @@ class _ProviderRateLimiter:
         """Block until it is safe to make one more call for *provider*."""
         rpm = self._DEFAULT_RPM.get(provider, 10)
         min_interval = 60.0 / rpm
+        sleep_time = 0.0
         with self._lock:
             now = time.monotonic()
             
             # Enforce global pause if we recently hit a 429
             pause_until = self._global_pause_until.get(provider, 0.0)
             if now < pause_until:
-                time.sleep(pause_until - now)
-                now = time.monotonic()
+                sleep_time += (pause_until - now)
+                now = pause_until
 
             elapsed = now - self._last.get(provider, 0.0)
             gap = min_interval - elapsed
             if gap > 0:
-                time.sleep(gap)
-            self._last[provider] = time.monotonic()
+                sleep_time += gap
+                self._last[provider] = now + gap
+            else:
+                self._last[provider] = now
+
+        if sleep_time > 0.0:
+            time.sleep(sleep_time)
 
     def report_429(self, provider: str, penalty_seconds: float = 20.0):
         """Called when a 429 is hit; halts ALL threads for this provider."""

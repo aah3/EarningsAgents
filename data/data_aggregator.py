@@ -438,7 +438,7 @@ class DataAggregator:
             industry=company_info.industry,
             market_cap=company_info.market_cap,
             report_date=report_date,
-            report_time=calendar_event.report_time if calendar_event else ReportTime.UNKNOWN,
+            report_time=ReportTime(calendar_event.report_time.value) if (calendar_event and calendar_event.report_time) else ReportTime.UNKNOWN,
             fiscal_quarter=calendar_event.fiscal_quarter or "" if calendar_event else "",
             fiscal_year=calendar_event.fiscal_year or 0 if calendar_event else 0,
             consensus_eps=consensus.eps_mean,
