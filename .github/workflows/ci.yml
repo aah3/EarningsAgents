@@ -9,6 +9,10 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      # Test-only throwaway key so database/crypto.py's fail-fast import check
+      # passes in CI. Never used to encrypt real data.
+      ENCRYPTION_KEY: i8_nP0_DeJsp-q2RfRGzmH9AuKsFl4oA79DaxJZSeCc=
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
