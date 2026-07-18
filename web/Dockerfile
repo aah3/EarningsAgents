@@ -27,6 +27,11 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+# Docker sets HOSTNAME to the container ID automatically, and Next's
+# standalone server.js binds to process.env.HOSTNAME if set -- overriding
+# it here makes the server bind to all interfaces instead of the container ID,
+# which is required for the healthcheck's `wget http://localhost:3000` to work.
+ENV HOSTNAME="0.0.0.0"
 
 # Copy only what Next.js standalone output needs
 COPY --from=builder /app/.next/standalone ./

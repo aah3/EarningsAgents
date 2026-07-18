@@ -97,3 +97,5 @@ reports/KMTS_2026-07-14_report.pdf
 reports/BLK_2026-07-15_report.md
 reports/BLK_2026-07-15_report.pdf
 reports/*
+run_isrg_debate.py
+run_wse_debate.py
