@@ -99,3 +99,12 @@ reports/BLK_2026-07-15_report.pdf
 reports/*
 run_isrg_debate.py
 run_wse_debate.py
+reports/DAL_2026-07-10_report.md
+reports/DAL_2026-07-10_report.pdf
+reports/NKE_2026-06-30_report.md
+reports/NKE_2026-06-30_report.pdf
+run_bmi_debate.py
+run_calm_debate.py
+run_googl_debate.py
+.claude/
+

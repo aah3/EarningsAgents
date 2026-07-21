@@ -42,6 +42,12 @@ celery_app.conf.update(
     # Result TTL — keep task results for 24 h then purge
     result_expires=86400,
 
+    # Safety net so a stuck ticker analysis (LLM provider hang, rate-limit
+    # backoff pile-up, etc.) doesn't run forever — mirrors the frontend's
+    # 10-minute polling window with headroom before the hard kill.
+    task_soft_time_limit=600,
+    task_time_limit=900,
+
     # Windows / gevent pool compat
     worker_pool_restarts=True,
 

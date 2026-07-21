@@ -88,7 +88,7 @@ export const api = {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                report_date: reportDate,
+                report_date: reportDate || null,
                 user_analysis: userAnalysis,
                 enable_rebuttals: enableRebuttals
             })

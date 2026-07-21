@@ -169,7 +169,7 @@ export default function DashboardPage() {
       // 2. Poll for Status
       let isReady = false;
       let attempts = 0;
-      const maxAttempts = 60; // 120 seconds max
+      const maxAttempts = 300; // 10 minutes max — LLM debate + rebuttals under rate limiting can run well past 2 minutes
 
       while (!isReady && attempts < maxAttempts) {
         const statusData = await api.getTaskStatus(task_id, token);

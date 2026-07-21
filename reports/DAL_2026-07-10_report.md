@@ -15,9 +15,9 @@ This report details the execution and results of the Multi-Agent AI Earnings Deb
 | **Expected Price Move** | positive |
 | **Move vs Implied** | exceeds implied move |
 | **Guidance Expectation** | positive |
-| **Execution Duration** | 87.09 seconds (1.45 minutes) |
-| **Supabase DB Sync** | **PENDING** |
-| **Run Timestamp** | 2026-07-11 00:00:00 |
+| **Execution Duration** | N/A |
+| **Supabase DB Sync** | **SUCCESSFUL** |
+| **Run Timestamp** | 2026-07-11 17:41:23 |
 
 > [!NOTE]
 > The prediction was generated using the **gemini-flash-latest** model via provider **gemini**.
@@ -38,9 +38,12 @@ This report details the execution and results of the Multi-Agent AI Earnings Deb
 
 ---
 
-## Company Description
+## Guidance Outlook & Expectation
 
-Delta Air Lines, Inc. provides scheduled air transportation for passengers and cargo in the United States and internationally. The company operates through two segments, Airline and Refinery. Its domestic network centered on core hubs in Atlanta, Detroit, Minneapolis-St. Paul, and Salt Lake City, as well as coastal hub positions in Boston, Los Angeles, New York-LaGuardia, New York-JFK, and Seattle; and international network centered on hubs and market presence in Amsterdam, Bogota, Lima, Mexico City, London-Heathrow, Paris-Charles de Gaulle, Santiago (Chile), Sao Paulo, Seoul-Incheon, and Tokyo. It also provides aircraft maintenance and engineering support, repair, and overhaul services; and vacation packages. The company operates through a fleet of approximately 1,314 aircraft. Delta Air Lines, Inc. was founded in 1924 and is headquartered in Atlanta, Georgia.
+- **Directional Expectation**: `POSITIVE`
+
+**Likely Guidance Detail**:
+Delta is expected to forecast continued strong premium passenger demand and robust loyalty revenue, maintaining its full-year EPS guidance and projecting solid operating margins despite rising labor costs.
 
 ---
 
@@ -66,7 +69,7 @@ Delta's strong premium segmentation strategy and robust loyalty program revenues
 
 ---
 
-## Detailed Agent Debate
+## Detailed Agent Debate (Pass 1 - Three-Agent Analysis)
 
 ```
 === AGENTS & USER EARNINGS DEBATE [single-shot + rebuttal] ===
@@ -84,8 +87,9 @@ CONSENSUS (BEAT, 80%):
 Delta's strong premium segmentation strategy and robust loyalty program revenues continue to drive top-line growth, while moderating jet fuel costs provide margin relief. With a highly consistent historical beat rate of 87.5% and strong pricing power, the company is well-positioned to exceed conservative consensus estimates.
 ```
 
+---
 
-## Rebuttal Round
+## Rebuttal Round (Pass 2 - Cross-Examination)
 
 ```
 === REBUTTAL ROUND ===
@@ -95,4 +99,18 @@ BULL REBUTTAL (BEAT, 80%):  The Bear's claim of a consistent 'sell-the-news' rea
 BEAR REBUTTAL (MISS, 70%):  While the Bull case relies on premium demand and elevated fares, it ignores that Delta's massive 39% EPS beat last quarter still resulted in a negative share price reaction, signaling that peak optimism is already priced in. Furthermore, maintaining elevated fares in a softening macroeconomic environment risks driving price-sensitive travelers to low-cost competitors, threatening load factors. With consensus EPS at a demanding $8.52, any normalization in premium travel spend or capacity expansion from competitors will lead to an earnings miss.
 ```
 
+---
 
+
+## Ex-Post Verification (Scored Outcome)
+
+| Metric | Ground Truth Value |
+| :--- | :--- |
+| **Actual Direction** | **BEAT** (VS Prediction: **CORRECT**) |
+| **Actual Reported EPS** | $1.56 |
+| **Post-Earnings Price Move** | -1.81% |
+| **Accuracy Score (Brier)** | 0.0400 (lower is better, 0.0 is perfect) |
+| **Scored At** | 2026-07-11 17:55:49 |
+
+---
+> **Not investment advice.** This report is AI-generated and may be wrong. It is provided for informational and research purposes only and does not constitute financial, investment, or trading advice. Do your own research before making any financial decision.
