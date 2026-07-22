@@ -387,6 +387,32 @@ class DataAggregator:
             except Exception as e:
                 self.logger.warning(f"Failed to compute option features for {ticker}: {e}")
         
+        # Enrich/fallback options_features using Yahoo OptionChainSummary if available
+        if self.yahoo:
+            try:
+                _, summary = self.yahoo.get_option_chain(ticker, num_expirations=4)
+                if summary and summary.num_contracts > 0:
+                    if options_features is None:
+                        options_features = {
+                            "date": date.today().isoformat(),
+                            "ticker": ticker,
+                            "spot_price": summary.underlying_price,
+                            "total_volume": summary.total_call_volume + summary.total_put_volume,
+                            "total_oi": summary.total_call_oi + summary.total_put_oi,
+                        }
+                    if options_features.get('implied_move_pct') is None and summary.implied_move_pct is not None:
+                        options_features['implied_move_pct'] = summary.implied_move_pct
+                    if options_features.get('atm_iv_call') is None and summary.atm_iv_call is not None:
+                        options_features['atm_iv_call'] = summary.atm_iv_call
+                    if options_features.get('atm_iv_put') is None and summary.atm_iv_put is not None:
+                        options_features['atm_iv_put'] = summary.atm_iv_put
+                    if options_features.get('put_call_volume_ratio') is None and summary.put_call_volume_ratio is not None:
+                        options_features['put_call_volume_ratio'] = summary.put_call_volume_ratio
+                    if options_features.get('iv_skew') is None and summary.iv_skew is not None:
+                        options_features['iv_skew'] = summary.iv_skew
+            except Exception as e:
+                self.logger.warning(f"Failed to merge option summary for {ticker}: {e}")
+        
         # Get recent transcript from SEC (if enabled)
         recent_transcripts = []
         if self.sec:

@@ -108,6 +108,31 @@ class OptionFeaturesExtractor:
         otm_put_call_iv_ratio = otm_put_iv / otm_call_iv if (otm_call_iv and otm_call_iv > 0) else np.nan
         iv_skew = otm_put_iv - otm_call_iv if (pd.notnull(otm_put_iv) and pd.notnull(otm_call_iv)) else np.nan
         
+        # ATM metrics (0.95 <= strike / spot <= 1.05)
+        atm_calls = calls[(calls[self.cols['strike']] / spot >= 0.95) & (calls[self.cols['strike']] / spot <= 1.05)] if (spot > 0 and not calls.empty) else pd.DataFrame()
+        atm_puts = puts[(puts[self.cols['strike']] / spot >= 0.95) & (puts[self.cols['strike']] / spot <= 1.05)] if (spot > 0 and not puts.empty) else pd.DataFrame()
+        
+        atm_iv_call = vw_iv(atm_calls) if not atm_calls.empty else np.nan
+        atm_iv_put = vw_iv(atm_puts) if not atm_puts.empty else np.nan
+        
+        implied_move_pct = np.nan
+        if spot > 0 and not calls.empty and not puts.empty:
+            closest_call_idx = (calls[self.cols['strike']] - spot).abs().idxmin()
+            closest_put_idx = (puts[self.cols['strike']] - spot).abs().idxmin()
+            call_row = calls.loc[closest_call_idx]
+            put_row = puts.loc[closest_put_idx]
+            
+            call_p = call_row.get('mid_price') if 'mid_price' in calls.columns else None
+            if call_p is None or pd.isna(call_p):
+                call_p = call_row.get('last_price') if 'last_price' in calls.columns else None
+            
+            put_p = put_row.get('mid_price') if 'mid_price' in puts.columns else None
+            if put_p is None or pd.isna(put_p):
+                put_p = put_row.get('last_price') if 'last_price' in puts.columns else None
+                
+            if call_p and put_p and pd.notnull(call_p) and pd.notnull(put_p) and (call_p + put_p) > 0:
+                implied_move_pct = (call_p + put_p) / spot
+
         # 4. Volume & OI weighted strikes
         vw_strike_to_spot = np.nan
         if total_vol > 0:
@@ -170,6 +195,9 @@ class OptionFeaturesExtractor:
             'otm_call_put_oi_ratio': otm_call_put_oi_ratio,
             'otm_put_call_iv_ratio': otm_put_call_iv_ratio,
             'iv_skew': iv_skew,
+            'atm_iv_call': atm_iv_call,
+            'atm_iv_put': atm_iv_put,
+            'implied_move_pct': implied_move_pct,
             'vw_strike_to_spot': vw_strike_to_spot,
             'oi_w_strike_to_spot': oi_w_strike_to_spot,
             'net_gamma_exposure': net_gamma_exposure,

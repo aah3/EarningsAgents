@@ -247,6 +247,20 @@ class EarningsPipeline:
                     "total_volume": osum.get("total_volume"),
                 }
                 company_data.implied_move_pct = im.get("straddle_implied_move_pct")
+                
+                # Ensure options_features dictionary has implied_move_pct and atm_iv_call
+                if company_data.options_features is None:
+                    company_data.options_features = {}
+                if company_data.options_features.get("implied_move_pct") is None and im.get("straddle_implied_move_pct") is not None:
+                    company_data.options_features["implied_move_pct"] = im.get("straddle_implied_move_pct")
+                if company_data.options_features.get("atm_iv_call") is None:
+                    avg_iv = osum.get("avg_iv") or (osum.get("skew", {}).get("atm_iv") if isinstance(osum.get("skew"), dict) else None)
+                    if avg_iv is not None:
+                        company_data.options_features["atm_iv_call"] = avg_iv
+                if company_data.options_features.get("put_call_volume_ratio") is None and osum.get("put_call_ratio") is not None:
+                    company_data.options_features["put_call_volume_ratio"] = osum.get("put_call_ratio")
+                if company_data.options_features.get("iv_skew") is None and isinstance(osum.get("skew"), dict) and osum.get("skew", {}).get("put_skew") is not None:
+                    company_data.options_features["iv_skew"] = osum.get("skew", {}).get("put_skew")
             else:
                 company_data.live_options = None
                 company_data.implied_move_pct = None
