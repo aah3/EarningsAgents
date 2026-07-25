@@ -10,7 +10,6 @@
 # - NewsAPI: https://newsapi.org/
 # - Alpha Vantage: https://www.alphavantage.co/
 
-accelerate==1.12.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
@@ -58,10 +57,8 @@ google-auth==2.48.0
 google-genai==1.64.0
 greenlet==3.3.2
 h11==0.16.0
-hf-xet==1.2.0
 httpcore==1.0.9
 httpx==0.28.1
-huggingface_hub==1.4.1
 idna==3.11
 iniconfig==2.3.0
 Jinja2==3.1.6
@@ -112,7 +109,6 @@ redis==6.4.0
 regex==2026.1.15
 requests==2.32.5
 rsa==4.9.1
-safetensors==0.7.0
 scipy==1.15.3
 sec-edgar-downloader==5.1.0
 sentry-sdk==2.65.0
@@ -127,11 +123,8 @@ sqlmodel==0.0.37
 starlette==0.52.1
 sympy==1.14.0
 tenacity==9.1.4
-tokenizers==0.22.2
 tomli==2.4.0
-torch==2.10.0
 tqdm==4.67.3
-transformers==5.1.0
 typer-slim==0.21.1
 typing-inspection==0.4.2
 typing_extensions==4.15.0
