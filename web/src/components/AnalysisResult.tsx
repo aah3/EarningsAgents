@@ -159,29 +159,37 @@ ${userText}`
 
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
-                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-12">
+                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Expected EPS</span>
                     <span className="text-lg font-display font-semibold text-ink font-data">
                         {result.expected_eps !== undefined && result.expected_eps !== null ? `$${result.expected_eps.toFixed(2)}` : "—"}
                     </span>
                 </div>
-                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Actual EPS</span>
                     <span className="text-lg font-display font-semibold text-ink font-data">
                         {result.actual_eps !== undefined && result.actual_eps !== null ? `$${result.actual_eps.toFixed(2)}` : "—"}
                     </span>
                 </div>
-                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
-                    <span className="label-caps text-ink-dim mb-1">Expected Price Move</span>
+                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                    <span className="label-caps text-ink-dim mb-1">Expected Move</span>
                     <span className="text-lg font-display font-semibold text-ink capitalize">{result.expected_price_move || "Pending"}</span>
                 </div>
-                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                    <span className="label-caps text-ink-dim mb-1">Actual Move</span>
+                    <span className={`text-lg font-display font-semibold font-data ${result.actual_price_move_pct !== undefined && result.actual_price_move_pct !== null ? (result.actual_price_move_pct >= 0 ? "text-bull" : "text-bear") : "text-ink"}`}>
+                        {result.actual_price_move_pct !== undefined && result.actual_price_move_pct !== null
+                            ? `${result.actual_price_move_pct >= 0 ? "+" : ""}${(result.actual_price_move_pct * 100).toFixed(2)}%`
+                            : "—"}
+                    </span>
+                </div>
+                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Move vs Implied</span>
                     <span className="text-lg font-display font-semibold text-ink capitalize">{result.move_vs_implied || "Pending"}</span>
                 </div>
-                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
-                    <span className="label-caps text-ink-dim mb-1">Guidance Expectation</span>
+                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                    <span className="label-caps text-ink-dim mb-1">Guidance</span>
                     <span className="text-lg font-display font-semibold text-ink capitalize">{result.guidance_expectation || "Pending"}</span>
                 </div>
             </div>

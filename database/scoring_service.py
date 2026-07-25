@@ -51,6 +51,7 @@ class PredictionScorer:
             if isinstance(report_d, datetime):
                 report_d = report_d.date()
                 
+            ticker = ticker.strip().upper()
             timing = (report_timing or "UNKNOWN").upper()
             
             # Fetch a wider range of daily prices to calculate yesterday-close-to-close or close-to-tomorrow-close
@@ -67,7 +68,12 @@ class PredictionScorer:
                     d = idx.date() if hasattr(idx, 'date') else idx
                     val = row['Close']
                     if isinstance(val, (dict, list, tuple)) or hasattr(val, 'keys'):
-                        val = val[ticker]
+                        if hasattr(val, 'get') and val.get(ticker) is not None:
+                            val = val.get(ticker)
+                        elif hasattr(val, 'get') and val.get(ticker.upper()) is not None:
+                            val = val.get(ticker.upper())
+                        elif hasattr(val, 'iloc') and len(val) > 0:
+                            val = val.iloc[0]
                     if val is not None and not math.isnan(val):
                         closes[d] = float(val)
                         
@@ -93,7 +99,7 @@ class PredictionScorer:
                     
             # Check if any required date close price is missing
             need_hourly = False
-            if report_d not in closes:
+            if not report_day_actual:
                 need_hourly = True
             elif timing == "AMC" and (not next_day_actual or next_day_actual not in closes):
                 need_hourly = True
@@ -157,7 +163,13 @@ class PredictionScorer:
     def score_prediction(self, prediction) -> dict:
         actual_data = self.fetch_actual_direction(prediction.ticker, prediction.report_date)
         if actual_data is None:
-            return {"scored": False, "reason": "Actual EPS not yet available"}
+            if getattr(prediction, "actual_direction", None) is not None:
+                actual_data = {
+                    "actual_direction": prediction.actual_direction,
+                    "actual_eps": getattr(prediction, "actual_eps", None),
+                }
+            else:
+                return {"scored": False, "reason": "Actual EPS not yet available"}
         
         report_timing = getattr(prediction, "report_timing", "UNKNOWN")
         price_move = self.fetch_price_move(prediction.ticker, prediction.report_date, report_timing)

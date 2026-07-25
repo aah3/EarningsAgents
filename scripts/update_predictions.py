@@ -2,7 +2,7 @@ import os
 import sys
 import argparse
 from datetime import date, datetime
-from sqlmodel import Session, select
+from sqlmodel import Session, select, or_
 
 # Ensure project root is in python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -63,7 +63,7 @@ def main():
         # Scenario A: Score all unscored predictions
         if run_all:
             print("Scanning database for all unscored predictions...")
-            statement = select(Prediction).where(Prediction.actual_direction == None)
+            statement = select(Prediction).where(or_(Prediction.actual_direction == None, Prediction.actual_price_move_pct == None))
             unscored = session.exec(statement).all()
             
             if not unscored:

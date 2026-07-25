@@ -15,7 +15,7 @@ from data.earningsapi_source import RateLimitError
 from database.db import Session, engine
 from database.models import User, Prediction, CompanyProfile, EarningsHistory, EarningsCalendarEvent, UserSettings
 from database.crypto import decrypt
-from sqlmodel import select
+from sqlmodel import select, or_
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,12 @@ def score_predictions_task(self):
         statement = (
             select(Prediction)
             .where(Prediction.report_date <= cutoff)
-            .where(Prediction.actual_direction == None)  # noqa: E711
+            .where(
+                or_(
+                    Prediction.actual_direction == None,  # noqa: E711
+                    Prediction.actual_price_move_pct == None,  # noqa: E711
+                )
+            )
         )
         unscored = session.exec(statement).all()
         logger.info(f"[score_predictions_task] {len(unscored)} unscored predictions to process")
