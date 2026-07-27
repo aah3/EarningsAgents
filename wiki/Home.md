@@ -30,6 +30,7 @@ Explore the sections below for comprehensive documentation on the EarningsAgents
 
 3. [**Data Ingestion & Options Analytics**](./Data-Ingestion-&-Options-Analytics.md)
    - Financial data providers (Yahoo Finance, SEC EDGAR, NewsAPI, Alpha Vantage).
+   - Pluggable custom data providers (SQL/Snowflake DB adapters, custom REST APIs, `ProviderRegistry`).
    - ATM straddles option pricing, implied move calculations, and volatility metrics.
 
 4. [**Deployment & Celery Operations**](./Deployment-&-Celery-Operations.md)

@@ -40,6 +40,12 @@ The data aggregation layer (`data/data_aggregator.py`) combines financial data f
 - **NewsAPI:** Pulls media coverage across financial publications over the 14 days leading to earnings.
 - **Alpha Vantage Sentiment:** Assigns pre-calculated sentiment scores ($-1.0$ extreme negative to $+1.0$ extreme positive) and ticker relevance weights to recent articles.
 
+### 4. Pluggable Custom Data Providers (`data/provider_registry.py`)
+- **Domain Protocols:** `IPriceProvider`, `IOptionChainProvider`, `IEarningsEstimateProvider`, `IFinancialsProvider`, `INewsTranscriptProvider`.
+- **Custom Client Connectors (`data/adapters/`):** Clients can plug in internal SQL databases (PostgreSQL, Snowflake), custom REST APIs, or enterprise feeds (FactSet/Bloomberg) for any field domain.
+- **Fallback Cascades (`data/provider_chain.py`):** `DataAggregator` checks client-registered providers first, falling back to default feeds if data is missing or raises an exception.
+- For complete setup instructions and adapter code templates, see [Custom Data Ingestion Guide](file:///c:/Users/alfredo/Project/EarningsAgents/docs/CUSTOM_DATA_SOURCES.md).
+
 ---
 
 ## 🎯 Options Chain Analytics & ATM Straddles

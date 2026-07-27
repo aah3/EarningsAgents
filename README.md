@@ -30,10 +30,11 @@ A production-grade, distributed research platform designed to predict and analyz
 ### ⚡ Key Capabilities
 1. **Multi-Agent Debate:** Bull and Bear agents cross-examine each other with counter-arguments (rebuttal rounds) to reduce LLM confirmation bias.
 2. **Quant Agent Integration:** Analyzes historical earnings surprises, short interest, options chain data (implied moves via ATM straddles), and Greeks.
-3. **Distributed Task Queue:** Backend prediction workloads and daily scoring metrics run asynchronously via **Celery & Redis**.
-4. **Real-time Live Progress:** Prediction tasks communicate live state changes to the Next.js frontend using **WebSockets**.
-5. **Automated Accuracy Scorer:** A daily Celery Beat task fetches reported earnings from Yahoo Finance, tracks the accuracy of past forecasts, and calculates **Brier scores**.
-6. **Premium Web UI:** Includes a comprehensive Next.js web application equipped with Clerk user authentication, interactive dashboard analysis cards, historical search databases, and chat features.
+3. **Pluggable Data Sources:** Seamlessly plug in proprietary client data sources (SQL Databases, Snowflake, REST APIs, FactSet/Bloomberg) for pricing, consensus estimates, or option chains while using default fallbacks (Yahoo, SEC EDGAR, Alpha Vantage).
+4. **Distributed Task Queue:** Backend prediction workloads and daily scoring metrics run asynchronously via **Celery & Redis**.
+5. **Real-time Live Progress:** Prediction tasks communicate live state changes to the Next.js frontend using **WebSockets**.
+6. **Automated Accuracy Scorer:** A daily Celery Beat task fetches reported earnings from Yahoo Finance, tracks the accuracy of past forecasts, and calculates **Brier scores**.
+7. **Premium Web UI:** Includes a comprehensive Next.js web application equipped with Clerk user authentication, interactive dashboard analysis cards, historical search databases, and chat features.
 
 ---
 
@@ -48,12 +49,16 @@ EarningsAgents/
 │   └── tasks.py           # Celery tasks (analyze_ticker_task, score_predictions_task)
 ├── agents/                # LLM agent definitions (Bull, Bear, Quant, Consensus)
 │   └── huggingface_agents.py
-├── data/                  # Unified data ingestion engine
+├── data/                  # Unified data ingestion engine & pluggable providers
+│   ├── base.py            # Domain provider interfaces (IPriceProvider, IEarningsEstimateProvider, etc.)
+│   ├── provider_registry.py # Registry & dynamic router for custom client data sources
+│   ├── provider_chain.py  # Cascade fallback runner
+│   ├── adapters/          # Custom client data adapters (SQL DB, REST API, In-Memory)
 │   ├── alpha_vantage.py   # Alpha Vantage financial reports & news
 │   ├── sec_edgar.py       # SEC filings downloader & XML/HTML parsers
 │   ├── yahoo_finance.py   # Yahoo Finance stocks, fundamentals, and options
 │   ├── options.py         # Option chain & implied move calculations
-│   └── data_aggregator.py # Master orchestrator for data fetching & caching
+│   └── data_aggregator.py # Master orchestrator for data fetching & custom provider routing
 ├── database/              # SQLModel Database definitions & engines
 │   ├── db.py              # Session lifecycle
 │   └── models.py          # User, Prediction, and Chat SQL schemas

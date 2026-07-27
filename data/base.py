@@ -220,10 +220,78 @@ class CompanyData(BaseModel):
 
 
 # ============================================================================
+# DOMAIN PROVIDER INTERFACES (PLUGGABLE DATA INGESTION)
+# ============================================================================
+
+class IPriceProvider(ABC):
+    """Interface for stock price, momentum, volume, and beta data providers."""
+    
+    @abstractmethod
+    def get_price_data(self, ticker: str) -> Optional[PriceData]:
+        """Get current price and momentum data for ticker."""
+        pass
+
+
+class IOptionChainProvider(ABC):
+    """Interface for option chains, implied volatility, and straddle move providers."""
+    
+    @abstractmethod
+    def get_options_features(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """Get option analytics, IV, and implied move for ticker."""
+        pass
+
+
+class IEarningsEstimateProvider(ABC):
+    """Interface for consensus estimates, estimate revisions, and earnings history providers."""
+    
+    @abstractmethod
+    def get_consensus_estimates(self, ticker: str) -> Optional[ConsensusEstimate]:
+        """Get consensus analyst estimates."""
+        pass
+
+    @abstractmethod
+    def get_historical_earnings(self, ticker: str, num_quarters: int = 8) -> List[HistoricalEarning]:
+        """Get historical earnings results."""
+        pass
+
+    @abstractmethod
+    def get_estimate_revisions(self, ticker: str, days_back: int = 90) -> List[EstimateRevision]:
+        """Get recent estimate revisions."""
+        pass
+
+
+class IFinancialsProvider(ABC):
+    """Interface for company profile, sector, fundamental metrics, and facts providers."""
+    
+    @abstractmethod
+    def get_company_info(self, ticker: str) -> Optional[CompanyInfo]:
+        """Get basic company profile information."""
+        pass
+
+
+class INewsTranscriptProvider(ABC):
+    """Interface for news articles and earnings call transcript providers."""
+    
+    def get_news_articles(self, ticker: str, limit: int = 20) -> List[NewsArticle]:
+        """Get news articles for ticker."""
+        return []
+
+    def get_transcripts(self, ticker: str, limit: int = 4) -> List[EarningsCallTranscript]:
+        """Get earnings call transcripts for ticker."""
+        return []
+
+
+# ============================================================================
 # BASE DATA SOURCE
 # ============================================================================
 
-class BaseDataSource(ABC):
+class BaseDataSource(
+    IPriceProvider,
+    IEarningsEstimateProvider,
+    IFinancialsProvider,
+    INewsTranscriptProvider,
+    ABC
+):
     """
     Abstract base class for all data sources.
     
@@ -234,6 +302,10 @@ class BaseDataSource(ABC):
         self.name = name
         self.logger = logging.getLogger(f"DataSource.{name}")
         self._connected = False
+    
+    def get_options_features(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """Get option analytics, IV, and implied move for ticker (optional for base data source)."""
+        return None
     
     @abstractmethod
     def connect(self) -> bool:

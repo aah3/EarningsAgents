@@ -6,7 +6,7 @@ Provides fallback mechanisms and data prioritization.
 """
 
 from datetime import date, datetime, timedelta, time
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Tuple, Callable
 import logging
 import pandas as pd
 from dataclasses import asdict, is_dataclass
@@ -31,6 +31,8 @@ try:
     from .sec_edgar import SECEdgarDataSource, SECFiling, CompanyFact
     from .news_sources import NewsAPIDataSource, AlphaVantageNewsDataSource
     from .options import OptionData, OptionChainAnalyzer, OptionType as OptType
+    from .provider_registry import ProviderRegistry
+    from .provider_chain import ProviderChain
 except (ImportError, ValueError):
     from base import (
         BaseDataSource,
@@ -51,6 +53,8 @@ except (ImportError, ValueError):
     from sec_edgar import SECEdgarDataSource, SECFiling, CompanyFact
     from news_sources import NewsAPIDataSource, AlphaVantageNewsDataSource
     from options import OptionData, OptionChainAnalyzer, OptionType as OptType
+    from provider_registry import ProviderRegistry
+    from provider_chain import ProviderChain
 
 # Try to import full Alpha Vantage source (may not be available)
 try:
@@ -126,6 +130,8 @@ class DataAggregator:
         enable_newsapi: bool = True,
         enable_alphavantage: bool = True,
         enable_sec: bool = False,
+        custom_providers: Optional[Dict[str, Any]] = None,
+        custom_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize data aggregator.
@@ -140,8 +146,17 @@ class DataAggregator:
             enable_newsapi: Enable NewsAPI
             enable_alphavantage: Enable Alpha Vantage (full data source if available)
             enable_sec: Enable SEC EDGAR
+            custom_providers: Dict mapping provider name to custom provider instance
+            custom_config: Configuration dictionary for ProviderRegistry
         """
         self.logger = logging.getLogger("DataAggregator")
+        
+        # Register any custom providers or configuration passed directly
+        if custom_config:
+            ProviderRegistry.load_from_config(custom_config)
+        if custom_providers:
+            for name, provider in custom_providers.items():
+                ProviderRegistry.register_provider(name, provider)
         
         # Initialize sources
         self.yahoo = None
@@ -171,6 +186,67 @@ class DataAggregator:
         
         self._initialized = False
     
+    def _provider_supports_domain(self, provider: Any, domain: str) -> bool:
+        """Check if provider implements the required domain method."""
+        method_map = {
+            "company_info": "get_company_info",
+            "consensus_estimates": "get_consensus_estimates",
+            "historical_earnings": "get_historical_earnings",
+            "price_data": "get_price_data",
+            "estimate_revisions": "get_estimate_revisions",
+            "analyst_recommendations": "get_analyst_recommendations",
+            "options_features": "get_options_features",
+            "news_articles": "get_news_articles",
+            "transcripts": "get_transcripts",
+        }
+        method_name = method_map.get(domain)
+        return method_name is not None and hasattr(provider, method_name) and callable(getattr(provider, method_name))
+
+    def _create_provider_callable(self, provider: Any, domain: str, ticker: str, *args, **kwargs):
+        """Create a zero-arg lambda to call the domain method on a custom provider."""
+        method_map = {
+            "company_info": "get_company_info",
+            "consensus_estimates": "get_consensus_estimates",
+            "historical_earnings": "get_historical_earnings",
+            "price_data": "get_price_data",
+            "estimate_revisions": "get_estimate_revisions",
+            "analyst_recommendations": "get_analyst_recommendations",
+            "options_features": "get_options_features",
+            "news_articles": "get_news_articles",
+            "transcripts": "get_transcripts",
+        }
+        method_name = method_map.get(domain)
+        fn = getattr(provider, method_name)
+        return lambda: fn(ticker, *args, **kwargs)
+
+    def _get_sources_for_domain(
+        self,
+        domain: str,
+        default_sources: List[Tuple[str, Any]],
+        ticker: str,
+        *args,
+        **kwargs
+    ) -> List[Tuple[str, Any]]:
+        """
+        Combine custom registered providers with default framework sources.
+        """
+        sources = []
+        configured_route = ProviderRegistry.get_domain_providers(domain)
+        
+        if configured_route:
+            for name in configured_route:
+                provider = ProviderRegistry.get_provider(name)
+                if provider and self._provider_supports_domain(provider, domain):
+                    sources.append((name, self._create_provider_callable(provider, domain, ticker, *args, **kwargs)))
+        else:
+            for name, _ in ProviderRegistry._registered_providers.items():
+                provider = ProviderRegistry.get_provider(name)
+                if provider and self._provider_supports_domain(provider, domain):
+                    sources.append((name, self._create_provider_callable(provider, domain, ticker, *args, **kwargs)))
+
+        sources.extend(default_sources)
+        return sources
+
     def initialize(self) -> None:
         """Initialize all enabled data sources."""
         self.logger.info("Initializing data sources...")
@@ -258,10 +334,10 @@ class DataAggregator:
         chain = ProviderChain(self.logger)
         
         # Get company info
-        result = chain.fetch("company_info", [
+        result = chain.fetch("company_info", self._get_sources_for_domain("company_info", [
             ("yahoo",         lambda: self.yahoo.get_company_info(ticker) if self.yahoo else None),
             ("alpha_vantage", lambda: self.alphavantage.get_company_info(ticker) if self.alphavantage else None),
-        ])
+        ], ticker))
         company_info = result.value
         if not company_info:
             raise ValueError(f"Could not find company info for {ticker} — tried: {result.attempted}")
@@ -275,20 +351,20 @@ class DataAggregator:
                 self.logger.warning(f"Could not fetch calendar for {ticker}: {e}")
         
         # Get consensus estimates 
-        result = chain.fetch("consensus_estimates", [
+        result = chain.fetch("consensus_estimates", self._get_sources_for_domain("consensus_estimates", [
             ("yahoo",         lambda: self.yahoo.get_consensus_estimates(ticker) if self.yahoo else None),
             ("alpha_vantage", lambda: self.alphavantage.get_consensus_estimates(ticker) if self.alphavantage else None),
-        ])
+        ], ticker))
         consensus = result.value or ConsensusEstimate(
             eps_mean=0.0, eps_median=0.0, eps_high=0.0, eps_low=0.0,
             eps_std=0.0, num_analysts=0, as_of_date=date.today()
         )
         
         # Get historical earnings
-        result = chain.fetch("historical_earnings", [
+        result = chain.fetch("historical_earnings", self._get_sources_for_domain("historical_earnings", [
             ("yahoo",         lambda: self.yahoo.get_historical_earnings(ticker) if self.yahoo else None),
             ("alpha_vantage", lambda: self.alphavantage.get_historical_earnings(ticker) if self.alphavantage else None),
-        ])
+        ], ticker))
         historical_list = result.value or []
         historical = [self._to_dict(h) for h in historical_list]
         
@@ -309,27 +385,27 @@ class DataAggregator:
                     surprise_vals.append(max(-100.0, min(100.0, float(val))))
             avg_surprise = statistics.median(surprise_vals) if surprise_vals else 0.0
         
-        # Get price data (Yahoo)
-        result = chain.fetch("price_data", [
+        # Get price data
+        result = chain.fetch("price_data", self._get_sources_for_domain("price_data", [
             ("yahoo",         lambda: self.yahoo.get_price_data(ticker) if self.yahoo else None),
             ("alpha_vantage", lambda: self.alphavantage.get_price_data(ticker) if self.alphavantage else None),
-        ])
+        ], ticker))
         price_data = result.value
         
         # Get estimate revisions
-        result = chain.fetch("estimate_revisions", [
+        result = chain.fetch("estimate_revisions", self._get_sources_for_domain("estimate_revisions", [
             ("yahoo",         lambda: self.yahoo.get_estimate_revisions(ticker, 90)
                                       if self.yahoo and hasattr(self.yahoo, "get_estimate_revisions") else None),
             ("alpha_vantage", lambda: self.alphavantage.get_estimate_revisions(ticker, 90)
                                       if self.alphavantage else None),
-        ])
+        ], ticker, 90))
         rev_list = result.value or []
         revisions = [self._to_dict(r) for r in rev_list]
         
-        # Get analyst recommendations (Yahoo)
-        result = chain.fetch("analyst_recommendations", [
+        # Get analyst recommendations
+        result = chain.fetch("analyst_recommendations", self._get_sources_for_domain("analyst_recommendations", [
             ("yahoo", lambda: self.yahoo.get_analyst_recommendations(ticker, 90) if self.yahoo else None),
-        ])
+        ], ticker, 90))
         rec_list = result.value or []
         recommendations = [self._to_dict(r) for r in rec_list]
             
