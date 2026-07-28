@@ -356,13 +356,20 @@ def score_predictions_task(self):
                     p.actual_eps = result.get("actual_eps")
                     p.actual_price_move_pct = result.get("actual_price_move_pct")
                     p.accuracy_score = result.get("accuracy_score")
+                    p.vol_stance_hit = result.get("vol_stance_hit")
+                    p.price_dir_hit = result.get("price_dir_hit")
+                    p.guidance_stance_hit = result.get("guidance_stance_hit")
+                    p.magnitude_error_pct = result.get("magnitude_error_pct")
+                    p.actual_guidance_stance = result.get("actual_guidance_stance")
+                    p.composite_accuracy_score = result.get("composite_accuracy_score")
                     p.scored_at = result.get("scored_at", datetime.utcnow())
                     session.add(p)
                     session.commit()
                     scored += 1
                     logger.info(f"[score_predictions_task] Scored {p.ticker}: "
                                 f"predicted={p.direction} actual={p.actual_direction} "
-                                f"brier={p.accuracy_score:.4f}")
+                                f"brier={p.accuracy_score:.4f} "
+                                f"composite={p.composite_accuracy_score}")
                 else:
                     logger.warning(f"[score_predictions_task] Skipped {p.ticker}: {result.get('reason')}")
                     skipped += 1

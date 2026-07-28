@@ -20,6 +20,12 @@ def score_and_save(scorer, session, prediction):
         prediction.actual_eps = result["actual_eps"]
         prediction.actual_price_move_pct = result["actual_price_move_pct"]
         prediction.accuracy_score = result["accuracy_score"]
+        prediction.vol_stance_hit = result.get("vol_stance_hit")
+        prediction.price_dir_hit = result.get("price_dir_hit")
+        prediction.guidance_stance_hit = result.get("guidance_stance_hit")
+        prediction.magnitude_error_pct = result.get("magnitude_error_pct")
+        prediction.actual_guidance_stance = result.get("actual_guidance_stance")
+        prediction.composite_accuracy_score = result.get("composite_accuracy_score")
         prediction.scored_at = result["scored_at"]
         
         session.add(prediction)
@@ -33,6 +39,10 @@ def score_and_save(scorer, session, prediction):
         else:
             print(f"    Price Move %:     Pending (Next day close not yet available)")
         print(f"    Brier Score:      {prediction.accuracy_score:.6f}")
+        print(f"    Vol Stance Hit:   {prediction.vol_stance_hit}")
+        print(f"    Price Dir Hit:    {prediction.price_dir_hit}")
+        print(f"    Guidance Hit:     {prediction.guidance_stance_hit}")
+        print(f"    Composite Score:  {prediction.composite_accuracy_score}")
         print(f"    Scored At:        {prediction.scored_at}")
         return True
     else:

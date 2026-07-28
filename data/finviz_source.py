@@ -99,10 +99,16 @@ class FinvizDataSource(BaseDataSource):
                     return f"{val:.1f}"
                 except: return str(vol) if vol else None
 
+            def clean_finviz_ticker(t: str) -> str:
+                t = str(t).strip().upper()
+                if len(t) > 1 and t[0] == t[1]:
+                    return t[1:]
+                return t
+
             for r in records:
                 events.append(
                     EarningsEvent(
-                        ticker=r.get("Ticker", ""),
+                        ticker=clean_finviz_ticker(r.get("Ticker", "")),
                         report_date=target_date,
                         report_time=ReportTime.UNKNOWN,
                         company_name=str(r.get("Company", "")),

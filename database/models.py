@@ -80,6 +80,12 @@ class Prediction(SQLModel, table=True):
     expected_eps: Optional[float] = Field(default=None)            # Consensus EPS estimate from earningsapi.com
     actual_price_move_pct: Optional[float] = Field(default=None)   # % price change day-after earnings
     accuracy_score: Optional[float] = Field(default=None)          # Brier score: (confidence - correct)^2, lower = better
+    vol_stance_hit: Optional[bool] = Field(default=None)           # Hit: Move magnitude vs implied vol stance correctly called
+    price_dir_hit: Optional[bool] = Field(default=None)            # Hit: Actual price move sign matched expected direction
+    guidance_stance_hit: Optional[bool] = Field(default=None)      # Hit: Guidance expectation matched management outcome
+    magnitude_error_pct: Optional[float] = Field(default=None)     # |actual_price_move_pct - expected_price_move_pct|
+    actual_guidance_stance: Optional[str] = Field(default=None)    # Ex-post guidance outcome ("RAISED", "REAFFIRMED", "LOWERED")
+    composite_accuracy_score: Optional[float] = Field(default=None)# Aggregate score (0-100 scale)
     scored_at: Optional[datetime] = Field(default=None)            # When the scoring task ran
     
     user: Optional[User] = Relationship(back_populates="predictions")

@@ -110,21 +110,10 @@ export default function CalendarPage() {
         };
     }, [indexName, timeframe, useFinviz]);
 
-    const handleFetchCalendar = async (signal?: AbortSignal) => {
+    const handleFetchCalendar = async (signal?: AbortSignal, forceRefresh: boolean = false) => {
         const activeUseFinviz = useFinviz;
         const activeIndexName = indexName;
         const activeTimeframe = timeframe;
-
-        // Check cache hit for Finviz path
-        if (activeUseFinviz) {
-            const cacheKey = `${activeUseFinviz}|${activeIndexName}|${activeTimeframe}`;
-            if (cacheRef.current.has(cacheKey)) {
-                setEvents(cacheRef.current.get(cacheKey) || []);
-                setError(null);
-                setLoading(false);
-                return;
-            }
-        }
 
         setLoading(true);
         setError(null);
@@ -145,17 +134,12 @@ export default function CalendarPage() {
                 activeTimeframe,
                 activeIndexName,
                 tokenStr,
-                { signal }
+                { signal },
+                forceRefresh
             );
             
             const eventsData = data || [];
             setEvents(eventsData);
-            
-            // Populate cache on successful Finviz fetch
-            if (activeUseFinviz) {
-                const cacheKey = `${activeUseFinviz}|${activeIndexName}|${activeTimeframe}`;
-                cacheRef.current.set(cacheKey, eventsData);
-            }
         } catch (err: any) {
             if (err.name === 'AbortError') {
                 return; // Request was aborted, ignore state update
@@ -276,7 +260,7 @@ export default function CalendarPage() {
                     </div>
                     <div className="w-full lg:flex-1">
                         <button
-                            onClick={() => handleFetchCalendar()}
+                            onClick={() => handleFetchCalendar(undefined, true)}
                             disabled={loading}
                             className="w-full py-2.5 rounded-xl font-mono font-bold uppercase tracking-widest text-xs bg-gradient-to-br from-teal to-teal-deep text-[#04231F] hover:shadow-[0_0_15px_rgba(45,212,191,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
                         >
@@ -316,7 +300,7 @@ export default function CalendarPage() {
                     </div>
                     <div>
                         <button
-                            onClick={() => handleFetchCalendar()}
+                            onClick={() => handleFetchCalendar(undefined, true)}
                             disabled={loading}
                             className="px-8 py-2.5 rounded-xl font-mono font-bold uppercase tracking-widest text-xs bg-gradient-to-br from-teal to-teal-deep text-[#04231F] hover:shadow-[0_0_15px_rgba(45,212,191,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
                         >

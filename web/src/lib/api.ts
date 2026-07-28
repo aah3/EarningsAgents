@@ -26,6 +26,12 @@ export interface Prediction {
     expected_eps?: number;
     actual_price_move_pct?: number;
     accuracy_score?: number;  // Brier score — lower is better
+    vol_stance_hit?: boolean;
+    price_dir_hit?: boolean;
+    guidance_stance_hit?: boolean;
+    magnitude_error_pct?: number;
+    actual_guidance_stance?: string;
+    composite_accuracy_score?: number;
     scored_at?: string;
     report_timing?: string;
 }
@@ -36,13 +42,18 @@ export interface PredictionMetrics {
     win_rate: number;              // fraction correct
     avg_confidence: number;        // mean predicted confidence
     avg_brier_score: number;       // mean Brier score (lower = better)
+    vol_stance_hit_rate?: number;  // fraction vol stance correct
+    price_dir_hit_rate?: number;   // fraction price direction correct
+    guidance_stance_hit_rate?: number; // fraction guidance stance correct
+    avg_magnitude_error_pct?: number;
+    avg_composite_score?: number;  // mean composite score (0-100 scale)
     beat_predictions: number;
     miss_predictions: number;
     beat_correct: number;
     miss_correct: number;
     direction_breakdown: Record<string, number>;
     agent_vote_breakdown: Record<string, Record<string, number>>;
-    brier_over_time: Array<{ date: string; brier: number; ticker: string }>;
+    brier_over_time: Array<{ date: string; brier: number; ticker: string; vol_stance_hit?: boolean; price_dir_hit?: boolean; guidance_stance_hit?: boolean; composite_score?: number }>;
     confidence_buckets: Array<{ bucket: string; predicted: number; actual_win_rate: number; count: number }>;
 }
 
@@ -61,8 +72,20 @@ export interface TaskStatusResponse {
     error?: string;
 }
 
+interface CacheEntry<T> {
+    data: T;
+    timestamp: number;
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const apiCache = new Map<string, CacheEntry<any>>();
+
 export const api = {
-    async fetchWithAuth(url: string, token?: string, options: RequestInit = {}) {
+    fetchWithAuth(url: string, token?: string, options: RequestInit = {}) {
+        return this.fetchWithAuthInternal(url, token, options);
+    },
+
+    async fetchWithAuthInternal(url: string, token?: string, options: RequestInit = {}) {
         const headers = new Headers(options.headers || {});
         if (token) {
             headers.set("Authorization", `Bearer ${token}`);
@@ -77,12 +100,12 @@ export const api = {
     },
 
     async health() {
-        return this.fetchWithAuth(`${API_BASE_URL}/health`);
+        return this.fetchWithAuthInternal(`${API_BASE_URL}/health`);
     },
 
     async predictTicker(ticker: string, reportDate: string, token?: string, userAnalysis?: string, enableRebuttals?: boolean): Promise<TaskResponse> {
         const url = `${API_BASE_URL}/earnings/predict/${ticker}`;
-        return this.fetchWithAuth(url, token, {
+        return this.fetchWithAuthInternal(url, token, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -97,23 +120,23 @@ export const api = {
 
     async getTaskStatus(taskId: string, token?: string): Promise<TaskStatusResponse> {
         const url = `${API_BASE_URL}/earnings/tasks/${taskId}`;
-        return this.fetchWithAuth(url, token);
+        return this.fetchWithAuthInternal(url, token);
     },
 
     async getWeeklyPredictions(weekStart: string, token?: string): Promise<Prediction[]> {
         const url = new URL(`${API_BASE_URL}/earnings/weekly`);
         url.searchParams.append("week_start", weekStart);
-        return this.fetchWithAuth(url.toString(), token);
+        return this.fetchWithAuthInternal(url.toString(), token);
     },
 
     async getPredictionHistory(token: string): Promise<Prediction[]> {
         const url = `${API_BASE_URL}/earnings/history`;
-        return this.fetchWithAuth(url, token);
+        return this.fetchWithAuthInternal(url, token);
     },
 
     async chatWithConsensus(ticker: string, messages: { role: string, content: string }[], predictionId?: number, token?: string) {
         const url = `${API_BASE_URL}/earnings/chat`;
-        return this.fetchWithAuth(url, token, {
+        return this.fetchWithAuthInternal(url, token, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -128,16 +151,26 @@ export const api = {
 
     async getChatHistory(token: string) {
         const url = `${API_BASE_URL}/earnings/chat/history`;
-        return this.fetchWithAuth(url, token);
+        return this.fetchWithAuthInternal(url, token);
     },
 
     async getDailyPredictions(targetDate: string, token?: string): Promise<Prediction[]> {
         const url = new URL(`${API_BASE_URL}/earnings/daily`);
         url.searchParams.append("target_date", targetDate);
-        return this.fetchWithAuth(url.toString(), token);
+        return this.fetchWithAuthInternal(url.toString(), token);
     },
 
-    async getCalendar(startDate?: string, endDate?: string, tickers?: string, useFinviz: boolean = false, timeframe: string = "This Week", indexName: string = "S&P 500", token?: string, options: RequestInit = {}) {
+    async getCalendar(
+        startDate?: string, 
+        endDate?: string, 
+        tickers?: string, 
+        useFinviz: boolean = false, 
+        timeframe: string = "This Week", 
+        indexName: string = "S&P 500", 
+        token?: string, 
+        options: RequestInit = {},
+        forceRefresh: boolean = false
+    ) {
         const url = new URL(`${API_BASE_URL}/earnings/calendar`);
         if (startDate) url.searchParams.append("start_date", startDate);
         if (endDate) url.searchParams.append("end_date", endDate);
@@ -147,7 +180,19 @@ export const api = {
             url.searchParams.append("timeframe", timeframe);
             url.searchParams.append("index_name", indexName);
         }
-        return this.fetchWithAuth(url.toString(), token, options);
+
+        const cacheKey = `calendar:${url.toString()}`;
+        const now = Date.now();
+        if (!forceRefresh && apiCache.has(cacheKey)) {
+            const entry = apiCache.get(cacheKey)!;
+            if (now - entry.timestamp < CACHE_TTL_MS) {
+                return entry.data;
+            }
+        }
+
+        const data = await this.fetchWithAuthInternal(url.toString(), token, options);
+        apiCache.set(cacheKey, { data, timestamp: Date.now() });
+        return data;
     },
 
     async getSentiment(ticker: string, daysBack: number = 30, token?: string) {

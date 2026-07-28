@@ -180,10 +180,41 @@ export default function PerformancePage() {
 
             {/* KPI Strip */}
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-                <StatCard label="Win Rate" value={m.scored_predictions > 0 ? `${winPct}%` : "—"} sub={m.scored_predictions > 0 ? `${m.scored_predictions} scored` : "No scored predictions yet"} color="var(--bull-green)" icon="🎯" />
-                <StatCard label="Avg Confidence" value={`${(m.avg_confidence * 100).toFixed(0)}%`} sub="All predictions" color="var(--accent-cyan)" icon="📊" />
-                <StatCard label="Avg Brier Score" value={m.scored_predictions > 0 ? m.avg_brier_score.toFixed(4) : "—"} sub={m.scored_predictions > 0 ? brierLabel : "Lower is better"} color="var(--consensus-purple)" icon="📐" />
-                <StatCard label="Total Predictions" value={String(m.total_predictions)} sub={`${m.beat_predictions} BEAT · ${m.miss_predictions} MISS`} color="var(--quant-blue)" icon="🔍" />
+                <StatCard label="Win Rate (EPS)" value={m.scored_predictions > 0 ? `${winPct}%` : "—"} sub={m.scored_predictions > 0 ? `${m.scored_predictions} scored` : "No scored predictions yet"} color="var(--bull-green)" icon="🎯" />
+                <StatCard label="Options Vol Hit Rate" value={m.scored_predictions > 0 && m.vol_stance_hit_rate !== undefined ? `${(m.vol_stance_hit_rate * 100).toFixed(1)}%` : "—"} sub="Over/Under implied stance" color="var(--quant-blue)" icon="📈" />
+                <StatCard label="Price Direction Hit" value={m.scored_predictions > 0 && m.price_dir_hit_rate !== undefined ? `${(m.price_dir_hit_rate * 100).toFixed(1)}%` : "—"} sub="Ex-post return sign" color="var(--bull-green)" icon="↗️" />
+                <StatCard label="Composite Score" value={m.scored_predictions > 0 && m.avg_composite_score !== undefined ? `${m.avg_composite_score.toFixed(1)}` : "—"} sub="Weighted score (0-100)" color="var(--consensus-purple)" icon="⭐" />
+            </div>
+
+            {/* Extended Hit Rates Banner */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="glass p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Guidance Stance Hit Rate</p>
+                        <p className="text-xl font-black text-white mt-1">
+                            {m.scored_predictions > 0 && m.guidance_stance_hit_rate !== undefined ? `${(m.guidance_stance_hit_rate * 100).toFixed(1)}%` : "—"}
+                        </p>
+                    </div>
+                    <span className="text-2xl">🔮</span>
+                </div>
+                <div className="glass p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Avg Magnitude Error</p>
+                        <p className="text-xl font-black text-white mt-1">
+                            {m.scored_predictions > 0 && m.avg_magnitude_error_pct !== undefined && m.avg_magnitude_error_pct > 0 ? `${(m.avg_magnitude_error_pct * 100).toFixed(2)}%` : "—"}
+                        </p>
+                    </div>
+                    <span className="text-2xl">📏</span>
+                </div>
+                <div className="glass p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Avg Brier Score</p>
+                        <p className="text-xl font-black text-white mt-1">
+                            {m.scored_predictions > 0 ? m.avg_brier_score.toFixed(4) : "—"}
+                        </p>
+                    </div>
+                    <span className="text-2xl">📐</span>
+                </div>
             </div>
 
             {/* Main grid */}
@@ -322,6 +353,9 @@ export default function PerformancePage() {
                                     <th className="px-8 py-4">Ticker</th>
                                     <th className="px-8 py-4">Date</th>
                                     <th className="px-8 py-4">Brier Score</th>
+                                    <th className="px-8 py-4">Vol Stance</th>
+                                    <th className="px-8 py-4">Price Dir</th>
+                                    <th className="px-8 py-4">Composite Score</th>
                                     <th className="px-8 py-4 text-right">Quality</th>
                                 </tr>
                             </thead>
@@ -336,6 +370,27 @@ export default function PerformancePage() {
                                             <td className="px-8 py-4 font-black text-accent text-lg">{row.ticker}</td>
                                             <td className="px-8 py-4 text-sm text-gray-400 font-mono">{row.date.slice(0, 10)}</td>
                                             <td className="px-8 py-4 font-mono font-bold text-white">{row.brier.toFixed(4)}</td>
+                                            <td className="px-8 py-4">
+                                                {row.vol_stance_hit === true ? (
+                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">HIT</span>
+                                                ) : row.vol_stance_hit === false ? (
+                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">MISS</span>
+                                                ) : (
+                                                    <span className="text-gray-600 text-xs">—</span>
+                                                )}
+                                            </td>
+                                            <td className="px-8 py-4">
+                                                {row.price_dir_hit === true ? (
+                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">HIT</span>
+                                                ) : row.price_dir_hit === false ? (
+                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">MISS</span>
+                                                ) : (
+                                                    <span className="text-gray-600 text-xs">—</span>
+                                                )}
+                                            </td>
+                                            <td className="px-8 py-4 font-mono font-bold text-purple-400">
+                                                {row.composite_score !== undefined && row.composite_score !== null ? row.composite_score.toFixed(1) : "—"}
+                                            </td>
                                             <td className={`px-8 py-4 text-right font-black text-sm uppercase tracking-widest ${quality.color}`}>{quality.label}</td>
                                         </tr>
                                     );

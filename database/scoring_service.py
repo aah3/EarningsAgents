@@ -160,6 +160,127 @@ class PredictionScorer:
             c /= 100.0
         return round((c - correct) ** 2, 6)
 
+    def evaluate_vol_stance(self, prediction, actual_move_pct: Optional[float]) -> Optional[bool]:
+        if actual_move_pct is None:
+            return None
+            
+        move_vs_implied = (getattr(prediction, "move_vs_implied", "") or "").lower()
+        options_features = getattr(prediction, "options_features", None) or {}
+        
+        implied_move_pct = None
+        if isinstance(options_features, dict):
+            implied_move_pct = options_features.get("implied_move_pct") or options_features.get("implied_move")
+            if implied_move_pct is not None:
+                try:
+                    implied_move_pct = float(implied_move_pct)
+                    if implied_move_pct > 1.0:
+                        implied_move_pct = implied_move_pct / 100.0
+                except (ValueError, TypeError):
+                    implied_move_pct = None
+                    
+        if implied_move_pct is None and move_vs_implied:
+            import re
+            match = re.search(r'(\d+(?:\.\d+)?)\s*%', move_vs_implied)
+            if match:
+                implied_move_pct = float(match.group(1)) / 100.0
+
+        abs_actual_move = abs(actual_move_pct)
+        
+        if any(kw in move_vs_implied for kw in ["over", "above", "exceed", "larger"]):
+            if implied_move_pct is not None:
+                return abs_actual_move > implied_move_pct
+            return abs_actual_move > 0.04
+        elif any(kw in move_vs_implied for kw in ["under", "below", "compress", "smaller"]):
+            if implied_move_pct is not None:
+                return abs_actual_move <= implied_move_pct
+            return abs_actual_move <= 0.04
+        elif any(kw in move_vs_implied for kw in ["in-line", "inline", "near", "flat"]):
+            if implied_move_pct is not None:
+                return abs(abs_actual_move - implied_move_pct) <= 0.015
+            return abs_actual_move <= 0.03
+            
+        if implied_move_pct is not None:
+            return abs(abs_actual_move - implied_move_pct) <= 0.02
+        return None
+
+    def evaluate_price_direction(self, prediction, actual_move_pct: Optional[float], noise_buffer: float = 0.005) -> Optional[bool]:
+        if actual_move_pct is None:
+            return None
+            
+        expected_move_str = (getattr(prediction, "expected_price_move", "") or "").lower()
+        predicted_dir = (getattr(prediction, "direction", "") or "").lower()
+        
+        expected_sign = None
+        if any(kw in expected_move_str for kw in ["positive", "+", "up", "bull"]):
+            expected_sign = 1
+        elif any(kw in expected_move_str for kw in ["negative", "-", "down", "bear"]):
+            expected_sign = -1
+        elif any(kw in expected_move_str for kw in ["flat", "neutral"]):
+            expected_sign = 0
+            
+        if expected_sign is None:
+            if predicted_dir == "beat":
+                expected_sign = 1
+            elif predicted_dir == "miss":
+                expected_sign = -1
+            else:
+                expected_sign = 0
+                
+        if abs(actual_move_pct) < noise_buffer:
+            actual_sign = 0
+        else:
+            actual_sign = 1 if actual_move_pct > 0 else -1
+            
+        return expected_sign == actual_sign
+
+    def evaluate_guidance_stance(self, prediction, actual_guidance_stance: Optional[str] = None) -> tuple[Optional[str], Optional[bool]]:
+        guidance_exp = (getattr(prediction, "guidance_expectation", "") or getattr(prediction, "likely_guidance", "") or "").lower()
+        
+        expected_stance = None
+        if any(kw in guidance_exp for kw in ["raise", "upward", "bull", "positive", "beat", "strong"]):
+            expected_stance = "RAISED"
+        elif any(kw in guidance_exp for kw in ["lower", "downward", "bear", "subdued", "cut", "weak"]):
+            expected_stance = "LOWERED"
+        elif any(kw in guidance_exp for kw in ["reaffirm", "inline", "in-line", "maintain", "flat"]):
+            expected_stance = "REAFFIRMED"
+
+        if actual_guidance_stance:
+            norm_actual = actual_guidance_stance.upper()
+        else:
+            actual_dir = getattr(prediction, "actual_direction", None)
+            if actual_dir == "beat":
+                norm_actual = "RAISED"
+            elif actual_dir == "miss":
+                norm_actual = "LOWERED"
+            else:
+                norm_actual = "REAFFIRMED"
+
+        if expected_stance is None:
+            return norm_actual, None
+            
+        return norm_actual, (expected_stance == norm_actual)
+
+    def compute_composite_score(self, brier: float, vol_hit: Optional[bool], dir_hit: Optional[bool], guidance_hit: Optional[bool]) -> float:
+        components = []
+        brier_pts = max(0.0, min(100.0, (1.0 - brier) * 100.0))
+        components.append((brier_pts, 0.30))
+
+        if vol_hit is not None:
+            components.append((100.0 if vol_hit else 0.0, 0.30))
+            
+        if dir_hit is not None:
+            components.append((100.0 if dir_hit else 0.0, 0.20))
+
+        if guidance_hit is not None:
+            components.append((100.0 if guidance_hit else 0.0, 0.20))
+
+        total_weight = sum(w for _, w in components)
+        if total_weight == 0:
+            return round(brier_pts, 2)
+            
+        weighted_score = sum(pts * w for pts, w in components) / total_weight
+        return round(weighted_score, 2)
+
     def score_prediction(self, prediction) -> dict:
         actual_data = self.fetch_actual_direction(prediction.ticker, prediction.report_date)
         if actual_data is None:
@@ -175,11 +296,33 @@ class PredictionScorer:
         price_move = self.fetch_price_move(prediction.ticker, prediction.report_date, report_timing)
         accuracy = self.compute_brier_score(prediction.direction, prediction.confidence, actual_data["actual_direction"])
         
+        vol_hit = self.evaluate_vol_stance(prediction, price_move)
+        dir_hit = self.evaluate_price_direction(prediction, price_move)
+        act_guidance, guidance_hit = self.evaluate_guidance_stance(prediction)
+        
+        # Calculate magnitude error if expected_price_move has numeric %
+        mag_error = None
+        if price_move is not None:
+            expected_str = getattr(prediction, "expected_price_move", "") or ""
+            import re
+            m = re.search(r'(\d+(?:\.\d+)?)\s*%', expected_str)
+            if m:
+                expected_val = float(m.group(1)) / 100.0
+                mag_error = round(abs(abs(price_move) - expected_val), 4)
+
+        composite_score = self.compute_composite_score(accuracy, vol_hit, dir_hit, guidance_hit)
+        
         return {
             "scored": True,
             "actual_direction": actual_data["actual_direction"],
             "actual_eps": actual_data["actual_eps"],
             "actual_price_move_pct": price_move,
             "accuracy_score": accuracy,
+            "vol_stance_hit": vol_hit,
+            "price_dir_hit": dir_hit,
+            "guidance_stance_hit": guidance_hit,
+            "magnitude_error_pct": mag_error,
+            "actual_guidance_stance": act_guidance,
+            "composite_accuracy_score": composite_score,
             "scored_at": datetime.utcnow()
         }

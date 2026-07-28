@@ -716,6 +716,12 @@ async def get_performance_metrics(
         brier_over_time = []
         confidence_raw: dict[str, list] = {}
 
+        vol_hits = []
+        dir_hits = []
+        guidance_hits = []
+        composite_scores = []
+        mag_errors = []
+
         for p in scored:
             correct = p.direction.lower() == p.actual_direction.lower()
             if correct:
@@ -728,12 +734,27 @@ async def get_performance_metrics(
             else:
                 miss_total += 1
 
+            if p.vol_stance_hit is not None:
+                vol_hits.append(p.vol_stance_hit)
+            if p.price_dir_hit is not None:
+                dir_hits.append(p.price_dir_hit)
+            if p.guidance_stance_hit is not None:
+                guidance_hits.append(p.guidance_stance_hit)
+            if p.composite_accuracy_score is not None:
+                composite_scores.append(p.composite_accuracy_score)
+            if p.magnitude_error_pct is not None:
+                mag_errors.append(p.magnitude_error_pct)
+
             brier = p.accuracy_score if p.accuracy_score is not None else (p.confidence - (1.0 if correct else 0.0)) ** 2
             avg_brier += brier
             brier_over_time.append({
                 "date": p.prediction_date.isoformat() if hasattr(p.prediction_date, "isoformat") else str(p.prediction_date),
                 "brier": round(brier, 4),
                 "ticker": p.ticker,
+                "vol_stance_hit": p.vol_stance_hit,
+                "price_dir_hit": p.price_dir_hit,
+                "guidance_stance_hit": p.guidance_stance_hit,
+                "composite_score": p.composite_accuracy_score,
             })
 
             # Confidence calibration bucket (10%-wide)
@@ -746,6 +767,12 @@ async def get_performance_metrics(
 
         win_rate = sum(1 for p in scored if p.direction.lower() == p.actual_direction.lower()) / n_scored if n_scored else 0.0
         avg_brier = avg_brier / n_scored if n_scored else 0.0
+
+        vol_stance_hit_rate = sum(1 for h in vol_hits if h) / len(vol_hits) if vol_hits else 0.0
+        price_dir_hit_rate = sum(1 for h in dir_hits if h) / len(dir_hits) if dir_hits else 0.0
+        guidance_stance_hit_rate = sum(1 for h in guidance_hits if h) / len(guidance_hits) if guidance_hits else 0.0
+        avg_magnitude_error = sum(mag_errors) / len(mag_errors) if mag_errors else 0.0
+        avg_composite_score = sum(composite_scores) / len(composite_scores) if composite_scores else 0.0
 
         confidence_buckets = [
             {
@@ -779,6 +806,11 @@ async def get_performance_metrics(
             "win_rate": round(win_rate, 4),
             "avg_confidence": round(avg_confidence, 4),
             "avg_brier_score": round(avg_brier, 4),
+            "vol_stance_hit_rate": round(vol_stance_hit_rate, 4),
+            "price_dir_hit_rate": round(price_dir_hit_rate, 4),
+            "guidance_stance_hit_rate": round(guidance_stance_hit_rate, 4),
+            "avg_magnitude_error_pct": round(avg_magnitude_error, 4),
+            "avg_composite_score": round(avg_composite_score, 2),
             "beat_predictions": beat_total,
             "miss_predictions": miss_total,
             "beat_correct": beat_correct,
