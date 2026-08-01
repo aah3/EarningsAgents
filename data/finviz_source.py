@@ -101,7 +101,7 @@ class FinvizDataSource(BaseDataSource):
 
             def clean_finviz_ticker(t: str) -> str:
                 t = str(t).strip().upper()
-                if len(t) > 1 and t[0] == t[1]:
+                if len(t) > 1 and (t.startswith('A') or t[0] == t[1]):
                     return t[1:]
                 return t
 

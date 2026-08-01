@@ -182,12 +182,14 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                         resolved_report_timing = "UNKNOWN"
         finally:
             src.disconnect()
-    except Exception as e:
-        logger.error(f"Failed to fetch next earnings date for {ticker} from earningsapi.com: {e}")
-        if report_date_str:
-            report_date = date.fromisoformat(report_date_str)
-        else:
-            raise ValueError(f"Could not resolve report date for {ticker} and none was provided.") from e
+    if expected_eps is None:
+        try:
+            import yfinance as yf
+            cal = getattr(yf.Ticker(ticker), 'calendar', {}) or {}
+            if isinstance(cal, dict) and cal.get('Earnings Average') is not None:
+                expected_eps = float(cal.get('Earnings Average'))
+        except Exception as e:
+            logger.warning(f"Failed to fetch fallback expected EPS from yfinance for {ticker}: {e}")
 
     if report_date is None:
         raise ValueError(f"Could not resolve report date for {ticker} and none was provided.")

@@ -9,26 +9,62 @@ class PredictionScorer:
         self.yahoo = yahoo_source
         self.logger = logging.getLogger("PredictionScorer")
         
-    def fetch_actual_direction(self, ticker: str, report_date: date) -> Optional[dict]:
+    def fetch_actual_direction(self, ticker: str, report_date: date, expected_eps: Optional[float] = None) -> Optional[dict]:
+        report_d = report_date
+        if isinstance(report_d, datetime):
+            report_d = report_d.date()
+
+        # Try to resolve estimate_eps from parameter, yfinance calendar, or EarningsCalendarEvent
+        estimate_eps = expected_eps
+        if estimate_eps is None:
+            try:
+                tick = yf.Ticker(ticker)
+                cal = getattr(tick, 'calendar', {}) or {}
+                if isinstance(cal, dict) and cal.get('Earnings Average') is not None:
+                    estimate_eps = float(cal.get('Earnings Average'))
+            except Exception:
+                pass
+                
+        if estimate_eps is None:
+            try:
+                from database.db import Session, engine
+                from database.models import EarningsCalendarEvent
+                from sqlmodel import select
+                with Session(engine) as session:
+                    ev = session.exec(select(EarningsCalendarEvent).where(
+                        EarningsCalendarEvent.ticker == ticker.upper(),
+                        EarningsCalendarEvent.report_date == report_d
+                    )).first()
+                    if ev and ev.eps_estimate is not None:
+                        estimate_eps = float(ev.eps_estimate)
+            except Exception:
+                pass
+
         try:
             history = self.yahoo.get_historical_earnings(ticker, num_quarters=8)
         except Exception as e:
             self.logger.error(f"Error fetching historical earnings for {ticker}: {e}")
-            return None
+            history = []
             
         for entry in history:
             entry_date = entry.date
             if isinstance(entry_date, datetime):
                 entry_date = entry_date.date()
                 
-            report_d = report_date
-            if isinstance(report_d, datetime):
-                report_d = report_d.date()
-                
             # within 7 calendar days
             delta = abs((entry_date - report_d).days)
             if delta <= 7:
-                surprise = entry.surprise_pct or 0.0
+                if entry.actual_eps is None or (isinstance(entry.actual_eps, float) and math.isnan(entry.actual_eps)):
+                    continue
+                
+                cur_est = estimate_eps if estimate_eps is not None else entry.estimate_eps
+                if cur_est is not None and cur_est != 0:
+                    from data.metrics import safe_surprise_pct
+                    surprise = safe_surprise_pct(entry.actual_eps, cur_est)
+                    surprise = surprise if surprise is not None else (entry.surprise_pct or 0.0)
+                else:
+                    surprise = entry.surprise_pct or 0.0
+                    
                 if surprise > 2.0:
                     overall_dir = "beat"
                 elif surprise < -2.0:
@@ -38,11 +74,94 @@ class PredictionScorer:
                     
                 return {
                     "actual_eps": entry.actual_eps,
-                    "estimate_eps": entry.estimate_eps,
+                    "estimate_eps": cur_est,
                     "surprise_pct": surprise,
                     "beat": surprise > 0,
                     "actual_direction": overall_dir
                 }
+
+        # Fallback 1: check quarterly_income_stmt from yfinance
+        try:
+            tick = yf.Ticker(ticker)
+            q_stmt = tick.quarterly_income_stmt
+            if q_stmt is not None and not q_stmt.empty:
+                row_name = 'Diluted EPS' if 'Diluted EPS' in q_stmt.index else ('Basic EPS' if 'Basic EPS' in q_stmt.index else None)
+                if row_name:
+                    eps_row = q_stmt.loc[row_name]
+                    for col_date in eps_row.index:
+                        d = col_date.date() if hasattr(col_date, 'date') else col_date
+                        if 0 <= (report_d - d).days <= 120:
+                            val = eps_row[col_date]
+                            if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                                actual_eps = float(val)
+                                
+                                if estimate_eps is not None:
+                                    from data.metrics import safe_surprise_pct
+                                    res = safe_surprise_pct(actual_eps, estimate_eps)
+                                    surprise = res if res is not None else 0.0
+                                    
+                                    if surprise > 2.0:
+                                        overall_dir = "beat"
+                                    elif surprise < -2.0:
+                                        overall_dir = "miss"
+                                    else:
+                                        overall_dir = "meet"
+                                    beat_val = surprise > 0
+                                else:
+                                    surprise = None
+                                    overall_dir = None
+                                    beat_val = None
+                                    
+                                return {
+                                    "actual_eps": actual_eps,
+                                    "estimate_eps": estimate_eps,
+                                    "surprise_pct": surprise,
+                                    "beat": beat_val,
+                                    "actual_direction": overall_dir
+                                }
+        except Exception as e:
+            self.logger.warning(f"Fallback quarterly EPS fetch failed for {ticker}: {e}")
+
+        # Fallback 2: check local database EarningsHistory
+        try:
+            from database.db import Session, engine
+            from database.models import EarningsHistory
+            from sqlmodel import select
+            with Session(engine) as session:
+                stmt = select(EarningsHistory).where(
+                    EarningsHistory.ticker == ticker.upper(),
+                    EarningsHistory.report_date == report_d
+                )
+                db_hist = session.exec(stmt).first()
+                if db_hist and db_hist.eps_actual is not None and not math.isnan(db_hist.eps_actual):
+                    actual_eps = float(db_hist.eps_actual)
+                    cur_est = estimate_eps if estimate_eps is not None else (float(db_hist.eps_estimate) if db_hist.eps_estimate is not None else None)
+                    if cur_est is not None:
+                        from data.metrics import safe_surprise_pct
+                        res = safe_surprise_pct(actual_eps, cur_est)
+                        surprise = res if res is not None else (db_hist.eps_surprise_pct or 0.0)
+                        if surprise > 2.0:
+                            overall_dir = "beat"
+                        elif surprise < -2.0:
+                            overall_dir = "miss"
+                        else:
+                            overall_dir = "meet"
+                        beat_val = surprise > 0
+                    else:
+                        surprise = None
+                        overall_dir = None
+                        beat_val = None
+
+                    return {
+                        "actual_eps": actual_eps,
+                        "estimate_eps": cur_est,
+                        "surprise_pct": surprise,
+                        "beat": beat_val,
+                        "actual_direction": overall_dir
+                    }
+        except Exception as e:
+            self.logger.warning(f"Fallback local DB EarningsHistory fetch failed for {ticker}: {e}")
+
         return None
 
     def fetch_price_move(self, ticker: str, report_date: date, report_timing: Optional[str] = "UNKNOWN") -> Optional[float]:
@@ -282,15 +401,10 @@ class PredictionScorer:
         return round(weighted_score, 2)
 
     def score_prediction(self, prediction) -> dict:
-        actual_data = self.fetch_actual_direction(prediction.ticker, prediction.report_date)
-        if actual_data is None:
-            if getattr(prediction, "actual_direction", None) is not None:
-                actual_data = {
-                    "actual_direction": prediction.actual_direction,
-                    "actual_eps": getattr(prediction, "actual_eps", None),
-                }
-            else:
-                return {"scored": False, "reason": "Actual EPS not yet available"}
+        exp_eps = getattr(prediction, "expected_eps", None)
+        actual_data = self.fetch_actual_direction(prediction.ticker, prediction.report_date, expected_eps=exp_eps)
+        if actual_data is None or actual_data.get("actual_eps") is None or actual_data.get("actual_direction") is None:
+            return {"scored": False, "reason": "Actual EPS or consensus estimate not yet available for outcome classification"}
         
         report_timing = getattr(prediction, "report_timing", "UNKNOWN")
         price_move = self.fetch_price_move(prediction.ticker, prediction.report_date, report_timing)

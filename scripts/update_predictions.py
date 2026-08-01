@@ -58,6 +58,8 @@ def main():
     parser.add_argument("-p", "--confidence", type=float, help="Predicted confidence as float (e.g. 0.75 or 75.0, required if using --create)")
     parser.add_argument("-r", "--report-date", type=str, help="Report date YYYY-MM-DD (defaults to today if creating)")
     
+    parser.add_argument("-f", "--force", action="store_true", help="Force re-scoring even if prediction already has outcome data")
+    
     args = parser.parse_args()
     
     # Default to --all if no specific ticker is supplied
@@ -72,14 +74,23 @@ def main():
     with Session(engine) as session:
         # Scenario A: Score all unscored predictions
         if run_all:
-            print("Scanning database for all unscored predictions...")
-            statement = select(Prediction).where(or_(Prediction.actual_direction == None, Prediction.actual_price_move_pct == None))
+            print("Scanning database for unscored or 0-EPS predictions...")
+            if args.force:
+                statement = select(Prediction)
+            else:
+                statement = select(Prediction).where(
+                    or_(
+                        Prediction.actual_direction == None,
+                        Prediction.actual_price_move_pct == None,
+                        Prediction.actual_eps == 0.0
+                    )
+                )
             unscored = session.exec(statement).all()
             
             if not unscored:
-                print("No unscored predictions found in the database.")
+                print("No unscored or 0-EPS predictions found in the database.")
             else:
-                print(f"Found {len(unscored)} unscored prediction(s). Processing...")
+                print(f"Found {len(unscored)} prediction(s) to process. Processing...")
                 scored_count = 0
                 for p in unscored:
                     if score_and_save(scorer, session, p):

@@ -1210,15 +1210,26 @@ class YahooFinanceDataSource(BaseDataSource):
         """Get consensus analyst estimates."""
         try:
             tick = self._get_ticker(ticker)
-            info = tick.info
+            cal = getattr(tick, 'calendar', {}) or {}
             
-            earnings_estimate = info.get('forwardEps')
+            eps_mean = None
+            eps_high = None
+            eps_low = None
+            num_analysts = 0
+            
+            if isinstance(cal, dict) and cal.get('Earnings Average') is not None:
+                eps_mean = safe_float(cal.get('Earnings Average'))
+                eps_high = safe_float(cal.get('Earnings High', eps_mean))
+                eps_low = safe_float(cal.get('Earnings Low', eps_mean))
+            
+            info = getattr(tick, 'info', {}) or {}
             num_analysts = safe_int(info.get('numberOfAnalystOpinions', 0))
-            eps_mean = safe_float(earnings_estimate)
+            
+            if eps_mean is None:
+                return None
+            
             eps_median = eps_mean
-            eps_high = safe_float(info.get('targetHighPrice', eps_mean * 1.1 if eps_mean else None))
-            eps_low = safe_float(info.get('targetLowPrice', eps_mean * 0.9 if eps_mean else None))
-            eps_std = (eps_high - eps_low) / 4 if eps_high and eps_low else 0.0
+            eps_std = (eps_high - eps_low) / 4 if (eps_high is not None and eps_low is not None) else 0.0
             
             return ConsensusEstimate(
                 eps_mean=eps_mean,
@@ -1256,7 +1267,7 @@ class YahooFinanceDataSource(BaseDataSource):
                 actual = row.get('Reported EPS')
                 estimate = row.get('EPS Estimate')
                 
-                if actual is None or estimate is None:
+                if actual is None or estimate is None or pd.isna(actual) or pd.isna(estimate):
                     continue
                 
                 actual_eps = safe_float(actual)
