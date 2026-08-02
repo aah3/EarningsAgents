@@ -28,19 +28,21 @@ def test_fetch_price_move_fallback_bmo():
     assert abs(move - 0.025255) < 0.005
     yahoo.disconnect()
 
-def test_fetch_price_move_fallback_amc():
+def test_fetch_price_move_timing_normalization():
     config = DataSourceConfig(rate_limit_calls=100, rate_limit_period=60)
     yahoo = YahooFinanceDataSource(config)
     yahoo.connect()
     scorer = PredictionScorer(yahoo)
     
-    # JPM AMC on 2026-07-14.
-    # Report close (2026-07-14): ~343.04
-    # Next close (2026-07-15): ~346.06
-    # Return: (346.059998 - 343.040009) / 343.040009 = ~0.88%
-    move = scorer.fetch_price_move("JPM", date(2026, 7, 14), "AMC")
-    assert move is not None
-    assert abs(move - 0.008803) < 0.005
+    # Test normalized timing strings: "AFTER_MARKET" should evaluate same as "AMC"
+    move_amc = scorer.fetch_price_move("JPM", date(2026, 7, 14), "AFTER_MARKET")
+    assert move_amc is not None
+    assert abs(move_amc - 0.008803) < 0.005
+
+    # "BEFORE_MARKET" should evaluate same as "BMO"
+    move_bmo = scorer.fetch_price_move("JPM", date(2026, 7, 14), "BEFORE_MARKET")
+    assert move_bmo is not None
+    assert abs(move_bmo - 0.025255) < 0.005
     yahoo.disconnect()
 
 def test_score_prediction_with_mock():

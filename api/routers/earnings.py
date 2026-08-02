@@ -916,6 +916,12 @@ async def verify_prediction(
                 prediction.actual_eps = result.get("actual_eps")
                 prediction.actual_price_move_pct = result.get("actual_price_move_pct")
                 prediction.accuracy_score = result.get("accuracy_score")
+                prediction.vol_stance_hit = result.get("vol_stance_hit")
+                prediction.price_dir_hit = result.get("price_dir_hit")
+                prediction.guidance_stance_hit = result.get("guidance_stance_hit")
+                prediction.magnitude_error_pct = result.get("magnitude_error_pct")
+                prediction.actual_guidance_stance = result.get("actual_guidance_stance")
+                prediction.composite_accuracy_score = result.get("composite_accuracy_score")
                 prediction.scored_at = result.get("scored_at", datetime.utcnow())
                 
                 session.add(prediction)
@@ -930,6 +936,12 @@ async def verify_prediction(
                         "actual_eps": prediction.actual_eps,
                         "actual_price_move_pct": prediction.actual_price_move_pct,
                         "accuracy_score": prediction.accuracy_score,
+                        "vol_stance_hit": prediction.vol_stance_hit,
+                        "price_dir_hit": prediction.price_dir_hit,
+                        "guidance_stance_hit": prediction.guidance_stance_hit,
+                        "magnitude_error_pct": prediction.magnitude_error_pct,
+                        "actual_guidance_stance": prediction.actual_guidance_stance,
+                        "composite_accuracy_score": prediction.composite_accuracy_score,
                         "scored_at": prediction.scored_at.isoformat() if prediction.scored_at else None
                     }
                 }

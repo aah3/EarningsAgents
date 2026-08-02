@@ -80,6 +80,11 @@ interface CacheEntry<T> {
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const apiCache = new Map<string, CacheEntry<any>>();
 
+export function normalizeTicker(ticker: string): string {
+    if (!ticker) return "";
+    return ticker.trim().toUpperCase().replace(/^\$/, "").replace(/^(NASDAQ|NYSE|AMEX):/i, "");
+}
+
 export const api = {
     fetchWithAuth(url: string, token?: string, options: RequestInit = {}) {
         return this.fetchWithAuthInternal(url, token, options);
@@ -104,7 +109,8 @@ export const api = {
     },
 
     async predictTicker(ticker: string, reportDate: string, token?: string, userAnalysis?: string, enableRebuttals?: boolean): Promise<TaskResponse> {
-        const url = `${API_BASE_URL}/earnings/predict/${ticker}`;
+        const normTicker = normalizeTicker(ticker);
+        const url = `${API_BASE_URL}/earnings/predict/${normTicker}`;
         return this.fetchWithAuthInternal(url, token, {
             method: 'POST',
             headers: {
@@ -129,12 +135,23 @@ export const api = {
         return this.fetchWithAuthInternal(url.toString(), token);
     },
 
-    async getPredictionHistory(token: string): Promise<Prediction[]> {
+    async getPredictionHistory(token: string, forceRefresh: boolean = false): Promise<Prediction[]> {
         const url = `${API_BASE_URL}/earnings/history`;
-        return this.fetchWithAuthInternal(url, token);
+        const cacheKey = `history:${token || "anon"}`;
+        const now = Date.now();
+        if (!forceRefresh && apiCache.has(cacheKey)) {
+            const entry = apiCache.get(cacheKey)!;
+            if (now - entry.timestamp < CACHE_TTL_MS) {
+                return entry.data;
+            }
+        }
+        const data = await this.fetchWithAuthInternal(url, token);
+        apiCache.set(cacheKey, { data, timestamp: Date.now() });
+        return data;
     },
 
     async chatWithConsensus(ticker: string, messages: { role: string, content: string }[], predictionId?: number, token?: string) {
+        const normTicker = normalizeTicker(ticker);
         const url = `${API_BASE_URL}/earnings/chat`;
         return this.fetchWithAuthInternal(url, token, {
             method: 'POST',
@@ -142,7 +159,7 @@ export const api = {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                ticker,
+                ticker: normTicker,
                 prediction_id: predictionId,
                 messages
             })
@@ -174,7 +191,7 @@ export const api = {
         const url = new URL(`${API_BASE_URL}/earnings/calendar`);
         if (startDate) url.searchParams.append("start_date", startDate);
         if (endDate) url.searchParams.append("end_date", endDate);
-        if (tickers) url.searchParams.append("tickers", tickers);
+        if (tickers) url.searchParams.append("tickers", tickers.split(",").map(normalizeTicker).join(","));
         if (useFinviz) {
             url.searchParams.append("use_finviz", "true");
             url.searchParams.append("timeframe", timeframe);
@@ -196,28 +213,40 @@ export const api = {
     },
 
     async getSentiment(ticker: string, daysBack: number = 30, token?: string) {
-        const url = new URL(`${API_BASE_URL}/earnings/sentiment/${ticker}`);
+        const normTicker = normalizeTicker(ticker);
+        const url = new URL(`${API_BASE_URL}/earnings/sentiment/${normTicker}`);
         url.searchParams.append("days_back", daysBack.toString());
         return this.fetchWithAuth(url.toString(), token);
     },
 
     async predictBatch(companies: { ticker: string, report_date: string, user_analysis?: string }[], predictionDate?: string, token?: string): Promise<Prediction[]> {
         const url = `${API_BASE_URL}/earnings/batch`;
+        const normalizedCompanies = companies.map(c => ({ ...c, ticker: normalizeTicker(c.ticker) }));
         return this.fetchWithAuth(url, token, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                companies,
+                companies: normalizedCompanies,
                 prediction_date: predictionDate || new Date().toISOString().split('T')[0]
             })
         });
     },
 
-    async getMetrics(token: string): Promise<PredictionMetrics> {
+    async getMetrics(token: string, forceRefresh: boolean = false): Promise<PredictionMetrics> {
         const url = `${API_BASE_URL}/earnings/metrics`;
-        return this.fetchWithAuth(url, token);
+        const cacheKey = `metrics:${token || "anon"}`;
+        const now = Date.now();
+        if (!forceRefresh && apiCache.has(cacheKey)) {
+            const entry = apiCache.get(cacheKey)!;
+            if (now - entry.timestamp < CACHE_TTL_MS) {
+                return entry.data;
+            }
+        }
+        const data = await this.fetchWithAuth(url, token);
+        apiCache.set(cacheKey, { data, timestamp: Date.now() });
+        return data;
     },
 
     async verifyPrediction(predictionId: number, token?: string) {

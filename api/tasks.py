@@ -182,6 +182,9 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                         resolved_report_timing = "UNKNOWN"
         finally:
             src.disconnect()
+    except Exception as e:
+        logger.warning(f"Failed to fetch next earnings date from earningsapi.com for {ticker}: {e}")
+
     if expected_eps is None:
         try:
             import yfinance as yf

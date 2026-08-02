@@ -57,6 +57,9 @@ class PredictionScorer:
                 if entry.actual_eps is None or (isinstance(entry.actual_eps, float) and math.isnan(entry.actual_eps)):
                     continue
                 
+                if entry.actual_eps == 0.0:
+                    self.logger.warning(f"Actual EPS for {ticker} on {report_d} is 0.0. Verifying non-zero default invariant.")
+                
                 cur_est = estimate_eps if estimate_eps is not None else entry.estimate_eps
                 if cur_est is not None and cur_est != 0:
                     from data.metrics import safe_surprise_pct
@@ -94,6 +97,8 @@ class PredictionScorer:
                             val = eps_row[col_date]
                             if val is not None and not (isinstance(val, float) and math.isnan(val)):
                                 actual_eps = float(val)
+                                if actual_eps == 0.0:
+                                    self.logger.warning(f"Quarterly income statement actual EPS for {ticker} is 0.0.")
                                 
                                 if estimate_eps is not None:
                                     from data.metrics import safe_surprise_pct
@@ -135,6 +140,8 @@ class PredictionScorer:
                 db_hist = session.exec(stmt).first()
                 if db_hist and db_hist.eps_actual is not None and not math.isnan(db_hist.eps_actual):
                     actual_eps = float(db_hist.eps_actual)
+                    if actual_eps == 0.0:
+                        self.logger.warning(f"Local EarningsHistory actual EPS for {ticker} is 0.0.")
                     cur_est = estimate_eps if estimate_eps is not None else (float(db_hist.eps_estimate) if db_hist.eps_estimate is not None else None)
                     if cur_est is not None:
                         from data.metrics import safe_surprise_pct
@@ -162,6 +169,7 @@ class PredictionScorer:
         except Exception as e:
             self.logger.warning(f"Fallback local DB EarningsHistory fetch failed for {ticker}: {e}")
 
+        self.logger.warning(f"Could not resolve actual EPS for {ticker} on {report_d}.")
         return None
 
     def fetch_price_move(self, ticker: str, report_date: date, report_timing: Optional[str] = "UNKNOWN") -> Optional[float]:
@@ -171,9 +179,28 @@ class PredictionScorer:
                 report_d = report_d.date()
                 
             ticker = ticker.strip().upper()
-            timing = (report_timing or "UNKNOWN").upper()
+            raw_timing = (report_timing or "UNKNOWN").upper()
+
+            # Attempt DB resolution if UNKNOWN
+            if raw_timing == "UNKNOWN":
+                try:
+                    from database.db import Session, engine
+                    from database.models import EarningsCalendarEvent
+                    from sqlmodel import select
+                    with Session(engine) as session:
+                        ev = session.exec(select(EarningsCalendarEvent).where(
+                            EarningsCalendarEvent.ticker == ticker,
+                            EarningsCalendarEvent.report_date == report_d
+                        )).first()
+                        if ev and ev.report_time:
+                            raw_timing = ev.report_time.upper()
+                except Exception:
+                    pass
+
+            is_amc = any(x in raw_timing for x in ["AMC", "AFTER", "POST", "PM", "CLOSE"])
+            is_bmo = any(x in raw_timing for x in ["BMO", "BEFORE", "PRE", "AM", "OPEN"])
             
-            # Fetch a wider range of daily prices to calculate yesterday-close-to-close or close-to-tomorrow-close
+            # Fetch a wider range of daily prices to calculate close-to-close returns
             start_date = report_d - timedelta(days=7)
             end_date = report_d + timedelta(days=7)
             
@@ -220,9 +247,9 @@ class PredictionScorer:
             need_hourly = False
             if not report_day_actual:
                 need_hourly = True
-            elif timing == "AMC" and (not next_day_actual or next_day_actual not in closes):
+            elif is_amc and (not next_day_actual or next_day_actual not in closes):
                 need_hourly = True
-            elif timing != "AMC" and (not prior_day_actual or prior_day_actual not in closes):
+            elif not is_amc and (not prior_day_actual or prior_day_actual not in closes):
                 need_hourly = True
                 
             if need_hourly:
@@ -247,8 +274,11 @@ class PredictionScorer:
                 self.logger.warning(f"Could not find trading day on or after {report_d} for {ticker}")
                 return None
                 
-            if timing == "AMC":
-                # AMC (After Market Close) reaction: report close to next close
+            if is_amc:
+                # AMC (After Market Close) reaction at time t:
+                # Base price p(t) is close on report day t.
+                # Reaction price p(t+1) is close on next trading day t+1.
+                # Close-to-close return = p(t+1) / p(t) - 1
                 idx = all_dates.index(report_day_actual)
                 if idx + 1 >= len(all_dates):
                     self.logger.warning(f"Next trading day after {report_day_actual} not available yet for {ticker}")
@@ -256,7 +286,10 @@ class PredictionScorer:
                 day0_close = closes[report_day_actual]
                 day1_close = closes[all_dates[idx + 1]]
             else:
-                # BMO (Before Market Open) or UNKNOWN: prior close to report close
+                # BMO (Before Market Open) or UNKNOWN reaction at time t+1:
+                # Base price p(t) is prior close before earnings (idx - 1).
+                # Reaction price p(t+1) is close on report day t+1.
+                # Close-to-close return = p(t+1) / p(t) - 1
                 idx = all_dates.index(report_day_actual)
                 if idx - 1 < 0:
                     self.logger.warning(f"Prior trading day before {report_day_actual} not found for {ticker}")
