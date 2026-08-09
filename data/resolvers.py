@@ -13,12 +13,158 @@ the `resolve()` method of each class.
 
 from dataclasses import dataclass
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
+import math
 
 try:
     from settings import ReportTime
 except ImportError:
     pass
+
+class ExpectedEPSResolver:
+    """
+    Multi-source resolver for consensus expected EPS estimate.
+    Follows a multi-tier fallback chain:
+    1. Direct parameter / existing estimate if non-null and non-zero
+    2. Local DB `EarningsCalendarEvent` matching ticker & report date
+    3. `yfinance` calendar (dictionary or DataFrame formats)
+    4. `yfinance` earnings_dates table (matching date or closest event)
+    5. `yfinance` info (`epsForward`, `epsCurrentYear`)
+    6. `EarningsHistory` table (historical consensus)
+    """
+    def __init__(self, session=None):
+        self.session = session
+
+    def resolve(self, ticker: str, report_date: Optional[date] = None, expected_eps: Optional[float] = None) -> Optional[float]:
+        # Tier 1: Check passed value
+        if expected_eps is not None and not (isinstance(expected_eps, float) and math.isnan(expected_eps)):
+            return float(expected_eps)
+
+        ticker = ticker.strip().upper()
+        report_d = report_date
+        if isinstance(report_d, datetime):
+            report_d = report_d.date()
+
+        # Tier 2: Check local EarningsCalendarEvent table in database
+        if report_d:
+            try:
+                from database.db import Session, engine
+                from database.models import EarningsCalendarEvent
+                from sqlmodel import select
+                
+                def query_db(sess):
+                    ev = sess.exec(select(EarningsCalendarEvent).where(
+                        EarningsCalendarEvent.ticker == ticker,
+                        EarningsCalendarEvent.report_date == report_d
+                    )).first()
+                    if ev and ev.eps_estimate is not None and not math.isnan(ev.eps_estimate):
+                        return float(ev.eps_estimate)
+                    return None
+
+                if self.session:
+                    val = query_db(self.session)
+                    if val is not None:
+                        return val
+                else:
+                    with Session(engine) as sess:
+                        val = query_db(sess)
+                        if val is not None:
+                            return val
+            except Exception:
+                pass
+
+        # Tier 3: Check yfinance calendar
+        try:
+            import yfinance as yf
+            tick = yf.Ticker(ticker)
+            cal = getattr(tick, 'calendar', None)
+            if isinstance(cal, dict):
+                for k in ['Earnings Average', 'EPS Estimate', 'Earnings Estimate', 'EPS Average', 'epsEstimate', '0']:
+                    if k in cal and cal[k] is not None:
+                        val = cal[k]
+                        if isinstance(val, (list, tuple)) and len(val) > 0:
+                            val = val[0]
+                        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                            return float(val)
+            elif cal is not None and hasattr(cal, 'empty') and not cal.empty:
+                # DataFrame format
+                for idx in cal.index:
+                    idx_str = str(idx)
+                    if any(term in idx_str for term in ['Earnings Average', 'EPS Estimate', 'Average', 'Estimate']):
+                        row = cal.loc[idx]
+                        val = row.iloc[0] if hasattr(row, 'iloc') else row
+                        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                            return float(val)
+        except Exception:
+            pass
+
+        # Tier 4: Check yfinance earnings_dates DataFrame
+        try:
+            import yfinance as yf
+            tick = yf.Ticker(ticker)
+            ed = getattr(tick, 'earnings_dates', None)
+            if ed is not None and hasattr(ed, 'empty') and not ed.empty and 'EPS Estimate' in ed.columns:
+                best_match = None
+                min_delta = 365
+                for idx, row in ed.iterrows():
+                    d = idx.date() if hasattr(idx, 'date') else idx
+                    est = row['EPS Estimate']
+                    if est is not None and not (isinstance(est, float) and math.isnan(est)):
+                        if report_d:
+                            delta = abs((d - report_d).days)
+                            if delta <= 14 and delta < min_delta:
+                                min_delta = delta
+                                best_match = float(est)
+                        elif best_match is None:
+                            best_match = float(est)
+                if best_match is not None:
+                    return best_match
+        except Exception:
+            pass
+
+        # Tier 5: Check yfinance info dictionary
+        try:
+            import yfinance as yf
+            tick = yf.Ticker(ticker)
+            info = getattr(tick, 'info', {}) or {}
+            for k in ['epsForward', 'epsCurrentYear', 'epsTrailingTwelveMonths']:
+                if k in info and info[k] is not None:
+                    val = info[k]
+                    if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                        return float(val)
+        except Exception:
+            pass
+
+        # Tier 6: Check local EarningsHistory table
+        if report_d:
+            try:
+                from database.db import Session, engine
+                from database.models import EarningsHistory
+                from sqlmodel import select
+                
+                def query_hist(sess):
+                    eh = sess.exec(select(EarningsHistory).where(
+                        EarningsHistory.ticker == ticker,
+                        EarningsHistory.report_date == report_d
+                    )).first()
+                    if eh and eh.eps_estimate is not None and not math.isnan(eh.eps_estimate):
+                        return float(eh.eps_estimate)
+                    return None
+
+                if self.session:
+                    val = query_hist(self.session)
+                    if val is not None:
+                        return val
+                else:
+                    with Session(engine) as sess:
+                        val = query_hist(sess)
+                        if val is not None:
+                            return val
+            except Exception:
+                pass
+
+        return None
+
 
 @dataclass
 class ReportTimeResult:

@@ -249,10 +249,37 @@ export const api = {
         return data;
     },
 
-    async verifyPrediction(predictionId: number, token?: string) {
-        const url = `${API_BASE_URL}/earnings/${predictionId}/verify`;
+    clearCache() {
+        apiCache.clear();
+    },
+
+    async verifyPrediction(predictionId: number, token?: string, force: boolean = true) {
+        apiCache.clear();
+        const url = `${API_BASE_URL}/earnings/${predictionId}/verify?force=${force}`;
         return this.fetchWithAuth(url, token, {
             method: 'POST'
+        });
+    },
+
+    async overridePredictionActuals(
+        predictionId: number,
+        data: {
+            expected_eps?: number;
+            actual_eps?: number;
+            actual_price_move_pct?: number;
+            actual_direction?: string;
+            actual_guidance_stance?: string;
+        },
+        token?: string
+    ) {
+        apiCache.clear();
+        const url = `${API_BASE_URL}/earnings/${predictionId}/override`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
         });
     },
 

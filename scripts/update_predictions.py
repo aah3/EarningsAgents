@@ -16,6 +16,8 @@ def score_and_save(scorer, session, prediction):
     print(f"\nScoring {prediction.ticker} (ID {prediction.id or 'NEW'})...")
     result = scorer.score_prediction(prediction)
     if result.get("scored"):
+        if result.get("expected_eps") is not None:
+            prediction.expected_eps = result["expected_eps"]
         prediction.actual_direction = result["actual_direction"]
         prediction.actual_eps = result["actual_eps"]
         prediction.actual_price_move_pct = result["actual_price_move_pct"]

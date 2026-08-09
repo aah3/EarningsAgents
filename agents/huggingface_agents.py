@@ -51,6 +51,14 @@ except ImportError:
     except ImportError:
         from .llm_client import LLMClient          # relative package import
 
+try:
+    from agent_tools import ToolResult
+except ImportError:
+    try:
+        from agents.agent_tools import ToolResult
+    except ImportError:
+        from .agent_tools import ToolResult
+
 
 # ============================================================================
 # UTILITIES
@@ -2047,6 +2055,7 @@ def generate_thesis(
         try:
             from data.data_aggregator import DataAggregator
         except ImportError:
+            # pyrefly: ignore [missing-import]
             from data_aggregator import DataAggregator
         
         agg = DataAggregator(

@@ -144,9 +144,14 @@ def test_history_endpoint_and_privacy():
     print(f"\n[PASS] History scoping and privacy isolation verified successfully!")
 
 
-def test_post_trigger_contract():
+def test_post_trigger_contract(monkeypatch):
     ticker = "TEST_POST"
     cleanup_test_ticker(ticker)
+
+    class DummyTask:
+        id = "mock-task-id-12345"
+
+    monkeypatch.setattr("api.routers.research.generate_research_thesis_task.delay", lambda *args, **kwargs: DummyTask())
 
     # Test POST /research/{ticker}
     resp = client.post(f"/research/{ticker}", json={"user_notes": "Deep research notes"}, headers=HEADERS_USER1)

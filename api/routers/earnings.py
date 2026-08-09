@@ -282,6 +282,14 @@ class FeedbackRequest(BaseModel):
     message: str
     page_context: Optional[str] = None
 
+class ActualsOverrideRequest(BaseModel):
+    expected_eps: Optional[float] = None
+    actual_eps: Optional[float] = None
+    actual_price_move_pct: Optional[float] = None
+    actual_direction: Optional[str] = None
+    actual_guidance_stance: Optional[str] = None
+
+
 @router.post("/predict/{ticker}")
 @limiter.limit(RATE_LIMIT_PREDICT)
 @limiter.limit(RATE_LIMIT_PREDICT_DAILY)
@@ -887,14 +895,14 @@ def download_prediction_report(
 @router.post("/{prediction_id}/verify")
 async def verify_prediction(
     prediction_id: int,
+    force: bool = Query(True, description="Force re-scoring"),
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
-    Trigger outcome verification/scoring for a specific prediction.
+    Trigger outcome verification/scoring for a specific prediction (or force re-verification).
     """
     try:
-        # Get prediction
         prediction = session.get(Prediction, prediction_id)
         if not prediction:
             raise HTTPException(status_code=404, detail=f"Prediction with ID {prediction_id} not found")
@@ -912,6 +920,8 @@ async def verify_prediction(
             result = scorer.score_prediction(prediction)
             
             if result.get("scored") is True:
+                if result.get("expected_eps") is not None:
+                    prediction.expected_eps = result["expected_eps"]
                 prediction.actual_direction = result["actual_direction"]
                 prediction.actual_eps = result.get("actual_eps")
                 prediction.actual_price_move_pct = result.get("actual_price_move_pct")
@@ -928,10 +938,20 @@ async def verify_prediction(
                 session.commit()
                 session.refresh(prediction)
                 
+                result_data = prediction.dict() if hasattr(prediction, "dict") else prediction.__dict__.copy()
+                if isinstance(result_data.get('report_date'), datetime):
+                    result_data['report_date'] = result_data['report_date'].isoformat()
+                if isinstance(result_data.get('prediction_date'), datetime):
+                    result_data['prediction_date'] = result_data['prediction_date'].isoformat()
+                if isinstance(result_data.get('scored_at'), datetime):
+                    result_data['scored_at'] = result_data['scored_at'].isoformat()
+
                 return {
                     "success": True,
                     "message": f"Successfully verified/scored prediction for {prediction.ticker}",
+                    "prediction": result_data,
                     "result": {
+                        "expected_eps": prediction.expected_eps,
                         "actual_direction": prediction.actual_direction,
                         "actual_eps": prediction.actual_eps,
                         "actual_price_move_pct": prediction.actual_price_move_pct,
@@ -960,6 +980,91 @@ async def verify_prediction(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+
+
+@router.post("/{prediction_id}/override")
+async def override_prediction_actuals(
+    prediction_id: int,
+    body: ActualsOverrideRequest,
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Manually override/input actual outcomes (expected EPS, actual EPS, price move %, actual direction)
+    and update database record and UI calculations.
+    """
+    try:
+        prediction = session.get(Prediction, prediction_id)
+        if not prediction:
+            raise HTTPException(status_code=404, detail=f"Prediction with ID {prediction_id} not found")
+
+        if body.expected_eps is not None:
+            prediction.expected_eps = body.expected_eps
+        if body.actual_eps is not None:
+            prediction.actual_eps = body.actual_eps
+        if body.actual_price_move_pct is not None:
+            prediction.actual_price_move_pct = body.actual_price_move_pct
+        if body.actual_direction is not None:
+            prediction.actual_direction = body.actual_direction.strip().lower()
+        if body.actual_guidance_stance is not None:
+            prediction.actual_guidance_stance = body.actual_guidance_stance.strip().upper()
+
+        # Recompute accuracy score and composite metrics if actual_direction or price move is set
+        if prediction.actual_direction:
+            from database.scoring_service import PredictionScorer
+            from data.yahoo_finance import YahooFinanceDataSource, DataSourceConfig
+            
+            yahoo = None
+            try:
+                config = DataSourceConfig(rate_limit_calls=100, rate_limit_period=60)
+                yahoo = YahooFinanceDataSource(config)
+                yahoo.connect()
+                scorer = PredictionScorer(yahoo)
+
+                accuracy = scorer.compute_brier_score(prediction.direction, prediction.confidence, prediction.actual_direction)
+                prediction.accuracy_score = accuracy
+
+                vol_hit = scorer.evaluate_vol_stance(prediction, prediction.actual_price_move_pct)
+                dir_hit = scorer.evaluate_price_direction(prediction, prediction.actual_price_move_pct)
+                act_guidance, guidance_hit = scorer.evaluate_guidance_stance(prediction, prediction.actual_guidance_stance)
+
+                prediction.vol_stance_hit = vol_hit
+                prediction.price_dir_hit = dir_hit
+                prediction.guidance_stance_hit = guidance_hit
+                if act_guidance:
+                    prediction.actual_guidance_stance = act_guidance
+
+                prediction.composite_accuracy_score = scorer.compute_composite_score(accuracy, vol_hit, dir_hit, guidance_hit)
+                prediction.scored_at = datetime.utcnow()
+            finally:
+                if yahoo:
+                    try:
+                        yahoo.disconnect()
+                    except Exception:
+                        pass
+
+        session.add(prediction)
+        session.commit()
+        session.refresh(prediction)
+
+        result_data = prediction.dict() if hasattr(prediction, "dict") else prediction.__dict__.copy()
+        if isinstance(result_data.get('report_date'), datetime):
+            result_data['report_date'] = result_data['report_date'].isoformat()
+        if isinstance(result_data.get('prediction_date'), datetime):
+            result_data['prediction_date'] = result_data['prediction_date'].isoformat()
+        if isinstance(result_data.get('scored_at'), datetime):
+            result_data['scored_at'] = result_data['scored_at'].isoformat()
+
+        return {
+            "success": True,
+            "message": f"Successfully updated actual numbers for {prediction.ticker}",
+            "prediction": result_data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Override failed: {str(e)}")
+
 
 
 @router.post("/feedback")

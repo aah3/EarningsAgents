@@ -218,12 +218,13 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
 
     if expected_eps is None:
         try:
-            import yfinance as yf
-            cal = getattr(yf.Ticker(ticker), 'calendar', {}) or {}
-            if isinstance(cal, dict) and cal.get('Earnings Average') is not None:
-                expected_eps = float(cal.get('Earnings Average'))
+            from data.resolvers import ExpectedEPSResolver
+            resolver = ExpectedEPSResolver()
+            expected_eps = resolver.resolve(ticker, report_date=report_date)
+            if expected_eps is not None:
+                logger.info(f"Resolved expected EPS fallback for {ticker}: {expected_eps}")
         except Exception as e:
-            logger.warning(f"Failed to fetch fallback expected EPS from yfinance for {ticker}: {e}")
+            logger.warning(f"Failed to fetch fallback expected EPS for {ticker}: {e}")
 
     if report_date is None:
         raise ValueError(f"Could not resolve report date for {ticker} and none was provided.")

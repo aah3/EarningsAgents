@@ -16,27 +16,111 @@ import {
     MessageSquare, 
     Bot, 
     AlertTriangle,
-    Send
+    Send,
+    RefreshCw,
+    Edit3,
+    CheckCircle2,
+    X
 } from "lucide-react";
 
 export default function AnalysisResult({ result }: { result: Prediction }) {
     const { getToken } = useAuth();
+    const [currentResult, setCurrentResult] = useState<Prediction>(result);
+    useEffect(() => {
+        setCurrentResult(result);
+    }, [result]);
+
     const [chatMessages, setChatMessages] = useState<{ role: string, content: string }[]>([]);
     const [chatInput, setChatInput] = useState("");
     const [chatLoading, setChatLoading] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const [downloading, setDownloading] = useState(false);
+    const [verifying, setVerifying] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [savingOverride, setSavingOverride] = useState(false);
+    const [toastMsg, setToastMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+    // Form state for manual override modal
+    const [expEpsInput, setExpEpsInput] = useState<string>("");
+    const [actEpsInput, setActEpsInput] = useState<string>("");
+    const [actMoveInput, setActMoveInput] = useState<string>("");
+    const [actDirInput, setActDirInput] = useState<string>("BEAT");
+    const [actGuidanceInput, setActGuidanceInput] = useState<string>("REAFFIRMED");
 
     const handleDownload = async (format: 'md' | 'pdf') => {
-        if (!result.id) return;
+        if (!currentResult.id) return;
         setDownloading(true);
         try {
             const token = await getToken() || undefined;
-            await api.downloadReport(result.id, format, result.ticker, token);
+            await api.downloadReport(currentResult.id, format, currentResult.ticker, token);
         } catch (err: any) {
             alert(`Failed to download report: ${err.message}`);
         } finally {
             setDownloading(false);
+        }
+    };
+
+    const handleReverify = async () => {
+        if (!currentResult.id) return;
+        setVerifying(true);
+        setToastMsg(null);
+        try {
+            const token = (await getToken()) || undefined;
+            const res = await api.verifyPrediction(currentResult.id, token, true);
+            if (res && res.prediction) {
+                setCurrentResult(res.prediction);
+            } else if (res && res.result) {
+                setCurrentResult(prev => ({
+                    ...prev,
+                    expected_eps: res.result.expected_eps ?? prev.expected_eps,
+                    actual_direction: res.result.actual_direction ?? prev.actual_direction,
+                    actual_eps: res.result.actual_eps ?? prev.actual_eps,
+                    actual_price_move_pct: res.result.actual_price_move_pct ?? prev.actual_price_move_pct,
+                    accuracy_score: res.result.accuracy_score ?? prev.accuracy_score,
+                    composite_accuracy_score: res.result.composite_accuracy_score ?? prev.composite_accuracy_score
+                }));
+            }
+            setToastMsg({ text: "Outcome successfully verified & updated!", type: "success" });
+        } catch (err: any) {
+            setToastMsg({ text: `Re-verification failed: ${err.message}`, type: "error" });
+        } finally {
+            setVerifying(false);
+        }
+    };
+
+    const handleOpenEditModal = () => {
+        setExpEpsInput(currentResult.expected_eps != null ? String(currentResult.expected_eps) : "");
+        setActEpsInput(currentResult.actual_eps != null ? String(currentResult.actual_eps) : "");
+        setActMoveInput(currentResult.actual_price_move_pct != null ? String((currentResult.actual_price_move_pct * 100).toFixed(2)) : "");
+        setActDirInput(currentResult.actual_direction ? currentResult.actual_direction.toUpperCase() : "BEAT");
+        setActGuidanceInput(currentResult.actual_guidance_stance || "REAFFIRMED");
+        setShowEditModal(true);
+    };
+
+    const handleSaveOverride = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!currentResult.id) return;
+        setSavingOverride(true);
+        setToastMsg(null);
+        try {
+            const token = (await getToken()) || undefined;
+            const payload: any = {};
+            if (expEpsInput.trim() !== "") payload.expected_eps = parseFloat(expEpsInput);
+            if (actEpsInput.trim() !== "") payload.actual_eps = parseFloat(actEpsInput);
+            if (actMoveInput.trim() !== "") payload.actual_price_move_pct = parseFloat(actMoveInput) / 100.0;
+            if (actDirInput.trim() !== "") payload.actual_direction = actDirInput.trim().toUpperCase();
+            if (actGuidanceInput.trim() !== "") payload.actual_guidance_stance = actGuidanceInput.trim().toUpperCase();
+
+            const res = await api.overridePredictionActuals(currentResult.id, payload, token);
+            if (res && res.prediction) {
+                setCurrentResult(res.prediction);
+            }
+            setToastMsg({ text: "Actual numbers updated successfully!", type: "success" });
+            setShowEditModal(false);
+        } catch (err: any) {
+            setToastMsg({ text: `Failed to update actuals: ${err.message}`, type: "error" });
+        } finally {
+            setSavingOverride(false);
         }
     };
 
@@ -118,27 +202,42 @@ ${userText}`
 
     return (
         <div className="flex-1 bg-panel p-6 md:p-12 rounded-[16px] border border-panel-line shadow-[0_20px_60px_rgba(0,0,0,0.35)] animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="flex justify-between items-start mb-12 pb-8 border-b border-panel-line">
+            <div className="flex justify-between items-start mb-8 pb-8 border-b border-panel-line">
                 <div>
                     <div className="flex items-center gap-4 mb-2.5">
-                        <h3 className="text-4xl font-display font-semibold text-ink">{result.ticker}</h3>
+                        <h3 className="text-4xl font-display font-semibold text-ink">{currentResult.ticker}</h3>
                         <span className={`px-4 py-1.5 rounded-full label-caps
-                            ${result.direction === 'BEAT' ? 'bg-bull/10 text-bull border border-bull/30' :
-                                result.direction === 'MISS' ? 'bg-bear/10 text-bear border border-bear/30' :
+                            ${currentResult.direction === 'BEAT' ? 'bg-bull/10 text-bull border border-bull/30' :
+                                currentResult.direction === 'MISS' ? 'bg-bear/10 text-bear border border-bear/30' :
                                     'bg-ink-dim/10 text-ink-mute border border-ink-dim/30'}
                         `}>
-                            {result.direction}
+                            {currentResult.direction}
                         </span>
                     </div>
-                    <p className="text-ink-mute label-caps">{result.company_name}</p>
+                    <p className="text-ink-mute label-caps">{currentResult.company_name}</p>
                 </div>
                 <div className="flex flex-col items-end gap-2.5 text-right">
                     <div className="label-caps text-ink-dim">AI Confidence</div>
                     <div className="text-5xl font-display font-semibold text-ink font-data">
-                        {(result.confidence * 100).toFixed(0)}%
+                        {(currentResult.confidence * 100).toFixed(0)}%
                     </div>
-                    {result.id && (
-                        <div className="flex gap-2 mt-2">
+                    {currentResult.id && (
+                        <div className="flex flex-wrap gap-2 mt-2 justify-end">
+                            <button
+                                onClick={handleReverify}
+                                disabled={verifying}
+                                title="Re-verify outcome data against financial data providers"
+                                className="px-3.5 py-2 bg-teal/10 text-teal border border-teal/30 hover:bg-teal/20 rounded-lg label-caps transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer outline-none"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${verifying ? "animate-spin" : ""}`} /> Re-verify
+                            </button>
+                            <button
+                                onClick={handleOpenEditModal}
+                                title="Manually input or override actual numbers in the DB"
+                                className="px-3.5 py-2 bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20 rounded-lg label-caps transition-all flex items-center gap-1.5 cursor-pointer outline-none"
+                            >
+                                <Edit3 className="w-3.5 h-3.5" /> Edit Actuals
+                            </button>
                             <button
                                 onClick={() => handleDownload('md')}
                                 disabled={downloading}
@@ -156,41 +255,56 @@ ${userText}`
                         </div>
                     )}
                 </div>
-
             </div>
+
+            {toastMsg && (
+                <div className={`mb-6 p-4 rounded-xl border flex items-center justify-between transition-all ${
+                    toastMsg.type === 'success' 
+                        ? 'bg-bull/10 border-bull/30 text-bull' 
+                        : 'bg-bear/10 border-bear/30 text-bear'
+                }`}>
+                    <span className="text-sm font-medium flex items-center gap-2">
+                        {toastMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                        {toastMsg.text}
+                    </span>
+                    <button onClick={() => setToastMsg(null)} className="opacity-70 hover:opacity-100 p-1">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-12">
                 <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Expected EPS</span>
                     <span className="text-lg font-display font-semibold text-ink font-data">
-                        {result.expected_eps !== undefined && result.expected_eps !== null ? `$${result.expected_eps.toFixed(2)}` : "—"}
+                        {currentResult.expected_eps !== undefined && currentResult.expected_eps !== null ? `$${currentResult.expected_eps.toFixed(2)}` : "—"}
                     </span>
                 </div>
                 <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Actual EPS</span>
                     <span className="text-lg font-display font-semibold text-ink font-data">
-                        {result.actual_eps !== undefined && result.actual_eps !== null ? `$${result.actual_eps.toFixed(2)}` : "—"}
+                        {currentResult.actual_eps !== undefined && currentResult.actual_eps !== null ? `$${currentResult.actual_eps.toFixed(2)}` : "—"}
                     </span>
                 </div>
                 <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Expected Move</span>
-                    <span className="text-lg font-display font-semibold text-ink capitalize">{result.expected_price_move || "Pending"}</span>
+                    <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.expected_price_move || "Pending"}</span>
                 </div>
                 <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Actual Move</span>
-                    <span className={`text-lg font-display font-semibold font-data ${result.actual_price_move_pct !== undefined && result.actual_price_move_pct !== null ? (result.actual_price_move_pct >= 0 ? "text-bull" : "text-bear") : "text-ink"}`}>
-                        {result.actual_price_move_pct !== undefined && result.actual_price_move_pct !== null
-                            ? `${result.actual_price_move_pct >= 0 ? "+" : ""}${(result.actual_price_move_pct * 100).toFixed(2)}%`
+                    <span className={`text-lg font-display font-semibold font-data ${currentResult.actual_price_move_pct !== undefined && currentResult.actual_price_move_pct !== null ? (currentResult.actual_price_move_pct >= 0 ? "text-bull" : "text-bear") : "text-ink"}`}>
+                        {currentResult.actual_price_move_pct !== undefined && currentResult.actual_price_move_pct !== null
+                            ? `${currentResult.actual_price_move_pct >= 0 ? "+" : ""}${(currentResult.actual_price_move_pct * 100).toFixed(2)}%`
                             : "—"}
                     </span>
                 </div>
                 <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Move vs Implied</span>
-                    <span className="text-lg font-display font-semibold text-ink capitalize">{result.move_vs_implied || "Pending"}</span>
+                    <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.move_vs_implied || "Pending"}</span>
                 </div>
                 <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
                     <span className="label-caps text-ink-dim mb-1">Guidance</span>
-                    <span className="text-lg font-display font-semibold text-ink capitalize">{result.guidance_expectation || "Pending"}</span>
+                    <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.guidance_expectation || "Pending"}</span>
                 </div>
             </div>
 
@@ -415,6 +529,117 @@ ${userText}`
                     </button>
                 </div>
             </div>
+
+            {/* Edit Actuals Modal */}
+            {showEditModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-[#0e1524] border border-panel-line rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-6 text-white">
+                        <div className="flex justify-between items-center border-b border-panel-line pb-4">
+                            <h4 className="text-xl font-display font-semibold text-white flex items-center gap-2">
+                                <Edit3 className="w-5 h-5 text-teal" /> Edit Actual Outcome Data
+                            </h4>
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="text-ink-mute hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveOverride} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                    Expected Consensus EPS ($)
+                                </label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="e.g. 1.25"
+                                    value={expEpsInput}
+                                    onChange={(e) => setExpEpsInput(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-[var(--color-panel-sunk)] border border-panel-line rounded-xl text-white font-mono text-sm focus:border-teal outline-none transition-colors"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                    Actual Reported EPS ($)
+                                </label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="e.g. 1.50"
+                                    value={actEpsInput}
+                                    onChange={(e) => setActEpsInput(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-[var(--color-panel-sunk)] border border-panel-line rounded-xl text-white font-mono text-sm focus:border-teal outline-none transition-colors"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                    Post-Earnings Price Move (%)
+                                </label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="e.g. 5.2 (for +5.2%)"
+                                    value={actMoveInput}
+                                    onChange={(e) => setActMoveInput(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-[var(--color-panel-sunk)] border border-panel-line rounded-xl text-white font-mono text-sm focus:border-teal outline-none transition-colors"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                    Actual Direction
+                                </label>
+                                <select
+                                    value={actDirInput}
+                                    onChange={(e) => setActDirInput(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-[var(--color-panel-sunk)] border border-panel-line rounded-xl text-white font-mono text-sm focus:border-teal outline-none transition-colors"
+                                >
+                                    <option value="BEAT">BEAT (Reported &gt; Estimate)</option>
+                                    <option value="MISS">MISS (Reported &lt; Estimate)</option>
+                                    <option value="MEET">MEET (In-line with Estimate)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                    Actual Guidance Stance
+                                </label>
+                                <select
+                                    value={actGuidanceInput}
+                                    onChange={(e) => setActGuidanceInput(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-[var(--color-panel-sunk)] border border-panel-line rounded-xl text-white font-mono text-sm focus:border-teal outline-none transition-colors"
+                                >
+                                    <option value="RAISED">RAISED (Strong / Upward guidance)</option>
+                                    <option value="LOWERED">LOWERED (Cut / Downward guidance)</option>
+                                    <option value="REAFFIRMED">REAFFIRMED (Maintained / In-line guidance)</option>
+                                </select>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t border-panel-line">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEditModal(false)}
+                                    className="px-4 py-2 bg-[var(--color-panel-sunk)] border border-panel-line rounded-xl label-caps text-ink-mute hover:text-white transition-all cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingOverride}
+                                    className="px-5 py-2 bg-teal text-black font-bold rounded-xl label-caps hover:bg-teal/80 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                >
+                                    {savingOverride && <RefreshCw className="w-4 h-4 animate-spin" />}
+                                    Save Actuals &amp; Update DB
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ArrowUpDown,
   XCircle,
+  RefreshCw,
 } from "lucide-react";
 import {
   HistoryRow,
@@ -60,7 +61,7 @@ function OutcomeCell({
   }
 
   return (
-    <div className="text-right space-y-1">
+    <div className="text-right space-y-1 select-none">
       <div className="flex items-center justify-end gap-2">
         <span
           className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border ${
@@ -71,9 +72,18 @@ function OutcomeCell({
         >
           {row.outcome === "CORRECT" ? "✓ Correct" : "✗ Wrong"}
         </span>
-        <span className="text-[10px] font-mono text-ink-mute/70">
-          (Pred: {row.prediction})
-        </span>
+        <button
+          onClick={onVerify}
+          disabled={isVerifying}
+          title="Re-verify outcome data"
+          className="p-1.5 rounded-lg text-[10px] text-ink-mute hover:text-teal hover:bg-teal/10 border border-panel-line transition-all cursor-pointer disabled:opacity-50"
+        >
+          {isVerifying ? (
+            <span className="w-3 h-3 border-2 border-teal border-t-transparent rounded-full animate-spin inline-block" />
+          ) : (
+            <RefreshCw className="w-3 h-3" />
+          )}
+        </button>
       </div>
     </div>
   );
@@ -110,6 +120,8 @@ export default function HistoryPage() {
   const [predictionFilter, setPredictionFilter] = useState<"ALL" | Prediction>("ALL");
   const [outcomeFilter, setOutcomeFilter] = useState<"ALL" | Outcome>("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "SCORED" | "PENDING">("ALL");
+  const [sectorFilter, setSectorFilter] = useState<string>("ALL");
+  const [dateFilter, setDateFilter] = useState<string>("ALL");
 
   // Sorting State
   const [sortKey, setSortKey] = useState<keyof HistoryRow>("reportDate");
@@ -238,6 +250,25 @@ export default function HistoryPage() {
     };
   };
 
+  const uniqueSectors = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      if (r.sector && r.sector !== "Unknown") set.add(r.sector);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const uniqueReportDates = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      if (r.reportDate) {
+        const dateStr = new Date(r.reportDate).toISOString().split("T")[0];
+        set.add(dateStr);
+      }
+    });
+    return Array.from(set).sort().reverse();
+  }, [rows]);
+
   // Filter and Sort Rows
   const visibleRows = useMemo(() => {
     return rows
@@ -256,9 +287,15 @@ export default function HistoryPage() {
           statusFilter === "ALL" ||
           (statusFilter === "SCORED" ? isScored(r) : !isScored(r))
       )
+      .filter((r) => sectorFilter === "ALL" || r.sector === sectorFilter)
+      .filter((r) => {
+        if (dateFilter === "ALL") return true;
+        const rDateStr = r.reportDate ? new Date(r.reportDate).toISOString().split("T")[0] : "";
+        return rDateStr === dateFilter;
+      })
       .slice()
       .sort(compareBy(sortKey, sortDir));
-  }, [rows, query, predictionFilter, outcomeFilter, statusFilter, sortKey, sortDir]);
+  }, [rows, query, predictionFilter, outcomeFilter, statusFilter, sectorFilter, dateFilter, sortKey, sortDir]);
 
   // Compute Filter-Aware KPIs
   const kpis = useMemo(() => {
@@ -289,6 +326,8 @@ export default function HistoryPage() {
     setPredictionFilter("ALL");
     setOutcomeFilter("ALL");
     setStatusFilter("ALL");
+    setSectorFilter("ALL");
+    setDateFilter("ALL");
     setSortKey("reportDate");
     setSortDir("desc");
   };
@@ -559,6 +598,46 @@ export default function HistoryPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Sector Filter Dropdown */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
+                  Sector:
+                </span>
+                <select
+                  value={sectorFilter}
+                  onChange={(e) => setSectorFilter(e.target.value)}
+                  aria-label="Filter by Sector"
+                  className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
+                >
+                  <option value="ALL">All Sectors ({uniqueSectors.length})</option>
+                  {uniqueSectors.map((sec) => (
+                    <option key={sec} value={sec}>
+                      {sec}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Report Date Filter Dropdown */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
+                  Report Date:
+                </span>
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  aria-label="Filter by Report Date"
+                  className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
+                >
+                  <option value="ALL">All Dates ({uniqueReportDates.length})</option>
+                  {uniqueReportDates.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -567,7 +646,7 @@ export default function HistoryPage() {
             <table className="w-full text-left whitespace-nowrap border-collapse">
               <thead className="sticky top-0 bg-[#05070a] border-b border-panel-line text-ink-dim select-none z-10">
                 <tr>
-                  <th className="pl-8 pr-4 py-5 label-caps" aria-sort={getAriaSort("ticker")}>
+                  <th className="pl-8 pr-4 py-5 label-caps sticky left-0 z-30 bg-[#05070a] border-r border-panel-line shadow-[4px_0_12px_rgba(0,0,0,0.6)]" aria-sort={getAriaSort("ticker")}>
                     <button
                       onClick={() => handleSort("ticker")}
                       className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
@@ -686,8 +765,8 @@ export default function HistoryPage() {
                         : "border-l-2 border-transparent"
                     }`}
                   >
-                    {/* Ticker & Company Name */}
-                    <td className="pl-8 pr-4 py-4 min-w-[160px]">
+                    {/* Ticker & Company Name (Frozen Column) */}
+                    <td className="pl-8 pr-4 py-4 min-w-[160px] sticky left-0 z-20 bg-[#0b0f17] group-hover:bg-[#121927] border-r border-panel-line transition-colors shadow-[4px_0_12px_rgba(0,0,0,0.6)]">
                       <div className="font-display font-bold text-accent text-lg leading-tight truncate">
                         {row.ticker}
                       </div>

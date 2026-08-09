@@ -14,31 +14,10 @@ class PredictionScorer:
         if isinstance(report_d, datetime):
             report_d = report_d.date()
 
-        # Try to resolve estimate_eps from parameter, yfinance calendar, or EarningsCalendarEvent
-        estimate_eps = expected_eps
-        if estimate_eps is None:
-            try:
-                tick = yf.Ticker(ticker)
-                cal = getattr(tick, 'calendar', {}) or {}
-                if isinstance(cal, dict) and cal.get('Earnings Average') is not None:
-                    estimate_eps = float(cal.get('Earnings Average'))
-            except Exception:
-                pass
-                
-        if estimate_eps is None:
-            try:
-                from database.db import Session, engine
-                from database.models import EarningsCalendarEvent
-                from sqlmodel import select
-                with Session(engine) as session:
-                    ev = session.exec(select(EarningsCalendarEvent).where(
-                        EarningsCalendarEvent.ticker == ticker.upper(),
-                        EarningsCalendarEvent.report_date == report_d
-                    )).first()
-                    if ev and ev.eps_estimate is not None:
-                        estimate_eps = float(ev.eps_estimate)
-            except Exception:
-                pass
+        # Resolve estimate_eps via ExpectedEPSResolver
+        from data.resolvers import ExpectedEPSResolver
+        resolver = ExpectedEPSResolver()
+        estimate_eps = resolver.resolve(ticker, report_date=report_d, expected_eps=expected_eps)
 
         try:
             history = self.yahoo.get_historical_earnings(ticker, num_quarters=8)
@@ -61,25 +40,33 @@ class PredictionScorer:
                     self.logger.warning(f"Actual EPS for {ticker} on {report_d} is 0.0. Verifying non-zero default invariant.")
                 
                 cur_est = estimate_eps if estimate_eps is not None else entry.estimate_eps
+                surprise = None
                 if cur_est is not None and cur_est != 0:
                     from data.metrics import safe_surprise_pct
                     surprise = safe_surprise_pct(entry.actual_eps, cur_est)
-                    surprise = surprise if surprise is not None else (entry.surprise_pct or 0.0)
+                    if surprise is None and entry.surprise_pct is not None and not math.isnan(entry.surprise_pct):
+                        surprise = float(entry.surprise_pct)
+                elif entry.surprise_pct is not None and not math.isnan(entry.surprise_pct):
+                    surprise = float(entry.surprise_pct)
+
+                if surprise is not None:
+                    if surprise > 2.0:
+                        overall_dir = "beat"
+                    elif surprise < -2.0:
+                        overall_dir = "miss"
+                    else:
+                        overall_dir = "meet"
+                    beat_val = surprise > 0
                 else:
-                    surprise = entry.surprise_pct or 0.0
-                    
-                if surprise > 2.0:
-                    overall_dir = "beat"
-                elif surprise < -2.0:
-                    overall_dir = "miss"
-                else:
-                    overall_dir = "meet"
+                    self.logger.warning(f"No consensus EPS estimate available for {ticker} on {report_d}. Cannot classify direction from missing estimate.")
+                    overall_dir = None
+                    beat_val = None
                     
                 return {
                     "actual_eps": entry.actual_eps,
                     "estimate_eps": cur_est,
                     "surprise_pct": surprise,
-                    "beat": surprise > 0,
+                    "beat": beat_val,
                     "actual_direction": overall_dir
                 }
 
@@ -461,6 +448,7 @@ class PredictionScorer:
         
         return {
             "scored": True,
+            "expected_eps": actual_data.get("estimate_eps") or exp_eps,
             "actual_direction": actual_data["actual_direction"],
             "actual_eps": actual_data["actual_eps"],
             "actual_price_move_pct": price_move,
