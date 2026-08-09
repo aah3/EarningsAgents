@@ -16,11 +16,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["ENV"] = "dev"
 
 from main_api import app
-from database.db import engine
+from database.db import engine, init_db
 from database.models import User, ResearchThesis
 from database.research_repo import save_research_thesis, get_latest_research_thesis
 from api.routers.earnings import get_or_create_user
 
+init_db()  # TestClient() alone doesn't trigger the FastAPI lifespan, so tables
+           # wouldn't otherwise exist on a fresh DB (e.g. a clean CI checkout).
 client = TestClient(app)
 
 HEADERS_USER1 = {"Authorization": "Bearer test_clerk_user_1"}
