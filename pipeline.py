@@ -113,8 +113,10 @@ class EarningsPipeline:
         prediction_date: Optional[date] = None,
         task_id: Optional[str] = None,
         user_analysis: Optional[str] = None,
-        options_df: Optional[Any] = None
+        options_df: Optional[Any] = None,
+        research_context: Optional[str] = None,
     ) -> EarningsPrediction:
+
         """
         Generate prediction for a single company.
         
@@ -281,8 +283,9 @@ class EarningsPipeline:
         
         # Run three-agent prediction
         prediction = self.agent_system.predict(
-            company_data, news, prediction_date, task_id=task_id, user_analysis=user_analysis
+            company_data, news, prediction_date, task_id=task_id, user_analysis=user_analysis, research_context=research_context
         )
+
         
         publish(f"Debate concluded. Finalizing decision...")
         

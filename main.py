@@ -116,6 +116,61 @@ def cmd_single(args, pipeline: EarningsPipeline):
     return prediction
 
 
+def cmd_research(args, config):
+    """Run research thesis generation."""
+    import json
+    from dataclasses import asdict
+    from sqlmodel import Session
+    from database.db import engine
+    from database.research_repo import get_latest_research_thesis, save_research_thesis
+    from agents.huggingface_agents import generate_thesis
+
+    ticker = args.ticker.upper()
+    user_notes = getattr(args, "user_notes", None)
+
+    print(f"\n{'='*60}")
+    print(f"Research Analyst Agent Thesis Generation")
+    print(f"Ticker: {ticker}")
+    if user_notes:
+        print(f"User Notes: Provided (Personalized Variant)")
+    else:
+        print(f"User Notes: None (Shared Baseline Variant)")
+    print(f"{'='*60}\n")
+
+    with Session(engine) as session:
+        # Check for previous thesis for comparison/diff
+        previous_thesis = get_latest_research_thesis(session, ticker, user_id=None)
+        
+        response = generate_thesis(
+            ticker=ticker,
+            previous_thesis=previous_thesis,
+            user_notes=user_notes,
+            config=config.agent
+        )
+
+        # Save to database
+        saved_thesis = save_research_thesis(
+            session=session,
+            ticker=ticker,
+            company_name=ticker,
+            response_data=response,
+            user_id=None,
+            user_notes=user_notes,
+            source_trigger="manual" if not user_notes else "user_personalized"
+        )
+        print(f"[OK] Thesis persisted to research_thesis table with ID: {saved_thesis.id}\n")
+
+    # Output JSON result
+    out_dict = asdict(response) if hasattr(response, "__dataclass_fields__") else response
+    print(f"\n{'='*60}")
+    print(f"RESEARCH THESIS JSON OUTPUT ({ticker})")
+    print(f"{'='*60}")
+    print(json.dumps(out_dict, indent=2, default=str))
+    print(f"{'='*60}\n")
+    return response
+
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -163,6 +218,11 @@ def main():
     single_parser.add_argument('--ticker', required=True, help='Ticker symbol')
     single_parser.add_argument('--report-date', required=True, help='Report date')
     single_parser.add_argument('--user-analysis', help='Optional user analysis text')
+
+    # Research command
+    research_parser = subparsers.add_parser('research', help='Generate research thesis')
+    research_parser.add_argument('--ticker', required=True, help='Ticker symbol')
+    research_parser.add_argument('--user-notes', help='Optional analyst notes for personalized thesis')
     
     args = parser.parse_args()
     
@@ -212,7 +272,11 @@ def main():
     if any(arg.startswith('--reports-dir') for arg in sys.argv):
         config.reports_dir = Path(args.reports_dir)
     config.save_report = args.save_report
-    
+
+    if args.command == 'research':
+        cmd_research(args, config)
+        return 0
+
     # Create and run pipeline
     pipeline = EarningsPipeline(config)
     
@@ -230,6 +294,7 @@ def main():
         pipeline.shutdown()
     
     return 0
+
 
 
 if __name__ == "__main__":

@@ -91,6 +91,10 @@ class PipelineConfig:
     max_news_articles: int = 50
     redis_url: str = "redis://localhost:6379/0"
 
+    # Fundamental research agent settings
+    research_staleness_days: int = 21
+
+
 
 
 @dataclass
@@ -234,5 +238,7 @@ def load_config() -> PipelineConfig:
             react_max_turns=int(os.getenv("USE_REACT_MAX_TURNS", "6")),
             enable_rebuttals=os.getenv("ENABLE_REBUTTALS", "false").lower() in ("1", "true", "yes"),
         ),
-        redis_url=os.getenv("REDIS_URL") or "redis://localhost:6379/0"
+        redis_url=os.getenv("REDIS_URL") or "redis://localhost:6379/0",
+        research_staleness_days=int(os.getenv("RESEARCH_STALENESS_DAYS", "21")),
     )
+

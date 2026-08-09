@@ -213,6 +213,64 @@ AGENT_RESPONSE_SCHEMA = {
 }
 
 
+@dataclass
+class ResearchThesisResponse:
+    """Response from the Research Analyst agent."""
+    headline_view: str
+    confidence_level: float
+    business_viability_summary: str
+    competitive_landscape_summary: str
+    macro_context_summary: str
+    bull_case: str
+    bear_case: str
+    catalysts: List[str]
+    risks: List[str]
+    evidence_table: List[Dict[str, Any]]
+    what_changed_summary: Optional[str] = None
+    disclaimer_shown: bool = True
+    raw_response: str = ""
+
+
+RESEARCH_THESIS_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "headline_view": {"type": "string"},
+        "confidence_level": {"type": "number"},
+        "business_viability_summary": {"type": "string"},
+        "competitive_landscape_summary": {"type": "string"},
+        "macro_context_summary": {"type": "string"},
+        "bull_case": {"type": "string"},
+        "bear_case": {"type": "string"},
+        "catalysts": {"type": "array", "items": {"type": "string"}},
+        "risks": {"type": "array", "items": {"type": "string"}},
+        "evidence_table": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "evidence": {"type": "string"},
+                    "source": {"type": "string"},
+                    "implication": {"type": "string"},
+                    "weight": {"type": "string"}
+                },
+                "required": ["evidence", "source", "implication", "weight"],
+                "additionalProperties": False
+            }
+        },
+        "what_changed_summary": {"type": "string"},
+        "disclaimer_shown": {"type": "boolean"}
+
+    },
+    "required": [
+        "headline_view", "confidence_level", "business_viability_summary",
+        "competitive_landscape_summary", "macro_context_summary", "bull_case",
+        "bear_case", "catalysts", "risks", "evidence_table"
+    ],
+    "additionalProperties": False
+}
+
+
+
 class AgentResponseError(Exception):
     """Exception raised when an agent fails to generate a valid response."""
     def __init__(self, agent: str, cause: Exception):
@@ -367,6 +425,46 @@ Then, output your final decision in the following exact JSON format, enclosed in
     "bull_factors": ["<accepted bull points>"],
     "bear_factors": ["<accepted bear points>"],
     "key_signals": {"deciding_factor": "<what tipped decision>", "bull_strength": "<1-10>", "bear_strength": "<1-10>"}
+}"""
+
+
+RESEARCH_ANALYST_PROMPT = """You are a RESEARCH ANALYST agent specializing in fundamental company research, competitive analysis, business viability, and macro context.
+
+YOUR MISSION: Provide a comprehensive, multi-pillar research thesis for the target ticker by evaluating company fundamentals, competitive dynamics, macro environment, historical trends, and analyst insight.
+
+ANALYSIS FOCUS:
+1. Business Viability: Assess core business model, unit economics, revenue drivers, margin trajectory, balance sheet health, and operational strength.
+2. Competitive Landscape: Evaluate market positioning, competitive advantages (moat), competitive threats, and industry structure.
+3. Macro Context: Analyze interest rate environment, inflation, supply chain conditions, sector tailwinds/headwinds, and broader macroeconomic factors.
+4. Thesis & Cases: Formulate a concise headline view, assign a confidence level (0-100), and build rigorous Bull and Bear cases.
+5. Evidence & Provenance: Synthesize structured evidence items with sources and implications. Detail key catalysts, key risks, and what changed since prior thesis (if applicable).
+
+PROVENANCE DISCIPLINE:
+competitive-landscape and macro claims must be flagged as AI-synthesized judgment, not presented as sourced fact.
+
+INSTRUCTIONS:
+First, provide a brief paragraph explaining your thoughts and reasoning (your "thinking process").
+Then, output your final research thesis in the following exact JSON format, enclosed in a ```json``` code block:
+{
+    "headline_view": "<1-2 sentence core thesis summary>",
+    "confidence_level": <0-100>,
+    "business_viability_summary": "<summary of product viability, revenues, margins, and balance sheet>",
+    "competitive_landscape_summary": "<summary of market position and competitive dynamics (flagged as AI-synthesized judgment where appropriate)>",
+    "macro_context_summary": "<summary of macro and sector environment (flagged as AI-synthesized judgment where appropriate)>",
+    "bull_case": "<detailed bull case argument>",
+    "bear_case": "<detailed bear case argument>",
+    "catalysts": ["<catalyst 1>", "<catalyst 2>"],
+    "risks": ["<risk 1>", "<risk 2>"],
+    "evidence_table": [
+        {
+            "evidence": "<data point or observation>",
+            "source": "<sec_filing | financial_history | company_profile | news | user_notes | ai_synthesis>",
+            "implication": "<implication for thesis>",
+            "weight": "high"
+        }
+    ],
+    "what_changed_summary": "<summary of changes since prior thesis, or null if no prior thesis>",
+    "disclaimer_shown": true
 }"""
 
 
@@ -1157,6 +1255,7 @@ class ConsensusAgent(BaseAgent):
         bull_rebuttal: Optional[AgentResponse] = None,
         bear_rebuttal: Optional[AgentResponse] = None,
         news: Optional[List[NewsArticle]] = None,
+        research_context: Optional[str] = None,
     ) -> AgentResponse:
         """Synthesize agent responses (and optional rebuttals) into a final prediction."""
         successful_agents = []
@@ -1210,6 +1309,12 @@ class ConsensusAgent(BaseAgent):
                 f"\n### ANALYST (USER PROVIDED) ANALYSIS\n- Analysis: {user_analysis}\n"
             )
 
+        research_context_section = ""
+        if research_context:
+            research_context_section = (
+                f"\n### FUNDAMENTAL RESEARCH THESIS CONTEXT\n{research_context}\n"
+            )
+
         company_context = (
             f"Company: {company.company_name} ({company.ticker})\n"
             f"Sector: {company.sector} | Industry: {company.industry}\n"
@@ -1225,10 +1330,11 @@ class ConsensusAgent(BaseAgent):
             f"### Geopolitical & Macro News Context\n{news_headlines}\n"
             f"### Agent Debates\n"
             f"{bull_section}{bear_section}{quant_section}"
-            f"{rebuttal_section}{user_analysis_section}"
+            f"{rebuttal_section}{user_analysis_section}{research_context_section}"
             f"\n---\nBased on the company profile, geopolitical/macro news context, and the agent debates/rebuttals, "
             "provide your FINAL consensus prediction. Weigh the evidence and make a decisive call."
         )
+
 
         kwargs = self._get_llm_kwargs()
         try:
@@ -1307,7 +1413,8 @@ class ThreeAgentSystem:
         news: List[NewsArticle],
         prediction_date: Optional[date] = None,
         task_id: Optional[str] = None,
-        user_analysis: Optional[str] = None
+        user_analysis: Optional[str] = None,
+        research_context: Optional[str] = None,
     ) -> EarningsPrediction:
         """Run full three-agent prediction with optional rebuttal pass.
         This wrapper runs the async implementation on the event loop, ensuring
@@ -1329,7 +1436,7 @@ class ThreeAgentSystem:
                 asyncio.set_event_loop(new_loop)
                 try:
                     result = new_loop.run_until_complete(
-                        self._predict_async(company, news, prediction_date, task_id, user_analysis)
+                        self._predict_async(company, news, prediction_date, task_id, user_analysis, research_context=research_context)
                     )
                     future.set_result(result)
                 except Exception as e:
@@ -1342,7 +1449,7 @@ class ThreeAgentSystem:
             return future.result()
         else:
             return asyncio.run(
-                self._predict_async(company, news, prediction_date, task_id, user_analysis)
+                self._predict_async(company, news, prediction_date, task_id, user_analysis, research_context=research_context)
             )
 
     async def _predict_async(
@@ -1351,8 +1458,10 @@ class ThreeAgentSystem:
         news: List[NewsArticle],
         prediction_date: Optional[date] = None,
         task_id: Optional[str] = None,
-        user_analysis: Optional[str] = None
+        user_analysis: Optional[str] = None,
+        research_context: Optional[str] = None,
     ) -> EarningsPrediction:
+
         """Run full three-agent prediction asynchronously.
 
         Execution flow
@@ -1607,8 +1716,10 @@ class ThreeAgentSystem:
                     bull_rebuttal=bull_rebuttal,
                     bear_rebuttal=bear_rebuttal,
                     news=news,
+                    research_context=research_context,
                 )
             )
+
         except Exception as e:
             self.logger.error(f"Consensus agent error: {e}")
             publish(f"Consensus agent failed: {getattr(e, 'cause', e)}", "System", "status")
@@ -1694,7 +1805,280 @@ class ThreeAgentSystem:
         )
 
 
+# ============================================================================
+# RESEARCH ANALYST AGENT & THESIS GENERATION
+# ============================================================================
+
+class ResearchAnalystAgent(BaseAgent):
+    """
+    Research Analyst Agent specializing in fundamental company research,
+    competitive landscape evaluation, business viability, and macro context.
+    """
+    def __init__(self, config: AgentConfig):
+        super().__init__(config, RESEARCH_ANALYST_PROMPT)
+
+    def _parse_thesis_response(self, response_str: str) -> ResearchThesisResponse:
+        """Parse raw LLM output into a validated ResearchThesisResponse."""
+        cleaned = clean_json_response(response_str)
+        try:
+            data = json.loads(cleaned)
+        except Exception as e:
+            raise AgentResponseError(self.__class__.__name__, f"Invalid JSON response: {e}")
+
+        # If wrapped in final_answer (ReAct output)
+        if isinstance(data, dict) and "final_answer" in data:
+            data = data["final_answer"]
+
+        if not isinstance(data, dict):
+            raise AgentResponseError(self.__class__.__name__, "Parsed output is not a JSON object")
+
+        evidence_items = []
+        raw_evidence = data.get("evidence_table", [])
+        if isinstance(raw_evidence, list):
+            for item in raw_evidence:
+                if isinstance(item, dict):
+                    evidence_items.append({
+                        "evidence": str(item.get("evidence", "")),
+                        "source": str(item.get("source", "ai_synthesis")),
+                        "implication": str(item.get("implication", "")),
+                        "weight": str(item.get("weight", "medium")),
+                    })
+
+        catalysts_list = [str(c) for c in data.get("catalysts", [])] if isinstance(data.get("catalysts"), list) else []
+        risks_list = [str(r) for r in data.get("risks", [])] if isinstance(data.get("risks"), list) else []
+
+        conf = data.get("confidence_level", 50.0)
+        try:
+            conf = float(conf)
+            if conf <= 1.0 and conf > 0.0:
+                conf = conf * 100.0
+        except (ValueError, TypeError):
+            conf = 50.0
+
+        return ResearchThesisResponse(
+            headline_view=str(data.get("headline_view", "")),
+            confidence_level=conf,
+            business_viability_summary=str(data.get("business_viability_summary", "")),
+            competitive_landscape_summary=str(data.get("competitive_landscape_summary", "")),
+            macro_context_summary=str(data.get("macro_context_summary", "")),
+            bull_case=str(data.get("bull_case", "")),
+            bear_case=str(data.get("bear_case", "")),
+            catalysts=catalysts_list,
+            risks=risks_list,
+            evidence_table=evidence_items,
+            what_changed_summary=data.get("what_changed_summary"),
+            disclaimer_shown=bool(data.get("disclaimer_shown", True)),
+            raw_response=response_str
+        )
+
+    def analyze(
+        self,
+        company: CompanyData,
+        news: List[NewsArticle],
+        previous_thesis: Optional[Any] = None,
+        user_notes: Optional[str] = None,
+        use_react: Optional[bool] = None,
+        react_max_turns: Optional[int] = None,
+        sec_source: Optional[Any] = None,
+    ) -> ResearchThesisResponse:
+        """
+        Generate fundamental research thesis for company.
+        """
+        base_prompt = self._format_prompt(company, news)
+
+        # Inject user_notes if provided
+        user_notes_section = ""
+        if user_notes:
+            user_notes_section = (
+                "\n### ANALYST (USER PROVIDED) NOTES & INSIGHTS\n"
+                f"- Analyst Notes: {user_notes}\n"
+                "- Instruction: Treat user_notes as a weighted, primary analyst input for this personalized thesis variant. "
+                "Integrate these specific insights directly into the thesis, bull/bear cases, and evidence_table (with source='user_notes').\n"
+            )
+
+        # Inject previous_thesis context if provided
+        prev_thesis_section = ""
+        if previous_thesis:
+            prev_date = getattr(previous_thesis, "generated_at", None) or getattr(previous_thesis, "created_at", None)
+            prev_headline = getattr(previous_thesis, "headline_view", "")
+            prev_viability = getattr(previous_thesis, "business_viability_summary", "")
+            prev_thesis_section = (
+                "\n### PRIOR RESEARCH THESIS CONTEXT\n"
+                f"- Generated At: {prev_date}\n"
+                f"- Prior Headline View: {prev_headline}\n"
+                f"- Prior Business Viability: {prev_viability}\n"
+                "- Instruction: Compare current metrics and news with this prior thesis. Provide a meaningful diff in the 'what_changed_summary' field explaining key developments since the prior thesis.\n"
+            )
+
+        full_user_prompt = f"{base_prompt}\n{user_notes_section}\n{prev_thesis_section}"
+
+        should_react = use_react if use_react is not None else getattr(self.config, "use_react", False)
+        max_turns = react_max_turns or getattr(self.config, "react_max_turns", 6)
+
+        if should_react:
+            try:
+                from agent_tools import AgentToolRegistry
+            except ImportError:
+                from agents.agent_tools import AgentToolRegistry
+
+            registry = AgentToolRegistry(company, news, sec_source=sec_source)
+            tool_descriptions = registry.get_tool_descriptions()
+
+            tools_json = json.dumps(tool_descriptions, indent=2)
+            required_fields = RESEARCH_THESIS_RESPONSE_SCHEMA.get(
+                "required",
+                ["headline_view", "confidence_level", "business_viability_summary", "competitive_landscape_summary", "macro_context_summary", "bull_case", "bear_case", "catalysts", "risks", "evidence_table"]
+            )
+            schema_summary = json.dumps(
+                {field: RESEARCH_THESIS_RESPONSE_SCHEMA["properties"][field] for field in required_fields if field in RESEARCH_THESIS_RESPONSE_SCHEMA["properties"]},
+                indent=2,
+            )
+
+            react_system_prompt = self.system_prompt + f"""
+
+================================================================================
+REACT PROTOCOL — STRICT JSON OUTPUT REQUIRED
+================================================================================
+
+On EVERY turn you must output ONLY valid JSON — no markdown, no prose, no
+explanations outside the JSON value fields. Choose exactly one of the two
+formats below:
+
+1. TOOL CALL — when you need to invoke a tool:
+{{
+  "thought": "<your internal reasoning, 1-3 sentences>",
+  "tool": "<tool_name>",
+  "args": {{<optional key-value arguments>}}
+}}
+
+2. FINAL ANSWER — when you have gathered enough information to conclude:
+{{
+  "thought": "<your final reasoning, 1-3 sentences>",
+  "final_answer": {{
+    <ResearchThesisResponse fields — see schema below>
+  }}
+}}
+
+RULES:
+- Never mix plain text with JSON. The entire response must be parseable JSON.
+- Always call `get_company_summary` FIRST to orient yourself before any other tool.
+- After `get_company_summary`, call 2–4 additional tools as appropriate, then return a `final_answer`.
+- The `final_answer` object must conform EXACTLY to the following schema:
+{schema_summary}
+
+AVAILABLE TOOLS:
+{tools_json}
+================================================================================
+"""
+            messages = [{"role": "user", "content": full_user_prompt}]
+
+            for turn in range(max_turns):
+                response_text = self.llm.chat(
+                    system_prompt=react_system_prompt,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                )
+                cleaned = clean_json_response(response_text)
+                try:
+                    payload = json.loads(cleaned)
+                except Exception as e:
+                    self.logger.warning(f"ReAct turn {turn+1} produced unparseable JSON: {e}")
+                    messages.append({"role": "assistant", "content": response_text})
+                    messages.append({"role": "user", "content": "ERROR: Your output was not valid JSON. Please respond with JSON matching the ReAct protocol."})
+                    continue
+
+                if isinstance(payload, dict) and "final_answer" in payload:
+                    return self._parse_thesis_response(json.dumps(payload["final_answer"]))
+
+                if isinstance(payload, dict) and "tool" in payload:
+                    tool_name = payload["tool"]
+                    tool_args = payload.get("args", {})
+                    tool_res = registry.dispatch(tool_name, tool_args)
+                    res_json = json.dumps(tool_res.to_dict(), default=str)
+                    messages.append({"role": "assistant", "content": response_text})
+                    messages.append({"role": "user", "content": f"TOOL RESULT ({tool_name}):\n{res_json}"})
+                    continue
+
+                if isinstance(payload, dict) and "headline_view" in payload:
+                    return self._parse_thesis_response(cleaned)
+
+        # Standard non-ReAct / Fallback generation
+        kwargs = {}
+        if self.config.provider == "gemini":
+            kwargs["generation_config"] = {
+                "response_mime_type": "application/json",
+                "response_schema": self._strip_additional_properties(RESEARCH_THESIS_RESPONSE_SCHEMA),
+            }
+
+        response_str = self.llm.generate(
+            system_prompt=self.system_prompt,
+            user_prompt=full_user_prompt,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
+            **kwargs
+        )
+        return self._parse_thesis_response(response_str)
+
+
+def generate_thesis(
+    ticker: str,
+    previous_thesis: Optional[Any] = None,
+    user_notes: Optional[str] = None,
+    config: Optional[AgentConfig] = None,
+    company: Optional[CompanyData] = None,
+    news: Optional[List[NewsArticle]] = None,
+    report_date: Optional[date] = None,
+) -> ResearchThesisResponse:
+    """
+    Standalone function to generate a research thesis for a ticker.
+    Fetches CompanyData and news via DataAggregator if not provided.
+    """
+    try:
+        from config.settings import load_config
+    except ImportError:
+        from settings import load_config
+
+    full_cfg = load_config()
+    if config is None:
+        config = full_cfg.agent
+
+    if company is None or news is None:
+        try:
+            from data.data_aggregator import DataAggregator
+        except ImportError:
+            from data_aggregator import DataAggregator
+        
+        agg = DataAggregator(
+            yahoo_config=getattr(full_cfg, "yahoo", None) or __import__("data.base", fromlist=["DataSourceConfig"]).DataSourceConfig(),
+            newsapi_config=getattr(full_cfg, "newsapi", None),
+            alphavantage_config=getattr(full_cfg, "alphavantage", None),
+            sec_config=getattr(full_cfg, "sec", None),
+            enable_yahoo=True,
+            enable_sec=getattr(getattr(full_cfg, "sec", None), "enabled", False),
+        )
+        agg.initialize()
+        target_date = report_date or date.today()
+        if company is None:
+            company = agg.get_company_data(ticker, report_date=target_date)
+        if news is None:
+            news = getattr(company, "recent_news", []) or []
+
+
+    agent = ResearchAnalystAgent(config)
+    agent.initialize()
+    return agent.analyze(
+        company=company,
+        news=news,
+        previous_thesis=previous_thesis,
+        user_notes=user_notes,
+    )
+
+
+
+
 if __name__ == "__main__":
+
     # Test script for debugging agents directly.
     # Run from the project root:  python agents/huggingface_agents.py
     try:

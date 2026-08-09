@@ -10,6 +10,7 @@ class User(SQLModel, table=True):
     
     predictions: List["Prediction"] = Relationship(back_populates="user")
     chats: List["PredictionChat"] = Relationship(back_populates="user")
+    research_theses: List["ResearchThesis"] = Relationship(back_populates="user")
     settings: Optional["UserSettings"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
@@ -176,3 +177,30 @@ class EarningsCalendarEvent(SQLModel, table=True):
     industry: Optional[str] = None
     market_cap: Optional[float] = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ResearchThesis(SQLModel, table=True):
+    __tablename__ = "research_thesis"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticker: str = Field(index=True)
+    company_name: str
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
+    user_notes: Optional[str] = Field(default=None)
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    source_trigger: str = Field(default="auto_on_predict")  # "auto_on_predict" | "manual" | "user_personalized"
+    headline_view: str
+    confidence_level: float  # 0–100
+    business_viability_summary: str
+    competitive_landscape_summary: str
+    macro_context_summary: str
+    bull_case: str
+    bear_case: str
+    catalysts: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    risks: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    evidence_table: List[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    what_changed_summary: Optional[str] = Field(default=None)
+    disclaimer_shown: bool = Field(default=True)
+    
+    user: Optional[User] = Relationship(back_populates="research_theses")
+

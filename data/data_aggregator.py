@@ -26,6 +26,7 @@ try:
         EstimateRevision,
         EarningsCallTranscript,
         ReportTime,
+        normalize_ticker,
     )
     from .yahoo_finance import YahooFinanceDataSource, OptionChainSummary, OptionContract, OptionType as YFOptType
     from .sec_edgar import SECEdgarDataSource, SECFiling, CompanyFact
@@ -33,6 +34,7 @@ try:
     from .options import OptionData, OptionChainAnalyzer, OptionType as OptType
     from .provider_registry import ProviderRegistry
     from .provider_chain import ProviderChain
+    from .transcript_source import TranscriptDataSource
 except (ImportError, ValueError):
     from base import (
         BaseDataSource,
@@ -48,13 +50,17 @@ except (ImportError, ValueError):
         EstimateRevision,
         EarningsCallTranscript,
         ReportTime,
+        normalize_ticker,
     )
+
     from yahoo_finance import YahooFinanceDataSource, OptionChainSummary, OptionContract, OptionType as YFOptType
     from sec_edgar import SECEdgarDataSource, SECFiling, CompanyFact
     from news_sources import NewsAPIDataSource, AlphaVantageNewsDataSource
     from options import OptionData, OptionChainAnalyzer, OptionType as OptType
     from provider_registry import ProviderRegistry
     from provider_chain import ProviderChain
+    from transcript_source import TranscriptDataSource
+
 
 # Try to import full Alpha Vantage source (may not be available)
 try:
@@ -164,6 +170,7 @@ class DataAggregator:
         self.alphavantage = None  # Full Alpha Vantage source (if available)
         self.alphavantage_news = None  # Just for news (legacy)
         self.sec = None
+        self.transcript_source = TranscriptDataSource()
         self.finviz = FinvizDataSource()
         
         # Create enabled sources
@@ -185,7 +192,7 @@ class DataAggregator:
             self.sec = SECEdgarDataSource(sec_config, sec_user_agent)
         
         self._initialized = False
-    
+
     def _provider_supports_domain(self, provider: Any, domain: str) -> bool:
         """Check if provider implements the required domain method."""
         method_map = {
@@ -271,14 +278,19 @@ class DataAggregator:
             self.sec.connect()
             self.logger.info("✓ SEC EDGAR connected")
             
+        if self.transcript_source:
+            self.transcript_source.connect()
+            self.logger.info("✓ TranscriptSource connected")
+
         if self.finviz:
             self.finviz.connect()
             self.logger.info("✓ Finviz connected")
         
         self._initialized = True
         self.logger.info("All data sources initialized")
-    
+
     def shutdown(self) -> None:
+
         """Shutdown all data sources."""
         self.logger.info("Shutting down data sources...")
         
@@ -434,6 +446,7 @@ class DataAggregator:
                 try:
                     from research.options_features import OptionFeaturesExtractor
                 except ImportError:
+                    # pyrefly: ignore [missing-import]
                     from options_features import OptionFeaturesExtractor
                 
                 # Default mapping assumes it follows our standard format
@@ -489,24 +502,24 @@ class DataAggregator:
             except Exception as e:
                 self.logger.warning(f"Failed to merge option summary for {ticker}: {e}")
         
-        # Get recent transcript from SEC (if enabled)
+        # Get recent transcript (primary TranscriptSource with SEC EDGAR fallback)
         recent_transcripts = []
-        if self.sec:
-            try:
-                fq = calendar_event.fiscal_quarter if calendar_event and calendar_event.fiscal_quarter else None
-                fy = calendar_event.fiscal_year if calendar_event and calendar_event.fiscal_year else None
-                transcripts_obj = self.get_earnings_transcripts(ticker, year=fy, quarter=fq)
-                
-                for t in transcripts_obj[:1]:  # Just take the latest one to preserve context
-                    # Trim transcript to ~10,000 chars to avoid blowing up the LLM context window
-                    trimmed_text = t.transcript[:10000] + ("..." if len(t.transcript) > 10000 else "")
-                    recent_transcripts.append({
-                        "year": t.year,
-                        "quarter": t.quarter,
-                        "transcript": trimmed_text
-                    })
-            except Exception as e:
-                self.logger.warning(f"Failed to fetch SEC transcript for {ticker}: {e}")
+        try:
+            fq = calendar_event.fiscal_quarter if calendar_event and calendar_event.fiscal_quarter else None
+            fy = calendar_event.fiscal_year if calendar_event and calendar_event.fiscal_year else None
+            transcripts_obj = self.get_earnings_transcripts(ticker, year=fy, quarter=fq)
+            
+            for t in transcripts_obj[:1]:  # Just take the latest one to preserve context
+                # Trim transcript to ~10,000 chars to avoid blowing up the LLM context window
+                trimmed_text = t.transcript[:10000] + ("..." if len(t.transcript) > 10000 else "")
+                recent_transcripts.append({
+                    "year": t.year,
+                    "quarter": t.quarter,
+                    "transcript": trimmed_text
+                })
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch transcript for {ticker}: {e}")
+
         # Get SEC XBRL company facts
         company_facts = {}
         if self.sec:
@@ -855,7 +868,8 @@ class DataAggregator:
         quarter: Optional[str] = None
     ) -> List[EarningsCallTranscript]:
         """
-        Get earnings call transcripts from SEC filings.
+        Get earnings call transcripts.
+        Tries primary TranscriptDataSource first, then falls back to SEC EDGAR heuristic.
         
         Args:
             ticker: Stock ticker
@@ -868,24 +882,45 @@ class DataAggregator:
         if not self._initialized:
             raise RuntimeError("DataAggregator not initialized")
             
-        if not self.sec:
-            return []
-            
-        try:
-            transcripts = self.sec.get_earnings_transcripts(ticker, year, quarter)
-            # Map SECEdgar transcript model to base Transcript model
-            return [
-                EarningsCallTranscript(
-                    ticker=t.ticker,
-                    year=t.fiscal_year,
-                    quarter=t.fiscal_quarter,
-                    transcript=t.full_text
-                )
-                for t in transcripts
-            ]
-        except Exception as e:
-            self.logger.error(f"Failed to get transcripts for {ticker}: {e}")
-            return []
+        ticker = normalize_ticker(ticker)
+
+        # 1. Primary transcript source
+        if hasattr(self, "transcript_source") and self.transcript_source:
+            try:
+                st = self.transcript_source.get_transcript(ticker, year, quarter)
+                if st and st.full_text:
+                    self.logger.info(f"Fetched transcript for {ticker} FY{st.year} {st.quarter} from {st.source}")
+                    return [
+                        EarningsCallTranscript(
+                            ticker=st.ticker,
+                            year=st.year,
+                            quarter=st.quarter,
+                            transcript=st.full_text
+                        )
+                    ]
+            except Exception as e:
+                self.logger.warning(f"Primary transcript source failed for {ticker}: {e}")
+
+        # 2. Fallback to SEC EDGAR heuristic
+        if self.sec:
+            try:
+                self.logger.info(f"Falling back to SEC EDGAR for {ticker} transcript")
+                transcripts = self.sec.get_earnings_transcripts(ticker, year, quarter)
+                return [
+                    EarningsCallTranscript(
+                        ticker=t.ticker,
+                        year=t.fiscal_year,
+                        quarter=t.fiscal_quarter,
+                        transcript=t.full_text
+                    )
+                    for t in transcripts
+                ]
+            except Exception as e:
+                self.logger.error(f"Failed to get SEC transcript for {ticker}: {e}")
+                return []
+
+        return []
+
 
     def get_insider_transactions(
         self,

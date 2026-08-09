@@ -31,7 +31,38 @@ def get_pipeline():
         _pipeline.initialize()
     return _pipeline
 
+@celery_app.task(bind=True, name="api.tasks.generate_research_thesis_task")
+def generate_research_thesis_task(self, ticker: str, user_id: Optional[int] = None, user_notes: Optional[str] = None):
+    """
+    Background task to generate and persist a ResearchThesis for a ticker.
+    """
+    logger.info(f"Starting generate_research_thesis_task for {ticker} (user_id={user_id})")
+    with Session(engine) as session:
+        from database.research_repo import get_latest_research_thesis, save_research_thesis
+        from agents.huggingface_agents import generate_thesis
+        previous_thesis = get_latest_research_thesis(session, ticker, user_id=user_id if user_notes else None)
+        config = load_config()
+        response = generate_thesis(
+            ticker=ticker,
+            previous_thesis=previous_thesis,
+            user_notes=user_notes,
+            config=config.agent
+        )
+        saved = save_research_thesis(
+            session=session,
+            ticker=ticker,
+            company_name=ticker,
+            response_data=response,
+            user_id=user_id,
+            user_notes=user_notes,
+            source_trigger="auto_on_predict" if user_id is None else "user_personalized"
+        )
+        logger.info(f"Completed generate_research_thesis_task for {ticker} (thesis id={saved.id})")
+        return saved.id
+
+
 @celery_app.task(bind=True, name="api.tasks.analyze_ticker_task")
+
 def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, user_analysis: str = "", enable_rebuttals: Optional[bool] = None):
     """
     Background task to analyze a ticker and save results.
@@ -208,8 +239,53 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
         except Exception as e:
             logger.warning(f"Failed to publish to redis: {e}")
 
+        # Resolve fundamental research context for consensus
+        research_context = None
+        user_db_id = None
+        with Session(engine) as session:
+            statement = select(User).where(User.clerk_id == clerk_id)
+            db_user = session.exec(statement).first()
+            if db_user:
+                user_db_id = db_user.id
+            
+            from database.research_repo import resolve_thesis_for_prediction, save_research_thesis, format_research_summary, get_latest_research_thesis
+            
+            # Check user personalized case when user_analysis is passed
+            if user_db_id and user_analysis:
+                logger.info(f"Generating fresh personalized ResearchThesis for user {user_db_id} on {ticker}")
+                try:
+                    prev_pers = get_latest_research_thesis(session, ticker, user_id=user_db_id)
+                    from agents.huggingface_agents import generate_thesis
+                    thesis_res = generate_thesis(ticker, previous_thesis=prev_pers, user_notes=user_analysis, config=pipeline.config.agent)
+                    pers_thesis = save_research_thesis(session, ticker, ticker, thesis_res, user_id=user_db_id, user_notes=user_analysis)
+                    research_context = format_research_summary(pers_thesis)
+                except Exception as e:
+                    logger.warning(f"Failed to generate personalized thesis for {ticker}: {e}")
+            
+            if not research_context:
+                research_context, needs_enqueue = resolve_thesis_for_prediction(
+                    session,
+                    ticker,
+                    user_id=user_db_id,
+                    user_notes=user_analysis if user_analysis else None,
+                    staleness_days=getattr(pipeline.config, "research_staleness_days", 21)
+                )
+                if needs_enqueue:
+                    logger.info(f"Enqueuing generate_research_thesis_task for {ticker} (baseline missing/stale)")
+                    try:
+                        generate_research_thesis_task.delay(ticker)
+                    except Exception as e:
+                        logger.warning(f"Could not enqueue via Celery (.delay): {e}")
+
         # 1. Run Analysis
-        raw_result = pipeline.predict_single(ticker, report_date, task_id=task_id, user_analysis=user_analysis if user_analysis else None)
+        raw_result = pipeline.predict_single(
+            ticker,
+            report_date,
+            task_id=task_id,
+            user_analysis=user_analysis if user_analysis else None,
+            research_context=research_context
+        )
+
         
         from dataclasses import asdict
         result = asdict(raw_result)

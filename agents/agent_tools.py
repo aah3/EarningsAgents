@@ -132,7 +132,7 @@ class AgentToolRegistry:
             return ToolResult(tool_name="get_options_signals", result=None, error=str(exc))
 
     def get_sec_transcript(self, max_chars: int = 3000) -> ToolResult:
-        """Return the latest transcript snippet, capped at *max_chars* characters."""
+        """Return the latest transcript snippet from primary transcript source or SEC EDGAR, capped at *max_chars* characters."""
         try:
             transcripts = getattr(self.company, "recent_transcripts", None) or []
             if not transcripts:
@@ -168,8 +168,9 @@ class AgentToolRegistry:
         max_chars: int = 4000,
     ) -> ToolResult:
         """
-        Fetch an earnings call transcript for a specific fiscal period directly
-        from SEC EDGAR. Requires sec_source to be set on the registry.
+        Fetch an earnings call transcript for a specific fiscal period directly from
+        the primary transcript source (with SEC EDGAR fallback). Requires sec_source
+        to be set on the registry.
 
         Parameters
         ----------
@@ -244,11 +245,11 @@ class AgentToolRegistry:
                     "ticker": t.ticker,
                     "fiscal_year": t.fiscal_year,
                     "fiscal_quarter": t.fiscal_quarter,
-                    "filing_date": t.date.isoformat(),
+                    "filing_date": t.date.isoformat() if hasattr(t, 'date') and t.date else None,
                     "snippet": snippet,
                     "truncated": len(text) > max_chars,
-                    "source": "SEC_EDGAR",
-                    "url": t.url,
+                    "source": getattr(t, "source", "SEC_EDGAR"),
+                    "url": getattr(t, "url", None),
                 },
             )
 
@@ -258,6 +259,25 @@ class AgentToolRegistry:
                 result=None,
                 error=str(exc),
             )
+
+    def get_earnings_call_transcript(
+        self,
+        fiscal_year: Optional[int] = None,
+        fiscal_quarter: Optional[str] = None,
+        max_chars: int = 4000,
+    ) -> ToolResult:
+        """
+        Fetch an earnings call transcript for a specific fiscal period.
+        Preferred alias for get_sec_transcript_by_period.
+        """
+        res = self.get_sec_transcript_by_period(
+            fiscal_year=fiscal_year,
+            fiscal_quarter=fiscal_quarter,
+            max_chars=max_chars,
+        )
+        res.tool_name = "get_earnings_call_transcript"
+        return res
+
 
     def get_sec_facts(self) -> ToolResult:
         """Return company facts dict, formatting large numbers as $XB / $XM."""
@@ -343,6 +363,7 @@ class AgentToolRegistry:
         "get_options_signals": "get_options_signals",
         "get_sec_transcript": "get_sec_transcript",
         "get_sec_transcript_by_period": "get_sec_transcript_by_period",
+        "get_earnings_call_transcript": "get_earnings_call_transcript",
         "get_sec_facts": "get_sec_facts",
         "get_news_sentiment": "get_news_sentiment",
         "get_price_momentum": "get_price_momentum",
@@ -402,7 +423,8 @@ class AgentToolRegistry:
             {
                 "name": "get_sec_transcript",
                 "description": (
-                    "Returns a snippet from the most recent earnings call transcript. "
+                    "Returns a snippet from the most recent earnings call transcript "
+                    "(prefers primary transcript provider with fallback to SEC EDGAR). "
                     "Optional argument: max_chars (int, default 3000) — maximum "
                     "number of characters to return."
                 ),
@@ -410,19 +432,26 @@ class AgentToolRegistry:
             {
                 "name": "get_sec_transcript_by_period",
                 "description": (
-                    "Fetches an earnings call transcript directly from SEC EDGAR for a "
-                    "specific fiscal period. Use this when you need a transcript for a "
-                    "particular quarter, not just whatever was pre-loaded. "
+                    "Fetches an earnings call transcript for a specific fiscal period "
+                    "from primary transcript provider or SEC EDGAR. Use this when you need a transcript for a "
+                    "particular quarter. "
                     "Optional arguments: "
                     "fiscal_year (int, e.g. 2025 — defaults to report year minus 1), "
                     "fiscal_quarter (str, one of 'Q1'/'Q2'/'Q3'/'Q4' — omit for most recent), "
-                    "max_chars (int, default 4000). "
-                    "Returns error if SEC EDGAR source is not available."
+                    "max_chars (int, default 4000)."
+                ),
+            },
+            {
+                "name": "get_earnings_call_transcript",
+                "description": (
+                    "Fetches an earnings call transcript for a specific fiscal period. "
+                    "Preferred alias for get_sec_transcript_by_period."
                 ),
             },
             {
                 "name": "get_sec_facts",
                 "description": (
+
                     "Returns the company's SEC-reported financial facts dictionary. "
                     "Large numeric values are formatted as $XB or $XM for readability. "
                     "No arguments required."

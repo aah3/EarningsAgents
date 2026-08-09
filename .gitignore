@@ -108,3 +108,12 @@ run_googl_debate.py
 .claude/
 
 run_july29_batch_gd_chef.py
+
+# Batch execution & one-off scripts
+run_*_batch*
+run_scheduled_batch.py
+schedule_batch_run.py
+scheduled_tasks/
+scratch/
+test_sprint2_*.py
+verify_research_models.py
