@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import earnings, websockets
+from api.routers import earnings, websockets, research
 from database.db import init_db
 import os
 import uvicorn
@@ -57,6 +57,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Include routers
 app.include_router(earnings.router)
 app.include_router(websockets.router)
+app.include_router(research.router)
 
 # CORS — restrict to configured origins in production
 app.add_middleware(
