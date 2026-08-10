@@ -13,6 +13,7 @@ from pipeline import EarningsPipeline
 from config.settings import PipelineConfig, load_config
 from database.db import get_session
 from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings, CompanyProfile, Feedback
+from database.research_repo import resolve_thesis_for_prediction
 from api.dependencies.auth import get_current_user
 from api.rate_limit import (
     limiter,
@@ -444,8 +445,13 @@ async def chat_with_consensus(
         # format messages for LLM
         messages_dict = [{"role": msg.role, "content": msg.content} for msg in body.messages]
 
-        # query ConsensusAgent
-        response_text = pipeline.agent_system.consensus_agent.chat(messages_dict)
+        # resolve fundamental research context if ticker is provided
+        research_ctx = None
+        if body.ticker:
+            research_ctx, _ = resolve_thesis_for_prediction(session, body.ticker.upper(), user_id=user.id)
+
+        # query ConsensusAgent with fundamental research context
+        response_text = pipeline.agent_system.consensus_agent.chat(messages_dict, research_context=research_ctx)
 
         # append agent response
         messages_dict.append({"role": "model", "content": response_text})

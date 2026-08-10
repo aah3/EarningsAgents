@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { api, Prediction } from "@/lib/api";
+import ResearchThesisView from "@/components/research/ResearchThesisView";
 import { 
     FileText, 
     FileDown, 
@@ -20,12 +21,14 @@ import {
     RefreshCw,
     Edit3,
     CheckCircle2,
-    X
+    X,
+    Layers
 } from "lucide-react";
 
 export default function AnalysisResult({ result }: { result: Prediction }) {
     const { getToken } = useAuth();
     const [currentResult, setCurrentResult] = useState<Prediction>(result);
+    const [activeTab, setActiveTab] = useState<'prediction' | 'research' | 'chat'>('prediction');
     useEffect(() => {
         setCurrentResult(result);
     }, [result]);
@@ -257,6 +260,42 @@ ${userText}`
                 </div>
             </div>
 
+            {/* Multi-Tab Navigation Bar */}
+            <div className="flex items-center gap-3 mb-8 border-b border-panel-line pb-4 overflow-x-auto custom-scrollbar select-none">
+                <button
+                    onClick={() => setActiveTab('prediction')}
+                    className={`px-5 py-2.5 rounded-xl label-caps text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                        activeTab === 'prediction'
+                            ? 'bg-teal text-black shadow-lg font-bold'
+                            : 'bg-[var(--color-panel-sunk)] text-ink-mute hover:text-white border border-panel-line'
+                    }`}
+                >
+                    <Zap className="w-4 h-4" /> Earnings Prediction &amp; Debate
+                </button>
+
+                <button
+                    onClick={() => setActiveTab('research')}
+                    className={`px-5 py-2.5 rounded-xl label-caps text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                        activeTab === 'research'
+                            ? 'bg-teal text-black shadow-lg font-bold'
+                            : 'bg-[var(--color-panel-sunk)] text-ink-mute hover:text-white border border-panel-line'
+                    }`}
+                >
+                    <Sparkles className="w-4 h-4" /> Fundamental Research Thesis
+                </button>
+
+                <button
+                    onClick={() => setActiveTab('chat')}
+                    className={`px-5 py-2.5 rounded-xl label-caps text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                        activeTab === 'chat'
+                            ? 'bg-teal text-black shadow-lg font-bold'
+                            : 'bg-[var(--color-panel-sunk)] text-ink-mute hover:text-white border border-panel-line'
+                    }`}
+                >
+                    <MessageSquare className="w-4 h-4" /> Interactive AI Research Chat
+                </button>
+            </div>
+
             {toastMsg && (
                 <div className={`mb-6 p-4 rounded-xl border flex items-center justify-between transition-all ${
                     toastMsg.type === 'success' 
@@ -273,262 +312,304 @@ ${userText}`
                 </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-12">
-                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
-                    <span className="label-caps text-ink-dim mb-1">Expected EPS</span>
-                    <span className="text-lg font-display font-semibold text-ink font-data">
-                        {currentResult.expected_eps !== undefined && currentResult.expected_eps !== null ? `$${currentResult.expected_eps.toFixed(2)}` : "—"}
-                    </span>
-                </div>
-                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
-                    <span className="label-caps text-ink-dim mb-1">Actual EPS</span>
-                    <span className="text-lg font-display font-semibold text-ink font-data">
-                        {currentResult.actual_eps !== undefined && currentResult.actual_eps !== null ? `$${currentResult.actual_eps.toFixed(2)}` : "—"}
-                    </span>
-                </div>
-                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
-                    <span className="label-caps text-ink-dim mb-1">Expected Move</span>
-                    <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.expected_price_move || "Pending"}</span>
-                </div>
-                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
-                    <span className="label-caps text-ink-dim mb-1">Actual Move</span>
-                    <span className={`text-lg font-display font-semibold font-data ${currentResult.actual_price_move_pct !== undefined && currentResult.actual_price_move_pct !== null ? (currentResult.actual_price_move_pct >= 0 ? "text-bull" : "text-bear") : "text-ink"}`}>
-                        {currentResult.actual_price_move_pct !== undefined && currentResult.actual_price_move_pct !== null
-                            ? `${currentResult.actual_price_move_pct >= 0 ? "+" : ""}${(currentResult.actual_price_move_pct * 100).toFixed(2)}%`
-                            : "—"}
-                    </span>
-                </div>
-                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
-                    <span className="label-caps text-ink-dim mb-1">Move vs Implied</span>
-                    <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.move_vs_implied || "Pending"}</span>
-                </div>
-                <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
-                    <span className="label-caps text-ink-dim mb-1">Guidance</span>
-                    <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.guidance_expectation || "Pending"}</span>
-                </div>
-            </div>
-
-            {result.likely_guidance && (
-                <div className="mb-12 p-8 rounded-2xl border border-panel-line bg-[var(--color-panel-sunk)] shadow-inner">
-                    <div className="flex items-center gap-3.5 mb-4">
-                        <div className="w-8 h-8 rounded-full bg-teal/10 flex items-center justify-center border border-teal/20">
-                            <Eye className="w-4 h-4 text-teal" />
-                        </div>
-                        <p className="label-caps text-teal">Expected Guidance Outlook</p>
-                    </div>
-                    <p className="text-sm font-body font-normal text-ink-mute leading-[1.7]">
-                        {result.likely_guidance}
-                    </p>
-                </div>
-            )}
-
-            {result.options_features && (
-                <div className="mb-12 p-8 rounded-2xl border border-teal/20 bg-teal/5 shadow-inner">
-                    <div className="flex items-center gap-3.5 mb-5">
-                        <div className="w-8 h-8 rounded-full bg-teal/20 flex items-center justify-center border border-teal/30">
-                            <Zap className="w-4 h-4 text-teal" />
-                        </div>
-                        <p className="label-caps text-teal">Options Market Signals</p>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                        <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col justify-center text-center">
-                            <span className="label-caps text-ink-dim mb-1.5">Implied Move</span>
+            {/* TAB 1: PREDICTION & DEBATE */}
+            {activeTab === 'prediction' && (
+                <div className="space-y-12 animate-in fade-in duration-300">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                        <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                            <span className="label-caps text-ink-dim mb-1">Expected EPS</span>
                             <span className="text-lg font-display font-semibold text-ink font-data">
-                                {result.options_features.implied_move_pct != null
-                                    ? `${(result.options_features.implied_move_pct * 100).toFixed(1)}%` 
+                                {currentResult.expected_eps !== undefined && currentResult.expected_eps !== null ? `$${currentResult.expected_eps.toFixed(2)}` : "—"}
+                            </span>
+                        </div>
+                        <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                            <span className="label-caps text-ink-dim mb-1">Actual EPS</span>
+                            <span className="text-lg font-display font-semibold text-ink font-data">
+                                {currentResult.actual_eps !== undefined && currentResult.actual_eps !== null ? `$${currentResult.actual_eps.toFixed(2)}` : "—"}
+                            </span>
+                        </div>
+                        <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                            <span className="label-caps text-ink-dim mb-1">Expected Move</span>
+                            <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.expected_price_move || "Pending"}</span>
+                        </div>
+                        <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                            <span className="label-caps text-ink-dim mb-1">Actual Move</span>
+                            <span className={`text-lg font-display font-semibold font-data ${currentResult.actual_price_move_pct !== undefined && currentResult.actual_price_move_pct !== null ? (currentResult.actual_price_move_pct >= 0 ? "text-bull" : "text-bear") : "text-ink"}`}>
+                                {currentResult.actual_price_move_pct !== undefined && currentResult.actual_price_move_pct !== null
+                                    ? `${currentResult.actual_price_move_pct >= 0 ? "+" : ""}${(currentResult.actual_price_move_pct * 100).toFixed(2)}%`
                                     : "—"}
                             </span>
                         </div>
-                        <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col justify-center text-center">
-                            <span className="label-caps text-ink-dim mb-1.5">Put/Call Vol Ratio</span>
-                            <span className="text-lg font-display font-semibold text-ink font-data">
-                                {result.options_features.put_call_volume_ratio != null
-                                    ? result.options_features.put_call_volume_ratio.toFixed(2) 
-                                    : "—"}
-                            </span>
+                        <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                            <span className="label-caps text-ink-dim mb-1">Move vs Implied</span>
+                            <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.move_vs_implied || "Pending"}</span>
                         </div>
-                        <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col justify-center text-center">
-                            <span className="label-caps text-ink-dim mb-1.5">Implied Vol (ATM IV)</span>
-                            <span className="text-lg font-display font-semibold text-ink font-data">
-                                {result.options_features.atm_iv_call != null
-                                    ? `${(result.options_features.atm_iv_call * 100).toFixed(1)}%` 
-                                    : "—"}
-                            </span>
-                        </div>
-                        <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col justify-center text-center">
-                            <span className="label-caps text-ink-dim mb-1.5">IV Skew (Puts - Calls)</span>
-                            <span className="text-lg font-display font-semibold text-ink font-data">
-                                {result.options_features.iv_skew != null
-                                    ? `${(result.options_features.iv_skew * 100).toFixed(1)}%` 
-                                    : "—"}
-                            </span>
+                        <div className="p-5 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col items-center justify-center text-center shadow-inner">
+                            <span className="label-caps text-ink-dim mb-1">Guidance</span>
+                            <span className="text-lg font-display font-semibold text-ink capitalize">{currentResult.guidance_expectation || "Pending"}</span>
                         </div>
                     </div>
-                </div>
-            )}
 
-            {/* Sequential Agent Case Cards */}
-            <div className="flex flex-col gap-12 mb-12">
-                {/* Bull Case */}
-                <div className="p-8 bg-bull/[0.02] rounded-2xl border border-bull/15 hover:border-bull/25 hover:bg-bull/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                    <div className="flex items-center gap-3 mb-5 select-none">
-                        <div className="w-8 h-8 rounded-full bg-bull/10 flex items-center justify-center border border-bull/20">
-                            <TrendingUp className="w-4 h-4 text-bull" />
-                        </div>
-                        <p className="label-caps text-bull">Bull Case</p>
-                    </div>
-                    {bullSummary && (
-                        <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line mb-6 pb-6 border-b border-bull/10">
-                            {bullSummary}
-                        </p>
-                    )}
-                    <ul className="space-y-4">
-                        {result.bull_factors && result.bull_factors.length > 0 ? (
-                            result.bull_factors.map((f, i) => (
-                                <li key={i} className="text-sm font-body font-normal text-ink-mute flex items-start gap-3 leading-[1.6]">
-                                    <span className="text-bull mt-0.5 font-bold">✓</span> <span>{f}</span>
-                                </li>
-                            ))
-                        ) : (
-                            <li className="text-sm text-ink-dim italic flex items-center justify-center p-4">No significant bullish factors identified in this analysis.</li>
-                        )}
-                    </ul>
-                </div>
-
-                {/* Bear Case */}
-                <div className="p-8 bg-bear/[0.02] rounded-2xl border border-bear/15 hover:border-bear/25 hover:bg-bear/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                    <div className="flex items-center gap-3 mb-5 select-none">
-                        <div className="w-8 h-8 rounded-full bg-bear/10 flex items-center justify-center border border-bear/20">
-                            <TrendingDown className="w-4 h-4 text-bear" />
-                        </div>
-                        <p className="label-caps text-bear">Bear Case</p>
-                    </div>
-                    {bearSummary && (
-                        <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line mb-6 pb-6 border-b border-bear/10">
-                            {bearSummary}
-                        </p>
-                    )}
-                    <ul className="space-y-4">
-                        {result.bear_factors && result.bear_factors.length > 0 ? (
-                            result.bear_factors.map((f, i) => (
-                                <li key={i} className="text-sm font-body font-normal text-ink-mute flex items-start gap-3 leading-[1.6]">
-                                    <span className="text-bear mt-0.5 font-bold">×</span> <span>{f}</span>
-                                </li>
-                            ))
-                        ) : (
-                            <li className="text-sm text-ink-dim italic flex items-center justify-center p-4">No significant bearish factors identified in this analysis.</li>
-                        )}
-                    </ul>
-                </div>
-
-                {/* Quant Case */}
-                {quantSummary && (
-                    <div className="p-8 bg-quant/[0.02] rounded-2xl border border-quant/15 hover:border-quant/25 hover:bg-quant/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                        <div className="flex items-center gap-3 mb-5 select-none">
-                            <div className="w-8 h-8 rounded-full bg-quant/10 flex items-center justify-center border border-quant/20">
-                                <BarChart3 className="w-4 h-4 text-quant" />
-                            </div>
-                            <p className="label-caps text-quant">Quant Case</p>
-                        </div>
-                        <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{quantSummary}</p>
-                    </div>
-                )}
-
-                {/* Analyst Case / Custom Research */}
-                {userSummary && (
-                    <div className="p-8 bg-human/[0.02] rounded-2xl border border-human/15 hover:border-human/25 hover:bg-human/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                        <div className="flex items-center gap-3 mb-5 select-none">
-                            <div className="w-8 h-8 rounded-full bg-human/10 flex items-center justify-center border border-human/20">
-                                <User className="w-4 h-4 text-human" />
-                            </div>
-                            <p className="label-caps text-human">Analyst / User Insight</p>
-                        </div>
-                        <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{userSummary}</p>
-                    </div>
-                )}
-
-                {/* Rebuttals / Cross-Examination */}
-                {result.rebuttal_summary && (
-                    <div className="p-8 bg-[#C68A4C]/[0.02] rounded-2xl border border-[#C68A4C]/15 hover:border-[#C68A4C]/25 hover:bg-[#C68A4C]/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                        <div className="flex items-center gap-3 mb-5 select-none">
-                            <div className="w-8 h-8 rounded-full bg-[#C68A4C]/10 flex items-center justify-center border border-[#C68A4C]/20">
-                                <AlertTriangle className="w-4 h-4 text-[#C68A4C]" />
-                            </div>
-                            <p className="label-caps text-[#C68A4C]">Rebuttals & Cross-Examination</p>
-                        </div>
-                        <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{result.rebuttal_summary}</p>
-                    </div>
-                )}
-
-                {/* Consensus Summary */}
-                <div className="p-10 rounded-2xl border border-panel-line bg-[var(--color-panel-sunk)] relative overflow-hidden shadow-sm">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-teal"></div>
-                    <p className="label-caps text-teal mb-5 flex items-center gap-2 select-none">
-                        <Sparkles className="w-3.5 h-3.5 text-teal" />
-                        Consensus Summary
-                    </p>
-                    <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">
-                        {result.reasoning_summary}
-                    </p>
-                </div>
-            </div>
-
-            {/* Interactive Consensus Chat */}
-            <div className="mt-12 p-8 rounded-2xl border border-panel-line bg-[var(--color-panel-sunk)] shadow-inner flex flex-col flex-1 min-h-[500px]">
-                <h4 className="label-caps text-teal mb-6 flex items-center gap-2 select-none">
-                    <MessageSquare className="w-4 h-4 text-teal" /> Chat with Consensus Agent
-                </h4>
-
-                <div className="flex-1 overflow-y-auto mb-6 space-y-4 pr-2 custom-scrollbar min-h-[300px]">
-                    {chatMessages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full opacity-50 py-10 select-none">
-                            <Bot className="w-10 h-10 mb-4 text-ink-dim animate-bounce" style={{ animationDuration: '3s' }} />
-                            <p className="label-caps text-ink-mute">No messages yet.</p>
-                            <p className="text-xs text-ink-dim mt-2">Type your questions below to debate the analysis!</p>
-                        </div>
-                    ) : (
-                        chatMessages.map((msg, idx) => (
-                            <div key={idx} className={`p-5 rounded-xl text-sm ${msg.role === 'user' ? 'bg-panel text-ink ml-8 border border-panel-line' : 'bg-teal/10 text-ink mr-8 border border-teal/20'}`}>
-                                <div className={`label-caps mb-2 select-none ${msg.role === 'user' ? 'text-ink-dim' : 'text-teal'}`}>
-                                    {msg.role === 'user' ? 'You' : 'Consensus Analyst'}
+                    {result.likely_guidance && (
+                        <div className="p-8 rounded-2xl border border-panel-line bg-[var(--color-panel-sunk)] shadow-inner">
+                            <div className="flex items-center gap-3.5 mb-4">
+                                <div className="w-8 h-8 rounded-full bg-teal/10 flex items-center justify-center border border-teal/20">
+                                    <Eye className="w-4 h-4 text-teal" />
                                 </div>
-                                <div className="whitespace-pre-wrap font-body font-normal leading-[1.6]">{msg.content}</div>
+                                <p className="label-caps text-teal">Expected Guidance Outlook</p>
                             </div>
-                        ))
-                    )}
-                    {chatLoading && (
-                        <div className="p-4 rounded-xl bg-teal/10 text-teal mr-8 border border-teal/20 flex items-center gap-3 w-fit select-none">
-                            <span className="animate-pulse w-2 h-2 bg-teal rounded-full"></span>
-                            <span className="animate-pulse label-caps">Thinking...</span>
+                            <p className="text-sm font-body font-normal text-ink-mute leading-[1.7]">
+                                {result.likely_guidance}
+                            </p>
                         </div>
                     )}
-                    <div ref={chatEndRef} />
-                </div>
 
-                <div className="relative flex items-end bg-panel border border-panel-line focus-within:border-teal/50 focus-within:ring-1 focus-within:ring-teal/20 rounded-xl transition-all p-2 gap-2 mt-auto">
-                    <textarea
-                        placeholder="Have questions about this prediction? Ask the Consensus Analyst directly..."
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSendChatMessage();
-                            }
-                        }}
-                        className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-sm font-body font-normal text-ink placeholder-ink-dim/40 resize-none min-h-[48px] max-h-[160px] py-3 px-3 custom-scrollbar"
-                        disabled={chatLoading}
-                    />
-                    <button
-                        onClick={handleSendChatMessage}
-                        disabled={chatLoading || !chatInput.trim()}
-                        className="h-11 px-5 rounded-lg label-caps transition-all bg-teal text-[var(--color-bg)] hover:bg-teal-deep disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer shadow-md select-none shrink-0"
-                    >
-                        <span>Send</span>
-                        <Send className="w-3.5 h-3.5" />
-                    </button>
+                    {result.options_features && (
+                        <div className="p-8 rounded-2xl border border-teal/20 bg-teal/5 shadow-inner">
+                            <div className="flex items-center gap-3.5 mb-5">
+                                <div className="w-8 h-8 rounded-full bg-teal/20 flex items-center justify-center border border-teal/30">
+                                    <Zap className="w-4 h-4 text-teal" />
+                                </div>
+                                <p className="label-caps text-teal">Options Market Signals</p>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col justify-center text-center">
+                                    <span className="label-caps text-ink-dim mb-1.5">Implied Move</span>
+                                    <span className="text-lg font-display font-semibold text-ink font-data">
+                                        {result.options_features.implied_move_pct != null
+                                            ? `${(result.options_features.implied_move_pct * 100).toFixed(1)}%` 
+                                            : "—"}
+                                    </span>
+                                </div>
+                                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col justify-center text-center">
+                                    <span className="label-caps text-ink-dim mb-1.5">Put/Call Vol Ratio</span>
+                                    <span className="text-lg font-display font-semibold text-ink font-data">
+                                        {result.options_features.put_call_volume_ratio != null
+                                            ? result.options_features.put_call_volume_ratio.toFixed(2) 
+                                            : "—"}
+                                    </span>
+                                </div>
+                                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col justify-center text-center">
+                                    <span className="label-caps text-ink-dim mb-1.5">Implied Vol (ATM IV)</span>
+                                    <span className="text-lg font-display font-semibold text-ink font-data">
+                                        {result.options_features.atm_iv_call != null
+                                            ? `${(result.options_features.atm_iv_call * 100).toFixed(1)}%` 
+                                            : "—"}
+                                    </span>
+                                </div>
+                                <div className="p-6 bg-[var(--color-panel-sunk)] rounded-xl border border-panel-line flex flex-col justify-center text-center">
+                                    <span className="label-caps text-ink-dim mb-1.5">IV Skew (Puts - Calls)</span>
+                                    <span className="text-lg font-display font-semibold text-ink font-data">
+                                        {result.options_features.iv_skew != null
+                                            ? `${(result.options_features.iv_skew * 100).toFixed(1)}%` 
+                                            : "—"}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Sequential Agent Case Cards */}
+                    <div className="flex flex-col gap-12">
+                        {/* Bull Case */}
+                        <div className="p-8 bg-bull/[0.02] rounded-2xl border border-bull/15 hover:border-bull/25 hover:bg-bull/[0.04] transition-all duration-200 shadow-sm flex flex-col">
+                            <div className="flex items-center gap-3 mb-5 select-none">
+                                <div className="w-8 h-8 rounded-full bg-bull/10 flex items-center justify-center border border-bull/20">
+                                    <TrendingUp className="w-4 h-4 text-bull" />
+                                </div>
+                                <p className="label-caps text-bull">Bull Case</p>
+                            </div>
+                            {bullSummary && (
+                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line mb-6 pb-6 border-b border-bull/10">
+                                    {bullSummary}
+                                </p>
+                            )}
+                            <ul className="space-y-4">
+                                {result.bull_factors && result.bull_factors.length > 0 ? (
+                                    result.bull_factors.map((f, i) => (
+                                        <li key={i} className="text-sm font-body font-normal text-ink-mute flex items-start gap-3 leading-[1.6]">
+                                            <span className="text-bull mt-0.5 font-bold">✓</span> <span>{f}</span>
+                                        </li>
+                                    ))
+                                ) : (
+                                    <li className="text-sm text-ink-dim italic flex items-center justify-center p-4">No significant bullish factors identified in this analysis.</li>
+                                )}
+                            </ul>
+                        </div>
+
+                        {/* Bear Case */}
+                        <div className="p-8 bg-bear/[0.02] rounded-2xl border border-bear/15 hover:border-bear/25 hover:bg-bear/[0.04] transition-all duration-200 shadow-sm flex flex-col">
+                            <div className="flex items-center gap-3 mb-5 select-none">
+                                <div className="w-8 h-8 rounded-full bg-bear/10 flex items-center justify-center border border-bear/20">
+                                    <TrendingDown className="w-4 h-4 text-bear" />
+                                </div>
+                                <p className="label-caps text-bear">Bear Case</p>
+                            </div>
+                            {bearSummary && (
+                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line mb-6 pb-6 border-b border-bear/10">
+                                    {bearSummary}
+                                </p>
+                            )}
+                            <ul className="space-y-4">
+                                {result.bear_factors && result.bear_factors.length > 0 ? (
+                                    result.bear_factors.map((f, i) => (
+                                        <li key={i} className="text-sm font-body font-normal text-ink-mute flex items-start gap-3 leading-[1.6]">
+                                            <span className="text-bear mt-0.5 font-bold">×</span> <span>{f}</span>
+                                        </li>
+                                    ))
+                                ) : (
+                                    <li className="text-sm text-ink-dim italic flex items-center justify-center p-4">No significant bearish factors identified in this analysis.</li>
+                                )}
+                            </ul>
+                        </div>
+
+                        {/* Quant Case */}
+                        {quantSummary && (
+                            <div className="p-8 bg-quant/[0.02] rounded-2xl border border-quant/15 hover:border-quant/25 hover:bg-quant/[0.04] transition-all duration-200 shadow-sm flex flex-col">
+                                <div className="flex items-center gap-3 mb-5 select-none">
+                                    <div className="w-8 h-8 rounded-full bg-quant/10 flex items-center justify-center border border-quant/20">
+                                        <BarChart3 className="w-4 h-4 text-quant" />
+                                    </div>
+                                    <p className="label-caps text-quant">Quant Case</p>
+                                </div>
+                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{quantSummary}</p>
+                            </div>
+                        )}
+
+                        {/* Analyst Case / Custom Research */}
+                        {userSummary && (
+                            <div className="p-8 bg-human/[0.02] rounded-2xl border border-human/15 hover:border-human/25 hover:bg-human/[0.04] transition-all duration-200 shadow-sm flex flex-col">
+                                <div className="flex items-center gap-3 mb-5 select-none">
+                                    <div className="w-8 h-8 rounded-full bg-human/10 flex items-center justify-center border border-human/20">
+                                        <User className="w-4 h-4 text-human" />
+                                    </div>
+                                    <p className="label-caps text-human">Analyst / User Insight</p>
+                                </div>
+                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{userSummary}</p>
+                            </div>
+                        )}
+
+                        {/* Rebuttals / Cross-Examination */}
+                        {result.rebuttal_summary && (
+                            <div className="p-8 bg-[#C68A4C]/[0.02] rounded-2xl border border-[#C68A4C]/15 hover:border-[#C68A4C]/25 hover:bg-[#C68A4C]/[0.04] transition-all duration-200 shadow-sm flex flex-col">
+                                <div className="flex items-center gap-3 mb-5 select-none">
+                                    <div className="w-8 h-8 rounded-full bg-[#C68A4C]/10 flex items-center justify-center border border-[#C68A4C]/20">
+                                        <AlertTriangle className="w-4 h-4 text-[#C68A4C]" />
+                                    </div>
+                                    <p className="label-caps text-[#C68A4C]">Rebuttals & Cross-Examination</p>
+                                </div>
+                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{result.rebuttal_summary}</p>
+                            </div>
+                        )}
+
+                        {/* Consensus Summary */}
+                        <div className="p-10 rounded-2xl border border-panel-line bg-[var(--color-panel-sunk)] relative overflow-hidden shadow-sm">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-teal"></div>
+                            <p className="label-caps text-teal mb-5 flex items-center gap-2 select-none">
+                                <Sparkles className="w-3.5 h-3.5 text-teal" />
+                                Consensus Summary
+                            </p>
+                            <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">
+                                {result.reasoning_summary}
+                            </p>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {/* TAB 2: FUNDAMENTAL RESEARCH THESIS */}
+            {activeTab === 'research' && (
+                <div className="animate-in fade-in duration-300">
+                    <ResearchThesisView ticker={currentResult.ticker} />
+                </div>
+            )}
+
+            {/* TAB 3: INTERACTIVE AI RESEARCH CHAT */}
+            {activeTab === 'chat' && (
+                <div className="p-8 rounded-2xl border border-panel-line bg-[var(--color-panel-sunk)] shadow-inner flex flex-col flex-1 min-h-[550px] animate-in fade-in duration-300">
+                    <div className="flex justify-between items-center mb-6">
+                        <h4 className="label-caps text-teal flex items-center gap-2 select-none text-base">
+                            <MessageSquare className="w-4 h-4 text-teal" /> Interactive AI Analyst Chat ({currentResult.ticker})
+                        </h4>
+                        <span className="text-xs font-mono text-ink-dim">Powered by Consensus &amp; Research Thesis Context</span>
+                    </div>
+
+                    {/* Suggested Prompt Chips */}
+                    <div className="flex items-center gap-2 mb-6 flex-wrap select-none">
+                        <span className="text-xs font-mono text-ink-dim uppercase mr-1">Suggested:</span>
+                        <button
+                            onClick={() => setChatInput("What are the primary competitive risks to this company's moat over the next 2-3 years?")}
+                            className="px-3 py-1.5 bg-panel border border-panel-line hover:border-teal/50 rounded-lg text-xs font-body text-ink-mute hover:text-teal transition-all cursor-pointer"
+                        >
+                            Primary Competitive Moat Risks?
+                        </button>
+                        <button
+                            onClick={() => setChatInput("How does the Research Agent weigh the Bull case against high CapEx spending?")}
+                            className="px-3 py-1.5 bg-panel border border-panel-line hover:border-teal/50 rounded-lg text-xs font-body text-ink-mute hover:text-teal transition-all cursor-pointer"
+                        >
+                            Bull Case vs CapEx Spending?
+                        </button>
+                        <button
+                            onClick={() => setChatInput("Summarize upcoming catalysts and timing from the fundamental research thesis.")}
+                            className="px-3 py-1.5 bg-panel border border-panel-line hover:border-teal/50 rounded-lg text-xs font-body text-ink-mute hover:text-teal transition-all cursor-pointer"
+                        >
+                            Upcoming Catalysts &amp; Timing?
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto mb-6 space-y-4 pr-2 custom-scrollbar min-h-[300px]">
+                        {chatMessages.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full opacity-50 py-12 select-none">
+                                <Bot className="w-12 h-12 mb-4 text-teal animate-bounce" style={{ animationDuration: '3s' }} />
+                                <p className="label-caps text-ink-mute text-sm">No chat messages yet.</p>
+                                <p className="text-xs text-ink-dim mt-2 text-center max-w-sm">
+                                    Ask questions about short-term earnings expectations or fundamental research thesis moats for {currentResult.ticker}.
+                                </p>
+                            </div>
+                        ) : (
+                            chatMessages.map((msg, idx) => (
+                                <div key={idx} className={`p-5 rounded-xl text-sm ${msg.role === 'user' ? 'bg-panel text-ink ml-8 border border-panel-line' : 'bg-teal/10 text-ink mr-8 border border-teal/20'}`}>
+                                    <div className={`label-caps mb-2 select-none ${msg.role === 'user' ? 'text-ink-dim' : 'text-teal'}`}>
+                                        {msg.role === 'user' ? 'You' : 'Consensus Analyst'}
+                                    </div>
+                                    <div className="whitespace-pre-wrap font-body font-normal leading-[1.6]">{msg.content}</div>
+                                </div>
+                            ))
+                        )}
+                        {chatLoading && (
+                            <div className="p-4 rounded-xl bg-teal/10 text-teal mr-8 border border-teal/20 flex items-center gap-3 w-fit select-none">
+                                <span className="animate-pulse w-2 h-2 bg-teal rounded-full"></span>
+                                <span className="animate-pulse label-caps">Thinking...</span>
+                            </div>
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    <div className="relative flex items-end bg-panel border border-panel-line focus-within:border-teal/50 focus-within:ring-1 focus-within:ring-teal/20 rounded-xl transition-all p-2 gap-2 mt-auto">
+                        <textarea
+                            placeholder={`Ask questions about ${currentResult.ticker} prediction or research thesis...`}
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSendChatMessage();
+                                }
+                            }}
+                            className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-sm font-body font-normal text-ink placeholder-ink-dim/40 resize-none min-h-[48px] max-h-[160px] py-3 px-3 custom-scrollbar"
+                            disabled={chatLoading}
+                        />
+                        <button
+                            onClick={handleSendChatMessage}
+                            disabled={chatLoading || !chatInput.trim()}
+                            className="h-11 px-5 rounded-lg label-caps transition-all bg-teal text-[var(--color-bg)] hover:bg-teal-deep disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer shadow-md select-none shrink-0"
+                        >
+                            <span>Send</span>
+                            <Send className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Edit Actuals Modal */}
             {showEditModal && (

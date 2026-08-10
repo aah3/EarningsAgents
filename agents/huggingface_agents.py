@@ -1373,10 +1373,13 @@ class ConsensusAgent(BaseAgent):
             raise AgentResponseError(agent=self.__class__.__name__, cause=e)
 
 
-    def chat(self, messages: List[Dict[str, str]]) -> str:
-        """Interact with the Consensus Agent regarding its analysis."""
-        chat_prompt = """You are the CONSENSUS analyst. The user is asking you questions about your recent earnings prediction.
-Please respond directly to the user as an informed analyst. Be concise, objective, and reference the bull, bear, and quant analyses where relevant."""
+    def chat(self, messages: List[Dict[str, str]], research_context: Optional[str] = None) -> str:
+        """Interact with the Consensus Agent regarding its analysis and fundamental research thesis."""
+        chat_prompt = """You are the CONSENSUS financial research analyst. The user is asking you questions about your recent earnings prediction and fundamental company research thesis.
+Please respond directly to the user as an informed senior analyst. Be concise, objective, and reference the bull, bear, and quant agent analyses as well as the fundamental research thesis where relevant."""
+
+        if research_context:
+            chat_prompt += f"\n\n### FUNDAMENTAL RESEARCH THESIS CONTEXT\n{research_context}"
         
         response = self.llm.chat(
             system_prompt=chat_prompt,

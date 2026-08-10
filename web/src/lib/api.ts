@@ -336,7 +336,68 @@ export const api = {
                 page_context: pageContext,
             })
         });
+    },
+
+    async getResearchThesis(ticker: string, token?: string): Promise<ResearchThesis> {
+        const url = `${API_BASE_URL}/research/${normalizeTicker(ticker)}`;
+        return this.fetchWithAuth(url, token);
+    },
+
+    async getResearchBaseline(ticker: string, token?: string): Promise<ResearchThesis> {
+        const url = `${API_BASE_URL}/research/${normalizeTicker(ticker)}/baseline`;
+        return this.fetchWithAuth(url, token);
+    },
+
+    async getResearchHistory(ticker: string, token?: string): Promise<ResearchHistoryResponse> {
+        const url = `${API_BASE_URL}/research/${normalizeTicker(ticker)}/history`;
+        return this.fetchWithAuth(url, token);
+    },
+
+    async triggerResearch(ticker: string, userNotes?: string, token?: string): Promise<TaskResponse> {
+        apiCache.clear();
+        const url = `${API_BASE_URL}/research/${normalizeTicker(ticker)}`;
+        return this.fetchWithAuth(url, token, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ user_notes: userNotes })
+        });
     }
 };
+
+export interface ResearchThesis {
+    id: number;
+    ticker: string;
+    company_name: string;
+    user_id?: number | null;
+    user_notes?: string | null;
+    generated_at: string;
+    source_trigger: string;
+    headline_view: string;
+    confidence_level: number;
+    business_viability_summary: string;
+    competitive_landscape_summary: string;
+    macro_context_summary: string;
+    bull_case: string;
+    bear_case: string;
+    catalysts: string[];
+    risks: string[];
+    evidence_table: Array<{
+        evidence: string;
+        source: string;
+        implication: string;
+        weight: string;
+    }>;
+    what_changed_summary?: string | null;
+    disclaimer_shown: boolean;
+    scope: "personalized" | "baseline";
+}
+
+export interface ResearchHistoryResponse {
+    ticker: string;
+    count: number;
+    history: ResearchThesis[];
+}
 
 
