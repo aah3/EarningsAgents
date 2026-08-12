@@ -249,8 +249,8 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
             if db_user:
                 user_db_id = db_user.id
             
-            from database.research_repo import resolve_thesis_for_prediction, save_research_thesis, format_research_summary, get_latest_research_thesis
-            
+            from database.research_repo import resolve_or_generate_research_context, save_research_thesis, format_research_summary, get_latest_research_thesis
+
             # Check user personalized case when user_analysis is passed
             if user_db_id and user_analysis:
                 logger.info(f"Generating fresh personalized ResearchThesis for user {user_db_id} on {ticker}")
@@ -262,21 +262,17 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                     research_context = format_research_summary(pers_thesis)
                 except Exception as e:
                     logger.warning(f"Failed to generate personalized thesis for {ticker}: {e}")
-            
+
             if not research_context:
-                research_context, needs_enqueue = resolve_thesis_for_prediction(
+                logger.info(f"Resolving research thesis context for {ticker} (synchronous)")
+                research_context = resolve_or_generate_research_context(
                     session,
                     ticker,
+                    pipeline.config.agent,
                     user_id=user_db_id,
                     user_notes=user_analysis if user_analysis else None,
                     staleness_days=getattr(pipeline.config, "research_staleness_days", 21)
                 )
-                if needs_enqueue:
-                    logger.info(f"Enqueuing generate_research_thesis_task for {ticker} (baseline missing/stale)")
-                    try:
-                        generate_research_thesis_task.delay(ticker)
-                    except Exception as e:
-                        logger.warning(f"Could not enqueue via Celery (.delay): {e}")
 
         # 1. Run Analysis
         raw_result = pipeline.predict_single(

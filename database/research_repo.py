@@ -184,3 +184,43 @@ def resolve_thesis_for_prediction(
     research_context = format_research_summary(selected_thesis) if selected_thesis else None
     return research_context, needs_baseline_enqueue
 
+
+def resolve_or_generate_research_context(
+    session: Session,
+    ticker: str,
+    agent_config: Any,
+    user_id: Optional[int] = None,
+    user_notes: Optional[str] = None,
+    staleness_days: int = 21,
+) -> Optional[str]:
+    """
+    Like resolve_thesis_for_prediction, but when the baseline thesis is missing or
+    stale, generates and saves a fresh one synchronously (in-process) instead of
+    just flagging it for async enqueue. Used by callers that want every prediction
+    to have research context available immediately (batch runs, synchronous API
+    triggers) rather than only from the next run onward.
+
+    Returns the research_context summary string, or None if a thesis could not be
+    resolved or generated.
+    """
+    research_context, needs_baseline_enqueue = resolve_thesis_for_prediction(
+        session, ticker, user_id=user_id, user_notes=user_notes, staleness_days=staleness_days
+    )
+    if not needs_baseline_enqueue:
+        return research_context
+
+    ticker_upper = ticker.upper()
+    try:
+        from agents.huggingface_agents import generate_thesis
+        previous = get_latest_research_thesis(session, ticker_upper, user_id=None)
+        response = generate_thesis(ticker_upper, previous_thesis=previous, config=agent_config)
+        thesis = save_research_thesis(
+            session, ticker_upper, ticker_upper, response,
+            user_id=None, user_notes=None, source_trigger="auto_on_predict",
+        )
+        logger.info(f"Synchronously generated baseline ResearchThesis for {ticker_upper} (id={thesis.id})")
+        return format_research_summary(thesis)
+    except Exception as e:
+        logger.warning(f"Failed to synchronously generate baseline research thesis for {ticker_upper}: {e}")
+        return research_context
+
