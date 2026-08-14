@@ -409,6 +409,24 @@ ${userText}`
                         </div>
                     )}
 
+                    {/* Explicit Fundamental Research Thesis Component */}
+                    <div id="research-thesis-section" className="p-8 rounded-2xl border border-teal/30 bg-gradient-to-r from-teal/10 via-[var(--color-panel-sunk)] to-[var(--color-panel-sunk)] shadow-lg space-y-6">
+                        <div className="flex items-center justify-between border-b border-panel-line pb-4 flex-wrap gap-4">
+                            <div className="flex items-center gap-3.5">
+                                <div className="w-9 h-9 rounded-xl bg-teal/20 flex items-center justify-center border border-teal/40 text-teal shadow-inner">
+                                    <Sparkles className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h4 className="label-caps text-teal text-base font-bold">Fundamental Research Thesis &amp; Long-Term Outlook</h4>
+                                    <p className="text-xs text-ink-dim font-mono">12-36 Month Structural Thesis, Business Viability, Moat &amp; Evidence Matrix</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Embedded ResearchThesisView */}
+                        <ResearchThesisView ticker={currentResult.ticker} />
+                    </div>
+
                     {/* Sequential Agent Case Cards */}
                     <div className="flex flex-col gap-12">
                         {/* Bull Case */}

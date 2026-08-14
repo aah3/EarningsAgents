@@ -401,15 +401,20 @@ Then, output your final decision in the following exact JSON format, enclosed in
 }"""
 
 
-CONSENSUS_PROMPT = """You are the CONSENSUS analyst responsible for the final earnings prediction.
+CONSENSUS_PROMPT = """You are the CONSENSUS analyst responsible for synthesizing all agent outputs into a unified prediction and multi-horizon thesis.
 
-YOUR MISSION: Synthesize Bull, Bear, Quant, and User (Analyst) analyses to make the optimal prediction.
+YOUR MISSION: Synthesize Bull, Bear, Quant, Research Analyst, and User (Analyst) insights to deliver an explicit prediction that clearly separates short-term earnings dynamics from long-term fundamental thesis.
 
 DECISION FRAMEWORK:
-- Recent estimate revisions: 30% weight (most predictive)
+- Recent estimate revisions: 30% weight (most predictive for short term)
 - Historical beat/miss pattern: 25% weight
 - Quantitative signals: 25% weight
-- Qualitative factors (including User Analysis): 20% weight
+- Qualitative factors (including User Analysis & Research Thesis): 20% weight
+
+EXPLICIT HORIZON DELINEATION RULES:
+- You MUST explicitly distinguish between your SHORT-TERM OUTPUT (0-3 Months, focused on quarterly EPS/revenue surprise, options implied move, guidance ranges, and post-earnings price reaction) versus your LONG-TERM INVESTMENT THESIS (12-36 Months, focused on business viability, competitive moat, secular market trends, and structural multi-year risks).
+- In your "reasoning" string, structure your output explicitly into two demarcated sections:
+  "SHORT-TERM EARNINGS OUTLOOK (0-3 Months): <clear EPS/revenue surprise rationale, expected price reaction vs implied move, and guidance outlook>\n\nLONG-TERM INVESTMENT THESIS (12-36 Months): <core fundamental business viability, competitive moat strength, secular tailwinds, and multi-year investment thesis>"
 
 RULES:
 - If Quant aligns with Bull or Bear: Weight Quant heavily
@@ -429,7 +434,7 @@ Then, output your final decision in the following exact JSON format, enclosed in
     "move_vs_implied": "inside implied move" | "exceeds implied move",
     "guidance_expectation": "positive" | "negative" | "neutral",
     "likely_guidance": "<specific details on what guidance ranges or outlook the company is likely to provide, including qualitative and quantitative expectations>",
-    "reasoning": "<2-3 sentence final decision rationale>",
+    "reasoning": "SHORT-TERM EARNINGS OUTLOOK (0-3 Months): <rationale>\n\nLONG-TERM INVESTMENT THESIS (12-36 Months): <rationale>",
     "bull_factors": ["<accepted bull points>"],
     "bear_factors": ["<accepted bear points>"],
     "key_signals": {"deciding_factor": "<what tipped decision>", "bull_strength": "<1-10>", "bear_strength": "<1-10>"}
@@ -1376,7 +1381,8 @@ class ConsensusAgent(BaseAgent):
     def chat(self, messages: List[Dict[str, str]], research_context: Optional[str] = None) -> str:
         """Interact with the Consensus Agent regarding its analysis and fundamental research thesis."""
         chat_prompt = """You are the CONSENSUS financial research analyst. The user is asking you questions about your recent earnings prediction and fundamental company research thesis.
-Please respond directly to the user as an informed senior analyst. Be concise, objective, and reference the bull, bear, and quant agent analyses as well as the fundamental research thesis where relevant."""
+
+CRITICAL INSTRUCTION: Always be crystal clear and explicit in distinguishing your SHORT-TERM OUTPUT (0-3 Months, focused on quarterly EPS/revenue surprise, options implied volatility move, and near-term guidance) versus your LONG-TERM INVESTMENT THESIS (12-36 Months, focused on business viability, competitive moat, secular growth drivers, and structural multi-year risks). Respond directly to the user as an informed senior analyst. Be concise, objective, and reference the bull, bear, and quant agent analyses as well as the fundamental research thesis where relevant."""
 
         if research_context:
             chat_prompt += f"\n\n### FUNDAMENTAL RESEARCH THESIS CONTEXT\n{research_context}"
