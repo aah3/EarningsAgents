@@ -502,7 +502,7 @@ export default function ResearchThesisView({
             {/* Personalization Modal */}
             {showPersonalizeModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className="bg-[#0e1524] border border-panel-line rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-6 text-white">
+                    <div className="bg-[var(--color-panel-sunk)] border border-panel-line rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-6 text-white">
                         <div className="flex justify-between items-center border-b border-panel-line pb-4">
                             <h4 className="text-xl font-display font-semibold text-white flex items-center gap-2">
                                 <Edit3 className="w-5 h-5 text-bull" /> Personalize Research Thesis
@@ -554,7 +554,7 @@ export default function ResearchThesisView({
             {/* Compare Baseline Modal */}
             {showBaselineModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-                    <div className="bg-[#0e1524] border border-panel-line rounded-2xl w-full max-w-4xl max-h-[90vh] p-6 shadow-2xl space-y-6 text-white overflow-y-auto custom-scrollbar">
+                    <div className="bg-[var(--color-panel-sunk)] border border-panel-line rounded-2xl w-full max-w-4xl max-h-[90vh] p-6 shadow-2xl space-y-6 text-white overflow-y-auto custom-scrollbar">
                         <div className="flex justify-between items-center border-b border-panel-line pb-4">
                             <h4 className="text-xl font-display font-semibold text-white flex items-center gap-2">
                                 <GitCompare className="w-5 h-5 text-teal" /> Side-by-Side Thesis Comparison ({ticker})
@@ -618,7 +618,7 @@ export default function ResearchThesisView({
             {/* History Drawer */}
             {showHistoryDrawer && (
                 <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className="bg-[#0e1524] border-l border-panel-line rounded-2xl w-full max-w-md h-full p-6 shadow-2xl space-y-6 text-white overflow-y-auto custom-scrollbar flex flex-col">
+                    <div className="bg-[var(--color-panel-sunk)] border-l border-panel-line rounded-2xl w-full max-w-md h-full p-6 shadow-2xl space-y-6 text-white overflow-y-auto custom-scrollbar flex flex-col">
                         <div className="flex justify-between items-center border-b border-panel-line pb-4">
                             <h4 className="text-xl font-display font-semibold text-white flex items-center gap-2">
                                 <History className="w-5 h-5 text-teal" /> Research Thesis History

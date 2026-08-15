@@ -56,18 +56,18 @@ export default function AgentCommittee() {
                                 {agent.icon}
                             </div>
                             <h3 className="text-2xl font-bold mb-3">{agent.name}</h3>
-                            <p className="text-gray-400 text-base leading-relaxed">
+                            <p className="text-ink-mute text-base leading-relaxed">
                                 {agent.role}
                             </p>
                         </div>
                     ))}
                 </div>
 
-                <div className="mt-24 flex items-center justify-center gap-6 text-[10px] font-mono text-gray-600 uppercase tracking-[0.3em]">
+                <div className="mt-24 flex items-center justify-center gap-6 text-[10px] font-mono text-ink-dim uppercase tracking-[0.3em]">
                     <span>Data Flow</span>
-                    <div className="h-px w-10 bg-gray-800" />
+                    <div className="h-px w-10 bg-panel" />
                     <span>Independent Analysis</span>
-                    <div className="h-px w-10 bg-gray-800" />
+                    <div className="h-px w-10 bg-panel" />
                     <span>Debate</span>
                     <div className="h-px w-10 bg-accent/30" />
                     <span>Agent Votes</span>

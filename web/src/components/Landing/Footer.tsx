@@ -15,13 +15,13 @@ export default function Footer() {
                     <span className="text-xl font-black tracking-tighter uppercase">Earnings AI</span>
                 </div>
 
-                <div className="flex gap-12 text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                <div className="flex gap-12 text-[10px] font-bold uppercase tracking-widest text-ink-dim">
                     <Link href="#" className="hover:text-white transition-colors">Company Info</Link>
                     <Link href="#" className="hover:text-white transition-colors">Links</Link>
                     <Link href="#" className="hover:text-white transition-colors">Contact</Link>
                 </div>
 
-                <div className="text-[10px] text-gray-600 max-w-xs text-center md:text-right uppercase tracking-[0.2em] font-medium leading-[2]">
+                <div className="text-[10px] text-ink-dim max-w-xs text-center md:text-right uppercase tracking-[0.2em] font-medium leading-[2]">
                     Financial predictions are for informational purposes only and not investment advice.
                     <div className="mt-4 flex justify-center md:justify-end gap-6 opacity-30 grayscale items-center">
                         <span className="hover:opacity-100 cursor-pointer transition-opacity">TWITTER</span>
@@ -30,7 +30,7 @@ export default function Footer() {
                     </div>
                 </div>
             </div>
-            <div className="mt-16 pt-8 border-t border-white/5 text-center text-[10px] text-gray-700 font-bold tracking-[0.4em] uppercase">
+            <div className="mt-16 pt-8 border-t border-white/5 text-center text-[10px] text-ink-dim font-bold tracking-[0.4em] uppercase">
                 © 2026 EARNINGS AGENTS PROJECT. ALL RIGHTS RESERVED.
             </div>
         </footer>

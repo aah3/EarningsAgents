@@ -235,7 +235,7 @@ export default function CalendarPage() {
                         <select
                             value={indexName}
                             onChange={(e) => setIndexName(e.target.value)}
-                            className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white uppercase font-semibold text-xs tracking-wider outline-none font-body transition-all"
+                            className="w-full bg-panel-deep border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white uppercase font-semibold text-xs tracking-wider outline-none font-body transition-all"
                         >
                             <option value="S&P 500">S&P 500</option>
                             <option value="DJIA">Dow Jones (DJIA)</option>
@@ -249,7 +249,7 @@ export default function CalendarPage() {
                         <select
                             value={timeframe}
                             onChange={(e) => handleTimeframeChange(e.target.value)}
-                            className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white uppercase font-semibold text-xs tracking-wider outline-none font-body transition-all"
+                            className="w-full bg-panel-deep border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white uppercase font-semibold text-xs tracking-wider outline-none font-body transition-all"
                         >
                             <option value="Today">Today</option>
                             <option value="Tomorrow">Tomorrow</option>
@@ -276,7 +276,7 @@ export default function CalendarPage() {
                             type="date"
                             value={startDate}
                             onChange={(e) => setStartDate(e.target.value)}
-                            className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white relative [color-scheme:dark] outline-none text-xs font-mono transition-all"
+                            className="w-full bg-panel-deep border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white relative [color-scheme:dark] outline-none text-xs font-mono transition-all"
                         />
                     </div>
                     <div className="w-full lg:w-1/4">
@@ -285,7 +285,7 @@ export default function CalendarPage() {
                             type="date"
                             value={endDate}
                             onChange={(e) => setEndDate(e.target.value)}
-                            className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white relative [color-scheme:dark] outline-none text-xs font-mono transition-all"
+                            className="w-full bg-panel-deep border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white relative [color-scheme:dark] outline-none text-xs font-mono transition-all"
                         />
                     </div>
                     <div className="w-full lg:flex-1">
@@ -295,7 +295,7 @@ export default function CalendarPage() {
                             value={tickers}
                             onChange={(e) => setTickers(e.target.value)}
                             placeholder="E.G. AAPL, MSFT, GOOGL"
-                            className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white uppercase font-semibold text-xs tracking-wider outline-none font-body placeholder-white/20 transition-all"
+                            className="w-full bg-panel-deep border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 text-white uppercase font-semibold text-xs tracking-wider outline-none font-body placeholder-white/20 transition-all"
                         />
                     </div>
                     <div>
@@ -311,7 +311,7 @@ export default function CalendarPage() {
             )}
 
             {error && (
-                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-500 font-bold select-none">
+                <div className="p-4 bg-bear/10 border border-bear/20 rounded-xl text-xs text-bear font-bold select-none">
                     ⚠️ {error}
                 </div>
             )}
@@ -319,7 +319,7 @@ export default function CalendarPage() {
             {loading && events.length === 0 ? (
                 <div className="bg-panel border border-[#26334A] rounded-[16px] p-20 flex flex-col items-center gap-4 shadow-[0_20px_60px_rgba(0,0,0,0.35)] animate-pulse">
                     <div className="w-12 h-12 border-4 border-teal border-t-transparent rounded-full animate-spin" />
-                    <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">
+                    <p className="text-ink-dim font-bold uppercase tracking-widest text-xs">
                         Fetching calendar data...
                     </p>
                 </div>
@@ -327,7 +327,7 @@ export default function CalendarPage() {
                 <div className="rounded-[16px] border border-[#26334A] bg-panel overflow-hidden flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.35)] animate-in fade-in duration-300">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left whitespace-nowrap border-collapse">
-                            <thead className="bg-[#05070a] border-b border-panel-line text-ink-dim select-none">
+                            <thead className="bg-panel-deep border-b border-panel-line text-ink-dim select-none">
                                 <tr>
                                     <th className="px-8 py-4 label-caps">Ticker</th>
                                     <th className="px-8 py-4 label-caps">Date</th>
@@ -359,7 +359,7 @@ export default function CalendarPage() {
             ) : (
                 <div className="flex flex-col items-center justify-center py-16 text-center select-none bg-panel border border-[#26334A] rounded-[16px] shadow-[0_20px_60px_rgba(0,0,0,0.35)] animate-in fade-in duration-300">
                     <XCircle className="w-12 h-12 text-ink-dim mb-3" />
-                    <p className="text-gray-500 font-bold uppercase tracking-widest text-xs mb-4">
+                    <p className="text-ink-dim font-bold uppercase tracking-widest text-xs mb-4">
                         DATA UNAVAILABLE: No upcoming earnings found
                     </p>
                 </div>

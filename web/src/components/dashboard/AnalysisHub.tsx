@@ -57,7 +57,7 @@ export default function AnalysisHub({
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             placeholder="E.G. NVDA"
-            className="w-full bg-[#05070a] border-2 border-panel-line rounded-2xl px-6 py-5 focus:border-teal focus:ring-4 focus:ring-teal/20 outline-none transition-all uppercase font-display font-bold text-4xl lg:text-5xl tracking-widest text-white placeholder-white/10 h-[90px] shadow-inner"
+            className="w-full bg-panel-deep border-2 border-panel-line rounded-2xl px-6 py-5 focus:border-teal focus:ring-4 focus:ring-teal/20 outline-none transition-all uppercase font-display font-bold text-4xl lg:text-5xl tracking-widest text-white placeholder-white/10 h-[90px] shadow-inner"
             disabled={loading}
           />
         </div>
@@ -71,7 +71,7 @@ export default function AnalysisHub({
             type="date"
             value={reportDate}
             onChange={(e) => setReportDate(e.target.value)}
-            className="w-full bg-[#05070a] border border-panel-line rounded-2xl px-6 py-5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none transition-all text-xl font-body font-bold text-white relative [color-scheme:dark] h-[90px]"
+            className="w-full bg-panel-deep border border-panel-line rounded-2xl px-6 py-5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none transition-all text-xl font-body font-bold text-white relative [color-scheme:dark] h-[90px]"
             disabled={loading}
           />
         </div>
@@ -108,13 +108,13 @@ export default function AnalysisHub({
           value={userAnalysis}
           onChange={(e) => setUserAnalysis(e.target.value)}
           placeholder="Include your prompt/analysis to be incorporated into the consensus."
-          className="w-full bg-[#05070a] border border-panel-line border-l-2 border-l-human rounded-xl px-5 py-4 focus:border-teal focus:ring-1 focus:ring-teal/50 outline-none transition-all text-sm font-body font-medium text-white relative placeholder-white/20 min-h-[80px] resize-y custom-scrollbar"
+          className="w-full bg-panel-deep border border-panel-line border-l-2 border-l-human rounded-xl px-5 py-4 focus:border-teal focus:ring-1 focus:ring-teal/50 outline-none transition-all text-sm font-body font-medium text-white relative placeholder-white/20 min-h-[80px] resize-y custom-scrollbar"
           disabled={loading}
         />
       </div>
 
       {/* Options Row (Rebuttals) */}
-      <div className="mt-6 flex items-center gap-3 bg-[#05070a] border border-panel-line rounded-xl p-4 select-none">
+      <div className="mt-6 flex items-center gap-3 bg-panel-deep border border-panel-line rounded-xl p-4 select-none">
         <input
           type="checkbox"
           id="enableRebuttals"

@@ -14,10 +14,10 @@ export default function Hero({ data = DEFAULT_PIPELINE }: HeroProps) {
   return (
     <section className="w-full max-w-[1240px] mx-auto grid grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] max-[940px]:grid-cols-1 gap-[56px] max-[940px]:gap-10 items-center px-10 max-[940px]:px-6 pt-14 pb-[90px] max-[940px]:pb-[70px]">
       {/* Left Column: Copy */}
-      <div className="copy flex flex-col items-start">
+      <div className="flex flex-col items-start">
         {/* Eyebrow Pill */}
         <span className="font-mono text-[12px] tracking-[0.14em] uppercase text-teal border border-panel-line bg-[rgba(45,212,191,0.05)] px-[13px] py-[7px] rounded-full inline-flex items-center gap-[9px] mb-[26px] select-none">
-          <span className="dot w-[7px] h-[7px] rounded-full bg-teal shadow-[0_0_10px_rgba(45,212,191,0.8)] eyebrow-dot-blink" />
+          <span className="w-[7px] h-[7px] rounded-full bg-teal shadow-[0_0_10px_rgba(45,212,191,0.8)]" />
           Multi-agent earnings intelligence
         </span>
 

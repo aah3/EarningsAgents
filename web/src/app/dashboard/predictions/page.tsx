@@ -67,14 +67,14 @@ export default function PredictionsPage() {
                 {loadingData ? (
                     <div className="col-span-1 md:col-span-2 bg-panel border border-[#26334A] rounded-[16px] p-20 flex flex-col items-center gap-4 shadow-[0_20px_60px_rgba(0,0,0,0.35)] animate-pulse">
                         <div className="w-12 h-12 border-4 border-teal border-t-transparent rounded-full animate-spin" />
-                        <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">
+                        <p className="text-ink-dim font-bold uppercase tracking-widest text-xs">
                             Discovering Upcoming Earnings...
                         </p>
                     </div>
                 ) : upcoming.length === 0 ? (
                     <div className="col-span-1 md:col-span-2 flex flex-col items-center justify-center py-20 text-center select-none bg-panel border border-[#26334A] rounded-[16px] shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
                         <XCircle className="w-12 h-12 text-ink-dim mb-3" />
-                        <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">
+                        <p className="text-ink-dim font-bold uppercase tracking-widest text-xs">
                             DATA UNAVAILABLE: No upcoming earnings found for next week
                         </p>
                     </div>
@@ -108,7 +108,7 @@ export default function PredictionsPage() {
                             onClick={() => runAnalysis(stock.ticker, stock.report_date)}
                             disabled={loadingAnalysis === stock.ticker}
                             className={`w-full py-3 rounded-xl font-mono font-bold uppercase tracking-widest text-xs transition-all ${loadingAnalysis === stock.ticker
-                                ? "bg-white/5 border border-white/10 text-gray-500 cursor-not-allowed"
+                                ? "bg-white/5 border border-white/10 text-ink-dim cursor-not-allowed"
                                 : "bg-teal/5 hover:bg-teal hover:text-black border border-teal/20 hover:border-teal text-teal cursor-pointer"
                                 }`}
                         >

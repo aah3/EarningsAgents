@@ -18,7 +18,7 @@ export default function DataSources() {
                     ))}
                 </div>
 
-                <p className="mt-20 text-sm text-gray-500 max-w-2xl mx-auto leading-relaxed">
+                <p className="mt-20 text-sm text-ink-dim max-w-2xl mx-auto leading-relaxed">
                     Aggregates fundamental data, estimates, price action, and sentiment from industry-leading
                     providers to ensure your analysis is built on a solid foundation.
                 </p>

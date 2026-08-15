@@ -18,7 +18,7 @@ function BarChart({ data, labelKey, valueKey, colorFn, maxValue }: {
         <div className="space-y-3">
             {data.map((row, i) => (
                 <div key={i} className="flex items-center gap-4">
-                    <div className="w-28 text-right text-[11px] font-bold text-gray-400 shrink-0 truncate">{row[labelKey]}</div>
+                    <div className="w-28 text-right text-[11px] font-bold text-ink-mute shrink-0 truncate">{row[labelKey]}</div>
                     <div className="flex-1 h-6 bg-white/5 rounded-full overflow-hidden">
                         <div
                             className="h-full rounded-full transition-all duration-700"
@@ -40,7 +40,7 @@ function BarChart({ data, labelKey, valueKey, colorFn, maxValue }: {
 }
 
 function BrierSparkline({ points }: { points: Array<{ date: string; brier: number; ticker: string }> }) {
-    if (!points.length) return <div className="text-gray-600 text-xs text-center py-8">No scored predictions yet</div>;
+    if (!points.length) return <div className="text-ink-dim text-xs text-center py-8">No scored predictions yet</div>;
     const max = Math.max(...points.map((p) => p.brier), 0.01);
     const H = 120;
     const W = 100;
@@ -64,7 +64,7 @@ function BrierSparkline({ points }: { points: Array<{ date: string; brier: numbe
                     <circle key={i} cx={xs[i]} cy={ys[i]} r="1.5" fill="#2dd4bf" />
                 ))}
             </svg>
-            <div className="flex justify-between text-[9px] font-mono text-gray-600 mt-1">
+            <div className="flex justify-between text-[9px] font-mono text-ink-dim mt-1">
                 <span>{points[0]?.date.slice(0, 10)}</span>
                 <span>{points[points.length - 1]?.date.slice(0, 10)}</span>
             </div>
@@ -73,7 +73,7 @@ function BrierSparkline({ points }: { points: Array<{ date: string; brier: numbe
 }
 
 function CalibrationChart({ buckets }: { buckets: PredictionMetrics["confidence_buckets"] }) {
-    if (!buckets.length) return <div className="text-gray-600 text-xs text-center py-8">No scored predictions yet</div>;
+    if (!buckets.length) return <div className="text-ink-dim text-xs text-center py-8">No scored predictions yet</div>;
     const H = 140;
     const W = 100;
     const n = buckets.length;
@@ -106,12 +106,12 @@ function StatCard({ label, value, sub, color, icon }: {
     label: string; value: string; sub?: string; color: string; icon: string;
 }) {
     return (
-        <div className="glass p-6 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center gap-5 hover:bg-[#11161d] transition-colors">
+        <div className="p-6 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center gap-5 hover:bg-[#11161d] transition-colors">
             <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0" style={{ background: `${color}20`, border: `1px solid ${color}30` }}>
                 {icon}
             </div>
             <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">{label}</p>
+                <p className="text-[10px] font-bold text-ink-dim uppercase tracking-widest mb-1">{label}</p>
                 <p className="text-2xl font-black text-white tracking-tight">{value}</p>
                 {sub && <p className="text-[10px] font-bold mt-0.5" style={{ color }}>{sub}</p>}
             </div>
@@ -147,16 +147,16 @@ export default function PerformancePage() {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
                 <div className="w-16 h-16 border-4 border-accent border-t-transparent rounded-full animate-spin" />
-                <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Loading performance data...</p>
+                <p className="text-ink-dim font-bold uppercase tracking-widest text-xs">Loading performance data...</p>
             </div>
         );
     }
 
     if (error) {
         return (
-            <div className="glass p-16 rounded-3xl border border-red-500/20 bg-red-500/5 text-center">
-                <p className="text-red-400 font-black text-lg mb-2">Failed to load metrics</p>
-                <p className="text-gray-500 text-sm">{error}</p>
+            <div className="p-16 rounded-3xl border border-bear/20 bg-bear/5 text-center">
+                <p className="text-bear font-black text-lg mb-2">Failed to load metrics</p>
+                <p className="text-ink-dim text-sm">{error}</p>
             </div>
         );
     }
@@ -172,7 +172,7 @@ export default function PerformancePage() {
         <div className="space-y-10 pb-20">
             <header>
                 <h1 className="text-4xl font-extrabold tracking-tight mb-2 font-outfit">Performance Dashboard</h1>
-                <p className="text-gray-400 font-medium">
+                <p className="text-ink-mute font-medium">
                     Live evaluation metrics across {m.total_predictions} prediction{m.total_predictions !== 1 ? "s" : ""} —&nbsp;
                     {m.scored_predictions} scored.
                 </p>
@@ -188,27 +188,27 @@ export default function PerformancePage() {
 
             {/* Extended Hit Rates Banner */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="glass p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
+                <div className="p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
                     <div>
-                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Guidance Stance Hit Rate</p>
+                        <p className="text-[10px] font-bold text-ink-dim uppercase tracking-widest">Guidance Stance Hit Rate</p>
                         <p className="text-xl font-black text-white mt-1">
                             {m.scored_predictions > 0 && m.guidance_stance_hit_rate !== undefined ? `${(m.guidance_stance_hit_rate * 100).toFixed(1)}%` : "—"}
                         </p>
                     </div>
                     <span className="text-2xl">🔮</span>
                 </div>
-                <div className="glass p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
+                <div className="p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
                     <div>
-                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Avg Magnitude Error</p>
+                        <p className="text-[10px] font-bold text-ink-dim uppercase tracking-widest">Avg Magnitude Error</p>
                         <p className="text-xl font-black text-white mt-1">
                             {m.scored_predictions > 0 && m.avg_magnitude_error_pct !== undefined && m.avg_magnitude_error_pct > 0 ? `${(m.avg_magnitude_error_pct * 100).toFixed(2)}%` : "—"}
                         </p>
                     </div>
                     <span className="text-2xl">📏</span>
                 </div>
-                <div className="glass p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
+                <div className="p-5 rounded-2xl border border-white/10 bg-[#0c1017] flex items-center justify-between">
                     <div>
-                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Avg Brier Score</p>
+                        <p className="text-[10px] font-bold text-ink-dim uppercase tracking-widest">Avg Brier Score</p>
                         <p className="text-xl font-black text-white mt-1">
                             {m.scored_predictions > 0 ? m.avg_brier_score.toFixed(4) : "—"}
                         </p>
@@ -221,24 +221,24 @@ export default function PerformancePage() {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
                 {/* Brier Score Over Time */}
-                <div className="xl:col-span-2 glass p-6 rounded-3xl border border-white/10 bg-[#0c1017]">
+                <div className="xl:col-span-2 p-6 rounded-3xl border border-white/10 bg-[#0c1017]">
                     <div className="flex items-center justify-between mb-5">
                         <h2 className="font-black uppercase tracking-widest text-sm text-white">Brier Score Over Time</h2>
-                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest bg-white/5 px-3 py-1.5 rounded-lg">Lower = More Accurate</span>
+                        <span className="text-[10px] text-ink-dim font-bold uppercase tracking-widest bg-white/5 px-3 py-1.5 rounded-lg">Lower = More Accurate</span>
                     </div>
                     <BrierSparkline points={m.brier_over_time} />
                     {m.brier_over_time.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-white/5 grid grid-cols-3 gap-4 text-center">
                             <div>
-                                <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Best</p>
+                                <p className="text-[10px] text-ink-dim uppercase tracking-widest font-bold">Best</p>
                                 <p className="font-mono font-black text-bull text-sm">{Math.min(...m.brier_over_time.map(p => p.brier)).toFixed(4)}</p>
                             </div>
                             <div>
-                                <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Average</p>
+                                <p className="text-[10px] text-ink-dim uppercase tracking-widest font-bold">Average</p>
                                 <p className="font-mono font-black text-accent text-sm">{m.avg_brier_score.toFixed(4)}</p>
                             </div>
                             <div>
-                                <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Worst</p>
+                                <p className="text-[10px] text-ink-dim uppercase tracking-widest font-bold">Worst</p>
                                 <p className="font-mono font-black text-bear text-sm">{Math.max(...m.brier_over_time.map(p => p.brier)).toFixed(4)}</p>
                             </div>
                         </div>
@@ -246,7 +246,7 @@ export default function PerformancePage() {
                 </div>
 
                 {/* Direction Breakdown */}
-                <div className="glass p-6 rounded-3xl border border-white/10 bg-[#0c1017]">
+                <div className="p-6 rounded-3xl border border-white/10 bg-[#0c1017]">
                     <h2 className="font-black uppercase tracking-widest text-sm text-white mb-5">Direction Breakdown</h2>
                     {Object.keys(m.direction_breakdown).length > 0 ? (
                         <BarChart
@@ -256,18 +256,18 @@ export default function PerformancePage() {
                             colorFn={(r) => r.dir === "BEAT" ? "var(--bull-green)" : r.dir === "MISS" ? "var(--bear-red)" : "var(--quant-blue)"}
                         />
                     ) : (
-                        <p className="text-gray-600 text-xs text-center py-8">No predictions yet</p>
+                        <p className="text-ink-dim text-xs text-center py-8">No predictions yet</p>
                     )}
 
                     {m.scored_predictions > 0 && (
                         <div className="mt-6 pt-5 border-t border-white/5 grid grid-cols-2 gap-3">
                             <div className="p-3 rounded-xl bg-bull/10 border border-bull/20 text-center">
-                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">BEAT Correct</p>
-                                <p className="font-black text-bull text-xl">{m.beat_correct}<span className="text-gray-600 text-sm font-bold">/{m.beat_predictions}</span></p>
+                                <p className="text-[10px] font-bold text-ink-dim uppercase tracking-widest">BEAT Correct</p>
+                                <p className="font-black text-bull text-xl">{m.beat_correct}<span className="text-ink-dim text-sm font-bold">/{m.beat_predictions}</span></p>
                             </div>
                             <div className="p-3 rounded-xl bg-bear/10 border border-bear/20 text-center">
-                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">MISS Correct</p>
-                                <p className="font-black text-bear text-xl">{m.miss_correct}<span className="text-gray-600 text-sm font-bold">/{m.miss_predictions}</span></p>
+                                <p className="text-[10px] font-bold text-ink-dim uppercase tracking-widest">MISS Correct</p>
+                                <p className="font-black text-bear text-xl">{m.miss_correct}<span className="text-ink-dim text-sm font-bold">/{m.miss_predictions}</span></p>
                             </div>
                         </div>
                     )}
@@ -277,22 +277,22 @@ export default function PerformancePage() {
             {/* Calibration + Agent Vote grid */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {/* Confidence Calibration */}
-                <div className="glass p-6 rounded-3xl border border-white/10 bg-[#0c1017]">
+                <div className="p-6 rounded-3xl border border-white/10 bg-[#0c1017]">
                     <div className="flex items-center justify-between mb-5">
                         <h2 className="font-black uppercase tracking-widest text-sm text-white">Confidence Calibration</h2>
                         <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest">
-                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-500/50 inline-block" />Predicted</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-quant/50 inline-block" />Predicted</span>
                             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-accent/70 inline-block" />Actual</span>
                         </div>
                     </div>
                     <CalibrationChart buckets={m.confidence_buckets} />
-                    <p className="text-[10px] text-gray-600 text-center mt-2 font-medium">
+                    <p className="text-[10px] text-ink-dim text-center mt-2 font-medium">
                         Perfect calibration = bars of equal height in each bucket
                     </p>
                 </div>
 
                 {/* Agent Vote Breakdown */}
-                <div className="glass p-6 rounded-3xl border border-white/10 bg-[#0c1017]">
+                <div className="p-6 rounded-3xl border border-white/10 bg-[#0c1017]">
                     <h2 className="font-black uppercase tracking-widest text-sm text-white mb-5">Agent Vote Breakdown</h2>
                     {agents.length > 0 ? (
                         <div className="space-y-5">
@@ -308,7 +308,7 @@ export default function PerformancePage() {
                                     <div key={agent}>
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-xs font-black uppercase tracking-widest" style={{ color: c }}>{agent}</span>
-                                            <span className="text-[10px] text-gray-600 font-bold">{total} vote{total !== 1 ? "s" : ""}</span>
+                                            <span className="text-[10px] text-ink-dim font-bold">{total} vote{total !== 1 ? "s" : ""}</span>
                                         </div>
                                         <div className="flex h-5 rounded-full overflow-hidden gap-px">
                                             {Object.entries(votes).map(([dir, cnt]) => (
@@ -325,7 +325,7 @@ export default function PerformancePage() {
                                         </div>
                                         <div className="flex gap-3 mt-1.5">
                                             {Object.entries(votes).map(([dir, cnt]) => (
-                                                <span key={dir} className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">
+                                                <span key={dir} className="text-[9px] font-bold text-ink-dim uppercase tracking-widest">
                                                     {dir} {((cnt / total) * 100).toFixed(0)}%
                                                 </span>
                                             ))}
@@ -335,21 +335,21 @@ export default function PerformancePage() {
                             })}
                         </div>
                     ) : (
-                        <p className="text-gray-600 text-xs text-center py-8">No agent vote data available yet</p>
+                        <p className="text-ink-dim text-xs text-center py-8">No agent vote data available yet</p>
                     )}
                 </div>
             </div>
 
             {/* Recent scored predictions table */}
             {m.brier_over_time.length > 0 && (
-                <div className="glass rounded-3xl overflow-hidden border border-white/10 bg-[#0c1017]">
+                <div className="rounded-3xl overflow-hidden border border-white/10 bg-[#0c1017]">
                     <div className="px-8 py-5 border-b border-white/5">
                         <h2 className="font-black uppercase tracking-widest text-sm text-white">Recent Scored Predictions</h2>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="bg-white/5 border-b border-white/5">
-                                <tr className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                                <tr className="text-[10px] font-bold uppercase tracking-widest text-ink-dim">
                                     <th className="px-8 py-4">Ticker</th>
                                     <th className="px-8 py-4">Date</th>
                                     <th className="px-8 py-4">Brier Score</th>
@@ -363,32 +363,32 @@ export default function PerformancePage() {
                                 {[...m.brier_over_time].reverse().slice(0, 10).map((row, i) => {
                                     const quality = row.brier < 0.1 ? { label: "Excellent", color: "text-bull" } :
                                         row.brier < 0.2 ? { label: "Good", color: "text-accent" } :
-                                            row.brier < 0.35 ? { label: "Fair", color: "text-yellow-400" } :
+                                            row.brier < 0.35 ? { label: "Fair", color: "text-human" } :
                                                 { label: "Poor", color: "text-bear" };
                                     return (
                                         <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                                             <td className="px-8 py-4 font-black text-accent text-lg">{row.ticker}</td>
-                                            <td className="px-8 py-4 text-sm text-gray-400 font-mono">{row.date.slice(0, 10)}</td>
+                                            <td className="px-8 py-4 text-sm text-ink-mute font-mono">{row.date.slice(0, 10)}</td>
                                             <td className="px-8 py-4 font-mono font-bold text-white">{row.brier.toFixed(4)}</td>
                                             <td className="px-8 py-4">
                                                 {row.vol_stance_hit === true ? (
-                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">HIT</span>
+                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-bull/20 text-bull border border-bull/30">HIT</span>
                                                 ) : row.vol_stance_hit === false ? (
-                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">MISS</span>
+                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-bear/20 text-bear border border-bear/30">MISS</span>
                                                 ) : (
-                                                    <span className="text-gray-600 text-xs">—</span>
+                                                    <span className="text-ink-dim text-xs">—</span>
                                                 )}
                                             </td>
                                             <td className="px-8 py-4">
                                                 {row.price_dir_hit === true ? (
-                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">HIT</span>
+                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-bull/20 text-bull border border-bull/30">HIT</span>
                                                 ) : row.price_dir_hit === false ? (
-                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">MISS</span>
+                                                    <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-bear/20 text-bear border border-bear/30">MISS</span>
                                                 ) : (
-                                                    <span className="text-gray-600 text-xs">—</span>
+                                                    <span className="text-ink-dim text-xs">—</span>
                                                 )}
                                             </td>
-                                            <td className="px-8 py-4 font-mono font-bold text-purple-400">
+                                            <td className="px-8 py-4 font-mono font-bold text-research">
                                                 {row.composite_score !== undefined && row.composite_score !== null ? row.composite_score.toFixed(1) : "—"}
                                             </td>
                                             <td className={`px-8 py-4 text-right font-black text-sm uppercase tracking-widest ${quality.color}`}>{quality.label}</td>

@@ -53,13 +53,13 @@ function OutcomeCell({
           disabled={isVerifying}
           className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-200 border ${
             isVerifying
-              ? "bg-white/5 border-white/10 text-gray-500 cursor-not-allowed"
+              ? "bg-white/5 border-white/10 text-ink-dim cursor-not-allowed"
               : "bg-teal/5 hover:bg-teal hover:text-black border-teal/20 hover:border-teal text-teal shadow-sm shadow-teal/5 hover:shadow-teal/20 cursor-pointer active:scale-95"
           }`}
         >
           {isVerifying ? (
             <div className="flex items-center gap-1.5 justify-end">
-              <span className="w-2.5 h-2.5 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+              <span className="w-2.5 h-2.5 border-2 border-ink-dim border-t-transparent rounded-full animate-spin" />
               <span>Verifying...</span>
             </div>
           ) : (
@@ -550,9 +550,9 @@ export default function HistoryPage() {
       )}
 
       {error ? (
-        <div className="glass p-20 rounded-3xl border border-red-500/20 bg-red-500/5 text-center">
-          <p className="text-red-500 font-black mb-2">Error loading history</p>
-          <p className="text-gray-400 text-sm">{error}</p>
+        <div className="p-20 rounded-3xl border border-bear/20 bg-bear/5 text-center">
+          <p className="text-bear font-black mb-2">Error loading history</p>
+          <p className="text-ink-mute text-sm">{error}</p>
         </div>
       ) : selectedResult ? (
         <AnalysisResult result={selectedResult} />
@@ -603,7 +603,7 @@ export default function HistoryPage() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search ticker or company..."
                 aria-label="Search predictions by stock ticker or company name"
-                className="w-full bg-[#05070a] border border-panel-line rounded-xl pl-10 pr-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-sm text-white placeholder-white/20 transition-all font-body"
+                className="w-full bg-panel-deep border border-panel-line rounded-xl pl-10 pr-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-sm text-white placeholder-white/20 transition-all font-body"
               />
             </div>
 
@@ -660,7 +660,7 @@ export default function HistoryPage() {
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
                   Status:
                 </span>
-                <div className="flex gap-0.5 p-1 bg-[#0e1524] border border-panel-line rounded-[10px] select-none">
+                <div className="flex gap-0.5 p-1 bg-[var(--color-panel-sunk)] border border-panel-line rounded-[10px] select-none">
                   {(["ALL", "SCORED", "PENDING"] as const).map((s) => (
                     <button
                       key={s}
@@ -687,7 +687,7 @@ export default function HistoryPage() {
                   value={periodFilter}
                   onChange={(e) => changePeriod(e.target.value)}
                   aria-label="Filter by Reporting Period"
-                  className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
+                  className="bg-panel-deep border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
                 >
                   <option value="ALL">
                     All Periods ({filterOptions.fiscal_periods.length})
@@ -709,7 +709,7 @@ export default function HistoryPage() {
                   value={sectorFilter}
                   onChange={(e) => changeSector(e.target.value)}
                   aria-label="Filter by Sector"
-                  className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
+                  className="bg-panel-deep border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
                 >
                   <option value="ALL">All Sectors ({filterOptions.sectors.length})</option>
                   {filterOptions.sectors.map((sec) => (
@@ -729,7 +729,7 @@ export default function HistoryPage() {
                   value={dateFilter}
                   onChange={(e) => changeDate(e.target.value)}
                   aria-label="Filter by Report Date"
-                  className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
+                  className="bg-panel-deep border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
                 >
                   <option value="ALL">
                     All Dates ({filterOptions.report_dates.length})
@@ -747,10 +747,10 @@ export default function HistoryPage() {
           {/* Table Container */}
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-left whitespace-nowrap border-collapse">
-              <thead className="sticky top-0 bg-[#05070a] border-b border-panel-line text-ink-dim select-none z-10">
+              <thead className="sticky top-0 bg-panel-deep border-b border-panel-line text-ink-dim select-none z-10">
                 <tr>
                   <th
-                    className="pl-8 pr-4 py-5 label-caps sticky left-0 z-30 bg-[#05070a] border-r border-panel-line shadow-[4px_0_12px_rgba(0,0,0,0.6)]"
+                    className="pl-8 pr-4 py-5 label-caps sticky left-0 z-30 bg-panel-deep border-r border-panel-line shadow-[4px_0_12px_rgba(0,0,0,0.6)]"
                     aria-sort={getAriaSort("ticker")}
                   >
                     <button
@@ -1023,7 +1023,7 @@ export default function HistoryPage() {
           {rows.length === 0 && !loading && (
             <div className="flex flex-col items-center justify-center py-16 text-center select-none">
               <XCircle className="w-12 h-12 text-ink-dim mb-3" />
-              <p className="text-gray-500 font-bold uppercase tracking-widest text-xs mb-4">
+              <p className="text-ink-dim font-bold uppercase tracking-widest text-xs mb-4">
                 {hasFilters
                   ? "No predictions match this filter"
                   : "No analyses yet — run one from the dashboard"}
@@ -1050,7 +1050,7 @@ export default function HistoryPage() {
                   value={pageSize}
                   onChange={(e) => changePageSize(Number(e.target.value))}
                   aria-label="Rows per page"
-                  className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
+                  className="bg-panel-deep border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
                 >
                   {PAGE_SIZE_OPTIONS.map((n) => (
                     <option key={n} value={n}>

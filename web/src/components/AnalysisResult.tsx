@@ -629,7 +629,7 @@ ${userText}`
             {/* Edit Actuals Modal */}
             {showEditModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className="bg-[#0e1524] border border-panel-line rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-6 text-white">
+                    <div className="bg-[var(--color-panel-sunk)] border border-panel-line rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-6 text-white">
                         <div className="flex justify-between items-center border-b border-panel-line pb-4">
                             <h4 className="text-xl font-display font-semibold text-white flex items-center gap-2">
                                 <Edit3 className="w-5 h-5 text-teal" /> Edit Actual Outcome Data

@@ -5,6 +5,8 @@
   --color-panel: #131C2E;
   --color-panel-line: #1B2436;
   --color-panel-sunk: #0E1524;
+  /* Deepest surface — inputs, sticky table headers, frozen columns */
+  --color-panel-deep: #05070A;
   --color-ink: #F5F8FF;
   --color-ink-mute: #9AA7BE;
   --color-ink-dim: #5E6B84;
@@ -33,6 +35,7 @@
   --color-panel: #131C2E;
   --color-panel-line: #1B2436;
   --color-panel-sunk: #0E1524;
+  --color-panel-deep: #05070A;
   --color-ink: #F5F8FF;
   --color-ink-mute: #9AA7BE;
   --color-ink-dim: #5E6B84;

@@ -157,7 +157,7 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by Ticker..."
             aria-label="Search predictions by stock ticker"
-            className="w-full bg-[#05070a] border border-panel-line rounded-xl pl-10 pr-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-sm text-white placeholder-white/20 transition-all font-body"
+            className="w-full bg-panel-deep border border-panel-line rounded-xl pl-10 pr-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-sm text-white placeholder-white/20 transition-all font-body"
           />
         </div>
 
@@ -215,7 +215,7 @@ export default function PredictionsTable({ onRowClick, predictions, limit, onLim
       <div className="overflow-x-auto">
         <table className="w-full text-left whitespace-nowrap border-collapse">
           <thead>
-            <tr className="bg-[#05070a] border-b border-panel-line text-ink-dim select-none">
+            <tr className="bg-panel-deep border-b border-panel-line text-ink-dim select-none">
               <th className="px-8 py-5 label-caps" aria-sort={getAriaSort("ticker")}>
                 <button
                   onClick={() => handleSort("ticker")}

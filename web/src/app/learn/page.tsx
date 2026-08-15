@@ -91,7 +91,7 @@ export default function LearnPage() {
             </p>
             <div className="bg-[var(--color-panel-sunk)] border border-panel-line rounded-2xl p-6 my-6">
               <h4 className="font-mono text-xs text-teal uppercase tracking-widest mb-3">Formula</h4>
-              <p className="font-mono text-lg text-white text-center py-4 bg-[#05070a] rounded-xl border border-panel-line">
+              <p className="font-mono text-lg text-white text-center py-4 bg-panel-deep rounded-xl border border-panel-line">
                 BS = (f - o)²
               </p>
               <div className="mt-4 text-xs space-y-2 text-ink-dim">

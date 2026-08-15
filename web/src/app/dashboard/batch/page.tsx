@@ -88,7 +88,7 @@ export default function BatchAnalysisPage() {
                                         value={company.ticker}
                                         onChange={(e) => handleChange(index, 'ticker', e.target.value)}
                                         placeholder="E.G. AAPL"
-                                        className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none uppercase font-semibold text-xs tracking-wider text-white placeholder-white/20 transition-all font-body"
+                                        className="w-full bg-panel-deep border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none uppercase font-semibold text-xs tracking-wider text-white placeholder-white/20 transition-all font-body"
                                     />
                                 </div>
                                 <div className="w-full lg:w-1/4">
@@ -97,7 +97,7 @@ export default function BatchAnalysisPage() {
                                         type="date"
                                         value={company.report_date}
                                         onChange={(e) => handleChange(index, 'report_date', e.target.value)}
-                                        className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-white relative [color-scheme:dark] text-xs font-mono transition-all"
+                                        className="w-full bg-panel-deep border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-white relative [color-scheme:dark] text-xs font-mono transition-all"
                                     />
                                 </div>
                                 <div className="w-full lg:flex-1">
@@ -107,14 +107,14 @@ export default function BatchAnalysisPage() {
                                         value={company.user_analysis}
                                         onChange={(e) => handleChange(index, 'user_analysis', e.target.value)}
                                         placeholder="Optional Context..."
-                                        className="w-full bg-[#05070a] border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-white text-xs placeholder-white/20 transition-all font-body"
+                                        className="w-full bg-panel-deep border border-panel-line rounded-xl px-4 py-2.5 focus:border-teal focus:ring-2 focus:ring-teal/20 outline-none text-white text-xs placeholder-white/20 transition-all font-body"
                                     />
                                 </div>
                                 <div className="mt-6">
                                     <button 
                                         onClick={() => handleRemoveRow(index)}
                                         disabled={companies.length <= 1}
-                                        className="text-red-500 bg-red-500/10 p-2.5 rounded-xl hover:bg-red-500/20 border border-red-500/20 transition-all cursor-pointer font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                                        className="text-bear bg-bear/10 p-2.5 rounded-xl hover:bg-bear/20 border border-bear/20 transition-all cursor-pointer font-bold disabled:opacity-30 disabled:cursor-not-allowed"
                                     >
                                         ✗
                                     </button>
@@ -140,7 +140,7 @@ export default function BatchAnalysisPage() {
                         </div>
 
                         {error && (
-                            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-500 font-bold mt-4 select-none">
+                            <div className="p-4 bg-bear/10 border border-bear/20 rounded-xl text-xs text-bear font-bold mt-4 select-none">
                                 ⚠️ {error}
                             </div>
                         )}

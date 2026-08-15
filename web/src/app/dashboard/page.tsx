@@ -246,7 +246,7 @@ export default function DashboardPage() {
       />
 
       {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-400 font-bold flex items-start gap-3 select-none">
+        <div className="p-4 bg-bear/10 border border-bear/30 rounded-xl text-sm text-bear font-bold flex items-start gap-3 select-none">
           <AlertTriangle className="w-5 h-5 text-bear flex-shrink-0" />
           <span className="pt-0.5">{error}</span>
         </div>

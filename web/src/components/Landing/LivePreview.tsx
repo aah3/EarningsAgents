@@ -18,19 +18,19 @@ export default function LivePreview() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
                     <div className="lg:col-span-8">
-                        <div className="glass rounded-[2rem] overflow-hidden border border-white/5 shadow-3xl">
+                        <div className="rounded-[2rem] overflow-hidden border border-white/5 shadow-3xl">
                             <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
-                                <span className="font-bold text-gray-300">This Week&apos;s Top Predictions</span>
+                                <span className="font-bold text-ink">This Week&apos;s Top Predictions</span>
                                 <div className="flex gap-2.5">
-                                    <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/40" />
-                                    <div className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/40" />
-                                    <div className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500/40" />
+                                    <div className="w-3 h-3 rounded-full bg-bear/20 border border-bear/40" />
+                                    <div className="w-3 h-3 rounded-full bg-human/20 border border-human/40" />
+                                    <div className="w-3 h-3 rounded-full bg-bull/20 border border-bull/40" />
                                 </div>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-sm">
                                     <thead>
-                                        <tr className="text-gray-500 uppercase text-[10px] font-bold tracking-[0.15em] border-b border-white/5 bg-black/10">
+                                        <tr className="text-ink-dim uppercase text-[10px] font-bold tracking-[0.15em] border-b border-white/5 bg-black/10">
                                             <th className="px-8 py-6">Ticker</th>
                                             <th className="px-8 py-6">Company</th>
                                             <th className="px-8 py-6">Report Date</th>
@@ -41,9 +41,9 @@ export default function LivePreview() {
                                     <tbody className="divide-y divide-white/5">
                                         {predictions.map((p) => (
                                             <tr key={p.ticker} className="hover:bg-white/[0.02] transition-colors group">
-                                                <td className="px-8 py-7 font-extrabold text-blue-400 text-base">{p.ticker}</td>
-                                                <td className="px-8 py-7 text-gray-300 font-medium">{p.company}</td>
-                                                <td className="px-8 py-7 text-gray-500 font-mono">{p.date}</td>
+                                                <td className="px-8 py-7 font-extrabold text-quant text-base">{p.ticker}</td>
+                                                <td className="px-8 py-7 text-ink font-medium">{p.company}</td>
+                                                <td className="px-8 py-7 text-ink-dim font-mono">{p.date}</td>
                                                 <td className="px-8 py-7">
                                                     <div
                                                         className="mx-auto px-4 py-1.5 rounded-full text-[10px] font-black text-center tracking-wider"
@@ -64,27 +64,27 @@ export default function LivePreview() {
                     </div>
 
                     <div className="lg:col-span-4 flex flex-col gap-8 justify-center">
-                        <div className="glass p-10 rounded-3xl border-l-4 border-l-accent/40 bg-white/[0.01]">
+                        <div className="p-10 rounded-3xl border-l-4 border-l-accent/40 bg-white/[0.01]">
                             <h3 className="text-2xl font-bold mb-4 flex items-center gap-4">
                                 <span className="text-accent">📄</span> Explainable AI
                             </h3>
-                            <p className="text-base text-gray-400 leading-relaxed">
+                            <p className="text-base text-ink-mute leading-relaxed">
                                 Detailed breakdowns of bull and bear cases, synthesized from thousands of data points.
                             </p>
                         </div>
-                        <div className="glass p-10 rounded-3xl border-l-4 border-l-blue-500/40 bg-white/[0.01]">
+                        <div className="p-10 rounded-3xl border-l-4 border-l-blue-500/40 bg-white/[0.01]">
                             <h3 className="text-2xl font-bold mb-4 flex items-center gap-4">
-                                <span className="text-blue-400">🎯</span> High Accuracy
+                                <span className="text-quant">🎯</span> High Accuracy
                             </h3>
-                            <p className="text-base text-gray-400 leading-relaxed">
+                            <p className="text-base text-ink-mute leading-relaxed">
                                 Multi-agent system rigorously testing every hypothesis for superior results.
                             </p>
                         </div>
-                        <div className="glass p-10 rounded-3xl border-l-4 border-l-purple-500/40 bg-white/[0.01]">
+                        <div className="p-10 rounded-3xl border-l-4 border-l-purple-500/40 bg-white/[0.01]">
                             <h3 className="text-2xl font-bold mb-4 flex items-center gap-4">
-                                <span className="text-purple-400">📈</span> Nuanced Scoring
+                                <span className="text-research">📈</span> Nuanced Scoring
                             </h3>
-                            <p className="text-base text-gray-400 leading-relaxed">
+                            <p className="text-base text-ink-mute leading-relaxed">
                                 Confidence ratings derived from data quality and agent cross-verification.
                             </p>
                         </div>
