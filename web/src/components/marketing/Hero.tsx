@@ -16,7 +16,7 @@ export default function Hero({ data = DEFAULT_PIPELINE }: HeroProps) {
       {/* Left Column: Copy */}
       <div className="copy flex flex-col items-start">
         {/* Eyebrow Pill */}
-        <span className="eyebrow font-mono text-[12px] tracking-[0.14em] uppercase text-teal border border-panel-line bg-[rgba(45,212,191,0.05)] px-[13px] py-[7px] rounded-full inline-flex items-center gap-[9px] mb-[26px] select-none">
+        <span className="font-mono text-[12px] tracking-[0.14em] uppercase text-teal border border-panel-line bg-[rgba(45,212,191,0.05)] px-[13px] py-[7px] rounded-full inline-flex items-center gap-[9px] mb-[26px] select-none">
           <span className="dot w-[7px] h-[7px] rounded-full bg-teal shadow-[0_0_10px_rgba(45,212,191,0.8)] eyebrow-dot-blink" />
           Multi-agent earnings intelligence
         </span>

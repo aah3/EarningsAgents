@@ -22,7 +22,7 @@ export default function LearnPage() {
 
         {/* Header section */}
         <header className="mb-14">
-          <span className="eyebrow font-mono text-[11px] tracking-[0.15em] uppercase text-teal border border-panel-line bg-[rgba(45,212,191,0.05)] px-3 py-1.5 rounded-full inline-flex items-center gap-2 mb-6">
+          <span className="font-mono text-[11px] tracking-[0.15em] uppercase text-teal border border-panel-line bg-[rgba(45,212,191,0.05)] px-3 py-1.5 rounded-full inline-flex items-center gap-2 mb-6">
             Methodology & Science
           </span>
           <h1 className="font-display font-semibold text-4xl md:text-5xl leading-tight text-white mb-6">

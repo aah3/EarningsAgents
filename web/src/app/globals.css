@@ -15,6 +15,10 @@
   --color-bear: #F87171;
   --color-quant: #60A5FA;
   --color-human: #FBBF24;
+  /* Structural / long-horizon research, distinct from teal system chrome */
+  --color-research: #A78BFA;
+  /* Bull-vs-Bear cross-examination */
+  --color-rebuttal: #C68A4C;
   --surface-bull: rgba(52, 211, 153, 0.10);
   --surface-bear: rgba(248, 113, 113, 0.10);
   --border-subtle: rgba(255, 255, 255, 0.15);
@@ -39,6 +43,8 @@
   --color-bear: #F87171;
   --color-quant: #60A5FA;
   --color-human: #FBBF24;
+  --color-research: #A78BFA;
+  --color-rebuttal: #C68A4C;
   --surface-bull: rgba(52, 211, 153, 0.10);
   --surface-bear: rgba(248, 113, 113, 0.10);
   --border-subtle: rgba(255, 255, 255, 0.15);
@@ -192,4 +198,60 @@ body {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* ── Shared type scale ───────────────────────────────────────────────────────
+   Five roles covering every text run in the analysis + research output, so
+   components stop hand-rolling `text-[15px] leading-[1.7]` and drifting apart.
+
+   These live in @layer components, NOT unlayered like .label-caps above.
+   Unlayered CSS outranks every Tailwind utility regardless of source order —
+   which is why `class="label-caps text-base"` silently renders at 11px, not
+   16px. Layering these means a utility on the element still wins, so a call
+   site can opt out of a single property without fighting the cascade, and
+   adding `.eyebrow` cannot clobber elements already using that class name.
+   ────────────────────────────────────────────────────────────────────────── */
+@layer components {
+  /* Section labels and table headers. The mono counterpart to .label-caps. */
+  .eyebrow {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  /* The single headline conviction quote — one per view. */
+  .prose-lead {
+    font-family: var(--font-display), system-ui, sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  /* All narrative prose: bull, bear, quant, pillars, consensus, rebuttals. */
+  .prose-body {
+    font-family: var(--font-body), system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.7;
+  }
+
+  /* Factor bullets, catalysts, risk register entries. */
+  .prose-list {
+    font-family: var(--font-body), system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.6;
+  }
+
+  /* Metric tiles: EPS, implied move, confidence. Digits align in columns. */
+  .stat-value {
+    font-family: var(--font-display), system-ui, sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
 }
