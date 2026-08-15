@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query, Depends, Response, Request
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 from pydantic import BaseModel
 from sqlmodel import Session, select
+from sqlalchemy import func, or_, and_, case
 import sys
 import os
 
@@ -14,6 +15,7 @@ from config.settings import PipelineConfig, load_config
 from database.db import get_session
 from database.models import User, Prediction, PredictionChat, EarningsCalendarEvent, EarningsHistory, UserSettings, CompanyProfile, Feedback
 from database.research_repo import resolve_thesis_for_prediction
+from database.fiscal_period import format_fiscal_period, parse_fiscal_period
 from api.dependencies.auth import get_current_user
 from api.rate_limit import (
     limiter,
@@ -405,28 +407,269 @@ async def get_task_status(
         "ready": False
     }
 
+MAX_HISTORY_PAGE_SIZE = 1000
+
+# Sortable columns, allowlisted so sort_by can never reach an arbitrary attribute.
+_HISTORY_SORT_COLUMNS = {
+    "ticker": Prediction.ticker,
+    "sector": CompanyProfile.sector,  # available via the CompanyProfile outer join
+    "analysis_date": Prediction.prediction_date,
+    "report_date": Prediction.report_date,
+    "fiscal_period": (Prediction.fiscal_year, Prediction.fiscal_quarter),
+    "prediction": Prediction.direction,
+    "confidence": Prediction.confidence,
+    "expected_eps": Prediction.expected_eps,
+    "actual_eps": Prediction.actual_eps,
+    "post_earnings_move": Prediction.actual_price_move_pct,
+    "brier": Prediction.accuracy_score,
+    "outcome": Prediction.actual_direction,
+}
+
+# Directions the UI groups under the "INLINE" bucket.
+_INLINE_DIRECTIONS = ("INLINE", "MEET", "NEUTRAL")
+
+
+def _apply_history_filters(
+    statement,
+    q: Optional[str] = None,
+    prediction: Optional[str] = None,
+    outcome: Optional[str] = None,
+    status: Optional[str] = None,
+    sector: Optional[str] = None,
+    report_date: Optional[str] = None,
+    fiscal_period: Optional[str] = None,
+):
+    """
+    Apply the history filter set to a statement already joined to CompanyProfile.
+
+    Outcome semantics deliberately mirror what the UI used to compute client-side:
+    a prediction is CORRECT when direction equals actual_direction case-insensitively,
+    WRONG when both are present and differ, UNVERIFIED when actual_direction is NULL.
+    """
+    if q:
+        pattern = f"%{q.strip().lower()}%"
+        statement = statement.where(
+            or_(
+                func.lower(Prediction.ticker).like(pattern),
+                func.lower(Prediction.company_name).like(pattern),
+            )
+        )
+
+    if prediction and prediction.upper() != "ALL":
+        pred = prediction.upper()
+        if pred == "INLINE":
+            statement = statement.where(func.upper(Prediction.direction).in_(_INLINE_DIRECTIONS))
+        else:
+            statement = statement.where(func.upper(Prediction.direction) == pred)
+
+    if outcome and outcome.upper() != "ALL":
+        out = outcome.upper()
+        if out == "UNVERIFIED":
+            statement = statement.where(Prediction.actual_direction == None)  # noqa: E711
+        elif out == "CORRECT":
+            statement = statement.where(
+                Prediction.actual_direction != None,  # noqa: E711
+                func.lower(Prediction.direction) == func.lower(Prediction.actual_direction),
+            )
+        elif out == "WRONG":
+            statement = statement.where(
+                Prediction.actual_direction != None,  # noqa: E711
+                func.lower(Prediction.direction) != func.lower(Prediction.actual_direction),
+            )
+
+    if status and status.upper() != "ALL":
+        if status.upper() == "SCORED":
+            statement = statement.where(Prediction.actual_direction != None)  # noqa: E711
+        elif status.upper() == "PENDING":
+            statement = statement.where(Prediction.actual_direction == None)  # noqa: E711
+
+    if sector and sector.upper() != "ALL":
+        statement = statement.where(CompanyProfile.sector == sector)
+
+    if report_date and report_date.upper() != "ALL":
+        try:
+            target = datetime.fromisoformat(report_date).date()
+            day_start = datetime.combine(target, datetime.min.time())
+            statement = statement.where(
+                Prediction.report_date >= day_start,
+                Prediction.report_date < day_start + timedelta(days=1),
+            )
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Invalid report_date '{report_date}', expected YYYY-MM-DD")
+
+    if fiscal_period and fiscal_period.upper() != "ALL":
+        fq, fy = parse_fiscal_period(fiscal_period)
+        if not fq or not fy:
+            raise HTTPException(status_code=422, detail=f"Invalid fiscal_period '{fiscal_period}', expected e.g. 2026Q1")
+        statement = statement.where(
+            Prediction.fiscal_quarter == fq,
+            Prediction.fiscal_year == fy,
+        )
+
+    return statement
+
+
 @router.get("/history")
 async def get_prediction_history(
+    limit: int = Query(10, ge=1, le=MAX_HISTORY_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    sort_by: str = Query("report_date"),
+    sort_dir: str = Query("desc"),
+    q: Optional[str] = Query(None, description="Search ticker or company name"),
+    prediction: Optional[str] = Query(None, description="BEAT | MISS | INLINE"),
+    outcome: Optional[str] = Query(None, description="CORRECT | WRONG | UNVERIFIED"),
+    status: Optional[str] = Query(None, description="SCORED | PENDING"),
+    sector: Optional[str] = Query(None),
+    report_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    fiscal_period: Optional[str] = Query(None, description="e.g. 2026Q1"),
     clerk_id: str = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+    """
+    Paginated prediction history.
+
+    Filtering, sorting and paging all happen in SQL, and the returned `stats`
+    are computed over the entire filtered set — not just the current page — so
+    the KPI cards stay correct as the user pages through.
+    """
+    if sort_by not in _HISTORY_SORT_COLUMNS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid sort_by '{sort_by}'. Allowed: {', '.join(sorted(_HISTORY_SORT_COLUMNS))}",
+        )
+    if sort_dir.lower() not in ("asc", "desc"):
+        raise HTTPException(status_code=422, detail=f"Invalid sort_dir '{sort_dir}', expected 'asc' or 'desc'")
+
     try:
-        user = get_or_create_user(session, clerk_id)
-        statement = select(Prediction).order_by(Prediction.prediction_date.desc())
-        predictions = session.exec(statement).all()
-        
-        # Fetch profiles for the predicted tickers
+        get_or_create_user(session, clerk_id)
+
+        filter_kwargs = dict(
+            q=q, prediction=prediction, outcome=outcome, status=status,
+            sector=sector, report_date=report_date, fiscal_period=fiscal_period,
+        )
+
+        def filtered(statement):
+            joined = statement.outerjoin(
+                CompanyProfile, CompanyProfile.ticker == Prediction.ticker
+            )
+            return _apply_history_filters(joined, **filter_kwargs)
+
+        # ── Aggregates over the FULL filtered set (before paging) ──────────────
+        is_scored = Prediction.actual_direction != None  # noqa: E711
+        is_correct = and_(
+            is_scored,
+            func.lower(Prediction.direction) == func.lower(Prediction.actual_direction),
+        )
+        agg_stmt = filtered(
+            select(
+                func.count(Prediction.id),
+                func.sum(case((is_scored, 1), else_=0)),
+                func.sum(case((is_correct, 1), else_=0)),
+                func.sum(case((is_scored, func.coalesce(Prediction.accuracy_score, 0.0)), else_=0.0)),
+                func.avg(Prediction.confidence),
+            ).select_from(Prediction)
+        )
+        total, scored_count, correct_count, brier_sum, avg_confidence = session.exec(agg_stmt).one()
+
+        total = int(total or 0)
+        scored_count = int(scored_count or 0)
+        correct_count = int(correct_count or 0)
+
+        stats = {
+            "total": total,
+            "scored_count": scored_count,
+            "correct_count": correct_count,
+            "win_rate": (correct_count / scored_count) if scored_count else None,
+            "avg_brier": (float(brier_sum or 0.0) / scored_count) if scored_count else None,
+            "avg_confidence": float(avg_confidence) if avg_confidence is not None else None,
+        }
+
+        # ── The page itself ───────────────────────────────────────────────────
+        sort_target = _HISTORY_SORT_COLUMNS[sort_by]
+        sort_cols = sort_target if isinstance(sort_target, tuple) else (sort_target,)
+        order_by = [c.asc() if sort_dir.lower() == "asc" else c.desc() for c in sort_cols]
+        # Stable tiebreak so paging never drops or repeats rows on ties.
+        order_by.append(Prediction.id.desc())
+
+        page_stmt = (
+            filtered(select(Prediction))
+            .order_by(*order_by)
+            .offset(offset)
+            .limit(limit)
+        )
+        predictions = session.exec(page_stmt).all()
+
+        # Fetch profiles for just this page's tickers
         tickers = {p.ticker for p in predictions}
-        profiles = {prof.ticker: prof for prof in session.exec(select(CompanyProfile).where(CompanyProfile.ticker.in_(list(tickers)))).all()} if tickers else {}
-        
-        result = []
+        profiles = {
+            prof.ticker: prof
+            for prof in session.exec(
+                select(CompanyProfile).where(CompanyProfile.ticker.in_(list(tickers)))
+            ).all()
+        } if tickers else {}
+
+        items = []
         for p in predictions:
             p_dict = p.dict() if hasattr(p, "dict") else p.__dict__.copy()
             prof = profiles.get(p.ticker)
             p_dict["company_description"] = prof.company_description if prof else None
             p_dict["sector"] = prof.sector if prof else None
-            result.append(p_dict)
-        return result
+            p_dict["fiscal_period"] = format_fiscal_period(p.fiscal_quarter, p.fiscal_year)
+            items.append(p_dict)
+
+        return {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "stats": stats,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history/filters")
+async def get_prediction_history_filters(
+    clerk_id: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Distinct values available for the history filter dropdowns, computed over the
+    whole table rather than the current page.
+    """
+    try:
+        get_or_create_user(session, clerk_id)
+
+        sectors = session.exec(
+            select(CompanyProfile.sector)
+            .join(Prediction, Prediction.ticker == CompanyProfile.ticker)
+            .where(CompanyProfile.sector != None, CompanyProfile.sector != "", CompanyProfile.sector != "Unknown")  # noqa: E711
+            .distinct()
+        ).all()
+
+        period_rows = session.exec(
+            select(Prediction.fiscal_year, Prediction.fiscal_quarter)
+            .where(Prediction.fiscal_year != None, Prediction.fiscal_quarter != None)  # noqa: E711
+            .distinct()
+        ).all()
+        periods = sorted(
+            {fp for fp in (format_fiscal_period(q, y) for y, q in period_rows) if fp},
+            reverse=True,
+        )
+
+        date_rows = session.exec(select(Prediction.report_date).distinct()).all()
+        report_dates = sorted(
+            {d.date().isoformat() for d in date_rows if d is not None},
+            reverse=True,
+        )
+
+        return {
+            "sectors": sorted(s for s in sectors if s),
+            "fiscal_periods": periods,
+            "report_dates": report_dates,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -44,8 +44,14 @@ export default function DashboardPage() {
       setLoadingHistory(true);
       const token = await getToken();
       if (token) {
-        const data = await api.getPredictionHistory(token);
-        setRealPredictions(data || []);
+        // Only the most recent `limit` rows are rendered here, so let the
+        // server do the slicing rather than pulling the whole history down.
+        const page = await api.getPredictionHistory(token, {
+          limit,
+          sort_by: "analysis_date",
+          sort_dir: "desc",
+        });
+        setRealPredictions(page.items || []);
       }
     } catch (err) {
       console.error("Failed to load prediction history", err);
@@ -56,7 +62,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchHistory();
-  }, [getToken]);
+  }, [getToken, limit]);
 
   const mappedPredictionRows = useMemo(() => {
     const sorted = realPredictions.slice(0, limit);

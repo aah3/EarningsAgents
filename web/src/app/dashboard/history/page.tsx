@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { api, Prediction as ApiPrediction } from "@/lib/api";
+import {
+  api,
+  Prediction as ApiPrediction,
+  HistoryQuery,
+  HistoryStats,
+  HistoryFilterOptions,
+} from "@/lib/api";
 import AnalysisResult from "@/components/AnalysisResult";
 import StatCard from "@/components/dashboard/StatCard";
 import ConsensusPill from "@/components/dashboard/ConsensusPill";
@@ -14,6 +20,8 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ArrowUpDown,
   XCircle,
   RefreshCw,
@@ -23,7 +31,9 @@ import {
   Outcome,
   Prediction,
   ReportTiming,
-  isScored,
+  SortKey,
+  PAGE_SIZE_OPTIONS,
+  DEFAULT_PAGE_SIZE,
 } from "./history.types";
 
 function OutcomeCell({
@@ -107,25 +117,183 @@ const SessionBadge = ({ timing }: { timing: ReportTiming }) => {
   return <span className="text-ink-dim/40 font-mono text-xs ml-2 select-none">—</span>;
 };
 
+/** Map an API prediction record onto the flat shape the table renders. */
+function toRow(p: ApiPrediction): HistoryRow & { rawPrediction: ApiPrediction } {
+  let pred: Prediction = "BEAT";
+  const dir = (p.direction || "").toUpperCase();
+  if (dir === "MISS") {
+    pred = "MISS";
+  } else if (dir === "INLINE" || dir === "MEET" || dir === "NEUTRAL") {
+    pred = "INLINE";
+  }
+
+  let outcome: Outcome = "UNVERIFIED";
+  if (p.actual_direction) {
+    const correct = p.direction.toLowerCase() === p.actual_direction.toLowerCase();
+    outcome = correct ? "CORRECT" : "WRONG";
+  }
+
+  return {
+    id: p.id,
+    ticker: p.ticker,
+    company: p.company_name,
+    sector: p.sector ?? undefined,
+    analysisDate: p.prediction_date,
+    reportDate: p.report_date,
+    reportTiming: (p.report_timing as ReportTiming) || "UNKNOWN",
+    fiscalPeriod: p.fiscal_period ?? null,
+    prediction: pred,
+    confidence: Math.round(p.confidence * 100),
+    actualEps: p.actual_eps !== undefined && p.actual_eps !== null ? p.actual_eps : null,
+    expectedEps:
+      p.expected_eps !== undefined && p.expected_eps !== null ? p.expected_eps : null,
+    postEarningsMove:
+      p.actual_price_move_pct !== undefined && p.actual_price_move_pct !== null
+        ? p.actual_price_move_pct * 100
+        : null,
+    brier:
+      p.accuracy_score !== undefined && p.accuracy_score !== null ? p.accuracy_score : null,
+    outcome: outcome,
+    rawPrediction: p,
+  };
+}
+
 export default function HistoryPage() {
   const { getToken } = useAuth();
-  const [history, setHistory] = useState<ApiPrediction[]>([]);
+  const [items, setItems] = useState<ApiPrediction[]>([]);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState<HistoryStats | null>(null);
+  const [filterOptions, setFilterOptions] = useState<HistoryFilterOptions>({
+    sectors: [],
+    fiscal_periods: [],
+    report_dates: [],
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedResult, setSelectedResult] = useState<ApiPrediction | null>(null);
   const [verifyingIds, setVerifyingIds] = useState<Record<number, boolean>>({});
+  const [exporting, setExporting] = useState(false);
 
   // Filters State
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [predictionFilter, setPredictionFilter] = useState<"ALL" | Prediction>("ALL");
   const [outcomeFilter, setOutcomeFilter] = useState<"ALL" | Outcome>("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "SCORED" | "PENDING">("ALL");
   const [sectorFilter, setSectorFilter] = useState<string>("ALL");
   const [dateFilter, setDateFilter] = useState<string>("ALL");
+  const [periodFilter, setPeriodFilter] = useState<string>("ALL");
 
-  // Sorting State
-  const [sortKey, setSortKey] = useState<keyof HistoryRow>("reportDate");
+  // Sorting + paging State
+  const [sortKey, setSortKey] = useState<SortKey>("report_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [offset, setOffset] = useState(0);
+
+  // Debounce the search box so typing doesn't fire a request per keystroke.
+  // Resetting the offset here (rather than in a follow-up effect) keeps the
+  // query change and the page reset in the same render, so the fetch effect
+  // fires once instead of twice.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedQuery(query);
+      setOffset(0);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [query]);
+
+  /** Wrap a filter setter so changing it also returns to the first page. */
+  function withPageReset<T>(setter: (value: T) => void) {
+    return (value: T) => {
+      setter(value);
+      setOffset(0);
+    };
+  }
+
+  const changePrediction = withPageReset(setPredictionFilter);
+  const changeOutcome = withPageReset(setOutcomeFilter);
+  const changeStatus = withPageReset(setStatusFilter);
+  const changeSector = withPageReset(setSectorFilter);
+  const changeDate = withPageReset(setDateFilter);
+  const changePeriod = withPageReset(setPeriodFilter);
+  const changePageSize = withPageReset(setPageSize);
+
+  const buildQuery = useCallback(
+    (overrides: Partial<HistoryQuery> = {}): HistoryQuery => ({
+      limit: pageSize,
+      offset,
+      sort_by: sortKey,
+      sort_dir: sortDir,
+      q: debouncedQuery.trim() || undefined,
+      prediction: predictionFilter === "ALL" ? undefined : predictionFilter,
+      outcome: outcomeFilter === "ALL" ? undefined : outcomeFilter,
+      status: statusFilter === "ALL" ? undefined : statusFilter,
+      sector: sectorFilter === "ALL" ? undefined : sectorFilter,
+      report_date: dateFilter === "ALL" ? undefined : dateFilter,
+      fiscal_period: periodFilter === "ALL" ? undefined : periodFilter,
+      ...overrides,
+    }),
+    [
+      pageSize,
+      offset,
+      sortKey,
+      sortDir,
+      debouncedQuery,
+      predictionFilter,
+      outcomeFilter,
+      statusFilter,
+      sectorFilter,
+      dateFilter,
+      periodFilter,
+    ]
+  );
+
+  // Guards against an earlier in-flight request resolving after a later one
+  const requestSeq = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const seq = ++requestSeq.current;
+
+    async function loadHistory() {
+      try {
+        setLoading(true);
+        const token = await getToken();
+        if (!token) throw new Error("Not authenticated");
+        const page = await api.getPredictionHistory(token, buildQuery());
+        if (cancelled || seq !== requestSeq.current) return;
+        setItems(page.items || []);
+        setTotal(page.total || 0);
+        setStats(page.stats);
+        setError(null);
+      } catch (err: unknown) {
+        if (cancelled || seq !== requestSeq.current) return;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setError(errMsg);
+      } finally {
+        if (!cancelled && seq === requestSeq.current) setLoading(false);
+      }
+    }
+    loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken, buildQuery]);
+
+  // Filter dropdown options come from the whole table, not the current page
+  useEffect(() => {
+    async function loadFilters() {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const opts = await api.getHistoryFilterOptions(token);
+        setFilterOptions(opts);
+      } catch {
+        // Non-fatal: the table still works, the dropdowns just stay empty
+      }
+    }
+    loadFilters();
+  }, [getToken]);
 
   const handleVerify = async (e: React.MouseEvent, pred: ApiPrediction) => {
     e.stopPropagation();
@@ -136,9 +304,11 @@ export default function HistoryPage() {
       const token = await getToken();
       const response = await api.verifyPrediction(pred.id, token || undefined);
       if (response.success && response.result) {
-        setHistory((prev) =>
+        setItems((prev) =>
           prev.map((p) => (p.id === pred.id ? { ...p, ...response.result } : p))
         );
+        // Scoring changed — cached pages and aggregates are now stale
+        api.invalidateHistoryCache();
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -148,178 +318,18 @@ export default function HistoryPage() {
     }
   };
 
-  useEffect(() => {
-    async function loadHistory() {
-      try {
-        const token = await getToken();
-        if (!token) throw new Error("Not authenticated");
-        const data = await api.getPredictionHistory(token);
-        setHistory(data);
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        setError(errMsg);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadHistory();
-  }, [getToken]);
+  const rows = useMemo(() => items.map(toRow), [items]);
 
-  // Map API Predictions to History Rows
-  const rows = useMemo(() => {
-    return history.map((p): HistoryRow & { rawPrediction: ApiPrediction } => {
-      // Direction mapping: BEAT/MISS/INLINE
-      let pred: Prediction = "BEAT";
-      const dir = (p.direction || "").toUpperCase();
-      if (dir === "MISS") {
-        pred = "MISS";
-      } else if (dir === "INLINE" || dir === "MEET" || dir === "NEUTRAL") {
-        pred = "INLINE";
-      }
-
-      // Outcome mapping: CORRECT/WRONG/UNVERIFIED
-      let outcome: Outcome = "UNVERIFIED";
-      if (p.actual_direction) {
-        const correct = p.direction.toLowerCase() === p.actual_direction.toLowerCase();
-        outcome = correct ? "CORRECT" : "WRONG";
-      }
-
-      return {
-        id: p.id,
-        ticker: p.ticker,
-        company: p.company_name,
-        sector: p.sector ?? undefined,
-        analysisDate: p.prediction_date,
-        reportDate: p.report_date,
-        reportTiming: (p.report_timing as ReportTiming) || "UNKNOWN",
-        prediction: pred,
-        confidence: Math.round(p.confidence * 100),
-        actualEps:
-          p.actual_eps !== undefined && p.actual_eps !== null ? p.actual_eps : null,
-        expectedEps:
-          p.expected_eps !== undefined && p.expected_eps !== null ? p.expected_eps : null,
-        postEarningsMove:
-          p.actual_price_move_pct !== undefined && p.actual_price_move_pct !== null
-            ? p.actual_price_move_pct * 100
-            : null,
-        brier:
-          p.accuracy_score !== undefined && p.accuracy_score !== null
-            ? p.accuracy_score
-            : null,
-        outcome: outcome,
-        rawPrediction: p,
-      };
-    });
-  }, [history]);
-
-  // Handle header click to cycle: asc -> desc -> asc
-  const handleSort = (key: keyof HistoryRow) => {
+  // Handle header click to cycle: asc -> desc
+  const handleSort = (key: SortKey) => {
     if (sortKey !== key) {
       setSortKey(key);
       setSortDir("desc");
     } else {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
     }
+    setOffset(0);
   };
-
-  const compareBy = (key: keyof HistoryRow, dir: "asc" | "desc") => {
-    return (a: HistoryRow, b: HistoryRow) => {
-      const valA = a[key];
-      const valB = b[key];
-
-      const isNullA = valA === null || valA === undefined;
-      const isNullB = valB === null || valB === undefined;
-
-      if (isNullA && isNullB) return 0;
-      if (isNullA) return 1;
-      if (isNullB) return -1;
-
-      if (key === "analysisDate" || key === "reportDate") {
-        const timeA = new Date(valA as string).getTime();
-        const timeB = new Date(valB as string).getTime();
-        return dir === "asc" ? timeA - timeB : timeB - timeA;
-      }
-
-      if (typeof valA === "string" && typeof valB === "string") {
-        return dir === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      } else {
-        const numA = valA as number;
-        const numB = valB as number;
-        return dir === "asc" ? numA - numB : numB - numA;
-      }
-    };
-  };
-
-  const uniqueSectors = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.sector && r.sector !== "Unknown") set.add(r.sector);
-    });
-    return Array.from(set).sort();
-  }, [rows]);
-
-  const uniqueReportDates = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.reportDate) {
-        const dateStr = new Date(r.reportDate).toISOString().split("T")[0];
-        set.add(dateStr);
-      }
-    });
-    return Array.from(set).sort().reverse();
-  }, [rows]);
-
-  // Filter and Sort Rows
-  const visibleRows = useMemo(() => {
-    return rows
-      .filter((r) =>
-        `${r.ticker} ${r.company}`
-          .toLowerCase()
-          .includes(query.trim().toLowerCase())
-      )
-      .filter(
-        (r) =>
-          predictionFilter === "ALL" || r.prediction === predictionFilter
-      )
-      .filter((r) => outcomeFilter === "ALL" || r.outcome === outcomeFilter)
-      .filter(
-        (r) =>
-          statusFilter === "ALL" ||
-          (statusFilter === "SCORED" ? isScored(r) : !isScored(r))
-      )
-      .filter((r) => sectorFilter === "ALL" || r.sector === sectorFilter)
-      .filter((r) => {
-        if (dateFilter === "ALL") return true;
-        const rDateStr = r.reportDate ? new Date(r.reportDate).toISOString().split("T")[0] : "";
-        return rDateStr === dateFilter;
-      })
-      .slice()
-      .sort(compareBy(sortKey, sortDir));
-  }, [rows, query, predictionFilter, outcomeFilter, statusFilter, sectorFilter, dateFilter, sortKey, sortDir]);
-
-  // Compute Filter-Aware KPIs
-  const kpis = useMemo(() => {
-    const scoredRows = visibleRows.filter((r) => isScored(r));
-    const totalVisible = visibleRows.length;
-    const scoredCount = scoredRows.length;
-    const correctCount = scoredRows.filter((r) => r.outcome === "CORRECT").length;
-
-    const winRate =
-      scoredCount > 0 ? `${((correctCount / scoredCount) * 100).toFixed(0)}%` : "—";
-    const brierSum = scoredRows.reduce((acc, r) => acc + (r.brier ?? 0), 0);
-    const avgBrier = scoredCount > 0 ? (brierSum / scoredCount).toFixed(4) : "—";
-
-    const confSum = visibleRows.reduce((acc, r) => acc + r.confidence, 0);
-    const avgConfidence = totalVisible > 0 ? `${(confSum / totalVisible).toFixed(0)}%` : "—";
-
-    return {
-      total: totalVisible,
-      winRate,
-      scoredCount,
-      avgBrier,
-      avgConfidence,
-    };
-  }, [visibleRows]);
 
   const handleReset = () => {
     setQuery("");
@@ -328,60 +338,90 @@ export default function HistoryPage() {
     setStatusFilter("ALL");
     setSectorFilter("ALL");
     setDateFilter("ALL");
-    setSortKey("reportDate");
+    setPeriodFilter("ALL");
+    setSortKey("report_date");
     setSortDir("desc");
+    setOffset(0);
   };
 
-  const exportToCSV = () => {
-    const headers = [
-      "Ticker",
-      "Company",
-      "Sector",
-      "Analysis Date",
-      "Report Date",
-      "Report Timing",
-      "Prediction",
-      "Confidence %",
-      "Actual EPS",
-      "Post-Earnings Move %",
-      "Brier Score",
-      "Outcome",
-    ];
+  // Export every row matching the current filters, not just the visible page.
+  const exportToCSV = async () => {
+    setExporting(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
 
-    const rowsData = visibleRows.map((r) => [
-      r.ticker,
-      `"${r.company.replace(/"/g, '""')}"`,
-      r.sector || "—",
-      r.analysisDate ? new Date(r.analysisDate).toISOString().split("T")[0] : "",
-      r.reportDate ? new Date(r.reportDate).toISOString().split("T")[0] : "",
-      r.reportTiming,
-      r.prediction,
-      r.confidence,
-      r.actualEps !== null ? r.actualEps : "",
-      r.postEarningsMove !== null ? r.postEarningsMove.toFixed(2) : "",
-      r.brier !== null ? r.brier.toFixed(4) : "",
-      r.outcome,
-    ]);
+      // Pull every row matching the current filters, in server-max chunks —
+      // the API caps a single page at MAX_HISTORY_PAGE_SIZE.
+      const CHUNK = 1000;
+      const collected: ApiPrediction[] = [];
+      for (let at = 0; at < total; at += CHUNK) {
+        const chunk = await api.getPredictionHistory(
+          token,
+          buildQuery({ limit: CHUNK, offset: at })
+        );
+        if (!chunk.items?.length) break;
+        collected.push(...chunk.items);
+      }
+      const exportRows = collected.map(toRow);
 
-    const csvContent = [
-      headers.join(","),
-      ...rowsData.map((e) => e.join(",")),
-    ].join("\n");
+      const headers = [
+        "Ticker",
+        "Company",
+        "Sector",
+        "Analysis Date",
+        "Report Date",
+        "Report Timing",
+        "Reporting Period",
+        "Prediction",
+        "Confidence %",
+        "Expected EPS",
+        "Actual EPS",
+        "Post-Earnings Move %",
+        "Brier Score",
+        "Outcome",
+      ];
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `earnings_analysis_history_${new Date().toISOString().split("T")[0]}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const rowsData = exportRows.map((r) => [
+        r.ticker,
+        `"${r.company.replace(/"/g, '""')}"`,
+        r.sector || "—",
+        r.analysisDate ? new Date(r.analysisDate).toISOString().split("T")[0] : "",
+        r.reportDate ? new Date(r.reportDate).toISOString().split("T")[0] : "",
+        r.reportTiming,
+        r.fiscalPeriod || "",
+        r.prediction,
+        r.confidence,
+        r.expectedEps !== null ? r.expectedEps : "",
+        r.actualEps !== null ? r.actualEps : "",
+        r.postEarningsMove !== null ? r.postEarningsMove.toFixed(2) : "",
+        r.brier !== null ? r.brier.toFixed(4) : "",
+        r.outcome,
+      ]);
+
+      const csvContent = [headers.join(","), ...rowsData.map((e) => e.join(","))].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute(
+        "download",
+        `earnings_analysis_history_${new Date().toISOString().split("T")[0]}.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      alert(`Export failed: ${errMsg}`);
+    } finally {
+      setExporting(false);
+    }
   };
 
-  const renderSortIndicator = (key: keyof HistoryRow) => {
+  const renderSortIndicator = (key: SortKey) => {
     if (sortKey !== key) {
       return (
         <ArrowUpDown className="w-3.5 h-3.5 opacity-30 group-hover:opacity-75 transition-opacity" />
@@ -394,7 +434,7 @@ export default function HistoryPage() {
     );
   };
 
-  const getAriaSort = (key: keyof HistoryRow) => {
+  const getAriaSort = (key: SortKey) => {
     if (sortKey !== key) return "none";
     return sortDir === "asc" ? "ascending" : "descending";
   };
@@ -403,6 +443,56 @@ export default function HistoryPage() {
     if (score >= 80) return "bg-bull";
     if (score >= 60) return "bg-teal";
     return "bg-bear";
+  };
+
+  // KPI values come from server-computed aggregates over the full filtered set
+  const kpis = useMemo(() => {
+    const winRate =
+      stats?.win_rate !== null && stats?.win_rate !== undefined
+        ? `${(stats.win_rate * 100).toFixed(0)}%`
+        : "—";
+    const avgBrier =
+      stats?.avg_brier !== null && stats?.avg_brier !== undefined
+        ? stats.avg_brier.toFixed(4)
+        : "—";
+    const avgConfidence =
+      stats?.avg_confidence !== null && stats?.avg_confidence !== undefined
+        ? `${(stats.avg_confidence * 100).toFixed(0)}%`
+        : "—";
+    return {
+      total: stats?.total ?? 0,
+      scoredCount: stats?.scored_count ?? 0,
+      winRate,
+      avgBrier,
+      avgConfidence,
+    };
+  }, [stats]);
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.floor(offset / pageSize) + 1;
+  const rangeStart = total === 0 ? 0 : offset + 1;
+  const rangeEnd = Math.min(offset + pageSize, total);
+  const hasFilters =
+    !!query ||
+    predictionFilter !== "ALL" ||
+    outcomeFilter !== "ALL" ||
+    statusFilter !== "ALL" ||
+    sectorFilter !== "ALL" ||
+    dateFilter !== "ALL" ||
+    periodFilter !== "ALL";
+
+  // Compact page-number window around the current page
+  const pageNumbers = useMemo(() => {
+    const windowSize = 5;
+    let start = Math.max(1, currentPage - Math.floor(windowSize / 2));
+    const end = Math.min(pageCount, start + windowSize - 1);
+    start = Math.max(1, end - windowSize + 1);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }, [currentPage, pageCount]);
+
+  const goToPage = (page: number) => {
+    const clamped = Math.min(Math.max(1, page), pageCount);
+    setOffset((clamped - 1) * pageSize);
   };
 
   return (
@@ -424,13 +514,13 @@ export default function HistoryPage() {
       </header>
 
       {/* KPI Cards Row */}
-      {!selectedResult && !loading && (
+      {!selectedResult && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 select-none animate-in fade-in duration-300">
           <StatCard
             icon={<Activity className="w-6 h-6" />}
-            label="Predictions Shown"
+            label="Predictions Matched"
             value={String(kpis.total)}
-            context={`of ${rows.length} total`}
+            context={hasFilters ? "matching filters" : "all time"}
             tone="teal"
           />
           <StatCard
@@ -438,9 +528,7 @@ export default function HistoryPage() {
             label="Win Rate"
             value={kpis.winRate}
             context={
-              kpis.scoredCount > 0
-                ? `${kpis.scoredCount} scored`
-                : "no scored predictions"
+              kpis.scoredCount > 0 ? `${kpis.scoredCount} scored` : "no scored predictions"
             }
             tone="bull"
           />
@@ -455,30 +543,16 @@ export default function HistoryPage() {
             icon={<TrendingUp className="w-6 h-6" />}
             label="Avg Confidence"
             value={kpis.avgConfidence}
-            context="across shown"
+            context="across matched"
             tone="teal"
           />
         </div>
       )}
 
-      {loading ? (
-        <div className="glass p-20 rounded-3xl border border-white/5 flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-teal border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">
-            Fetching your history...
-          </p>
-        </div>
-      ) : error ? (
+      {error ? (
         <div className="glass p-20 rounded-3xl border border-red-500/20 bg-red-500/5 text-center">
           <p className="text-red-500 font-black mb-2">Error loading history</p>
           <p className="text-gray-400 text-sm">{error}</p>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="glass p-20 rounded-3xl border border-white/5 text-center">
-          <p className="text-gray-500 font-black mb-2">No analyses yet</p>
-          <p className="text-gray-400 text-sm mb-8">
-            Run your first analysis from the dashboard to see it here.
-          </p>
         </div>
       ) : selectedResult ? (
         <AnalysisResult result={selectedResult} />
@@ -491,15 +565,20 @@ export default function HistoryPage() {
                 Historical Ledger
               </h2>
               <span className="text-[11px] font-mono font-bold text-ink-mute bg-[var(--color-panel-sunk)] border border-panel-line px-2.5 py-1 rounded-[8px] select-none">
-                Showing {visibleRows.length} of {rows.length}
+                {total === 0 ? "No results" : `Showing ${rangeStart}–${rangeEnd} of ${total}`}
               </span>
+              {loading && (
+                <span className="w-3.5 h-3.5 border-2 border-teal border-t-transparent rounded-full animate-spin inline-block" />
+              )}
             </div>
             <div className="flex items-center gap-4">
               <button
                 onClick={exportToCSV}
-                className="text-xs font-mono font-bold text-teal hover:text-[#7DE8DA] transition-colors uppercase tracking-widest flex items-center gap-1.5 outline-none rounded bg-transparent border-0 cursor-pointer"
+                disabled={exporting || total === 0}
+                title="Export every row matching the current filters"
+                className="text-xs font-mono font-bold text-teal hover:text-[#7DE8DA] transition-colors uppercase tracking-widest flex items-center gap-1.5 outline-none rounded bg-transparent border-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Export CSV
+                {exporting ? "Exporting..." : "Export CSV"}
               </button>
               <span className="border-l border-panel-line h-4" />
               <a
@@ -539,7 +618,7 @@ export default function HistoryPage() {
                   {(["ALL", "BEAT", "MISS", "INLINE"] as const).map((p) => (
                     <button
                       key={p}
-                      onClick={() => setPredictionFilter(p)}
+                      onClick={() => changePrediction(p)}
                       className={`px-3 py-1.5 rounded-md font-mono text-[11px] uppercase transition-all select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-teal
                         ${
                           predictionFilter === p
@@ -562,7 +641,7 @@ export default function HistoryPage() {
                   {(["ALL", "CORRECT", "WRONG", "UNVERIFIED"] as const).map((o) => (
                     <button
                       key={o}
-                      onClick={() => setOutcomeFilter(o)}
+                      onClick={() => changeOutcome(o)}
                       className={`px-3 py-1.5 rounded-md font-mono text-[11px] uppercase transition-all select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-teal
                         ${
                           outcomeFilter === o
@@ -585,7 +664,7 @@ export default function HistoryPage() {
                   {(["ALL", "SCORED", "PENDING"] as const).map((s) => (
                     <button
                       key={s}
-                      onClick={() => setStatusFilter(s)}
+                      onClick={() => changeStatus(s)}
                       className={`px-3 py-1.5 rounded-md font-mono text-[11px] uppercase transition-all select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-teal
                         ${
                           statusFilter === s
@@ -599,6 +678,28 @@ export default function HistoryPage() {
                 </div>
               </div>
 
+              {/* Reporting Period Filter Dropdown */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
+                  Period:
+                </span>
+                <select
+                  value={periodFilter}
+                  onChange={(e) => changePeriod(e.target.value)}
+                  aria-label="Filter by Reporting Period"
+                  className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
+                >
+                  <option value="ALL">
+                    All Periods ({filterOptions.fiscal_periods.length})
+                  </option>
+                  {filterOptions.fiscal_periods.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Sector Filter Dropdown */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim select-none">
@@ -606,12 +707,12 @@ export default function HistoryPage() {
                 </span>
                 <select
                   value={sectorFilter}
-                  onChange={(e) => setSectorFilter(e.target.value)}
+                  onChange={(e) => changeSector(e.target.value)}
                   aria-label="Filter by Sector"
                   className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
                 >
-                  <option value="ALL">All Sectors ({uniqueSectors.length})</option>
-                  {uniqueSectors.map((sec) => (
+                  <option value="ALL">All Sectors ({filterOptions.sectors.length})</option>
+                  {filterOptions.sectors.map((sec) => (
                     <option key={sec} value={sec}>
                       {sec}
                     </option>
@@ -626,12 +727,14 @@ export default function HistoryPage() {
                 </span>
                 <select
                   value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
+                  onChange={(e) => changeDate(e.target.value)}
                   aria-label="Filter by Report Date"
                   className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
                 >
-                  <option value="ALL">All Dates ({uniqueReportDates.length})</option>
-                  {uniqueReportDates.map((d) => (
+                  <option value="ALL">
+                    All Dates ({filterOptions.report_dates.length})
+                  </option>
+                  {filterOptions.report_dates.map((d) => (
                     <option key={d} value={d}>
                       {d}
                     </option>
@@ -642,11 +745,14 @@ export default function HistoryPage() {
           </div>
 
           {/* Table Container */}
-          <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-left whitespace-nowrap border-collapse">
               <thead className="sticky top-0 bg-[#05070a] border-b border-panel-line text-ink-dim select-none z-10">
                 <tr>
-                  <th className="pl-8 pr-4 py-5 label-caps sticky left-0 z-30 bg-[#05070a] border-r border-panel-line shadow-[4px_0_12px_rgba(0,0,0,0.6)]" aria-sort={getAriaSort("ticker")}>
+                  <th
+                    className="pl-8 pr-4 py-5 label-caps sticky left-0 z-30 bg-[#05070a] border-r border-panel-line shadow-[4px_0_12px_rgba(0,0,0,0.6)]"
+                    aria-sort={getAriaSort("ticker")}
+                  >
                     <button
                       onClick={() => handleSort("ticker")}
                       className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
@@ -664,22 +770,31 @@ export default function HistoryPage() {
                       {renderSortIndicator("sector")}
                     </button>
                   </th>
-                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("analysisDate")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("analysis_date")}>
                     <button
-                      onClick={() => handleSort("analysisDate")}
+                      onClick={() => handleSort("analysis_date")}
                       className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Analysis Date
-                      {renderSortIndicator("analysisDate")}
+                      {renderSortIndicator("analysis_date")}
                     </button>
                   </th>
-                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("reportDate")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("report_date")}>
                     <button
-                      onClick={() => handleSort("reportDate")}
+                      onClick={() => handleSort("report_date")}
                       className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Report Date
-                      {renderSortIndicator("reportDate")}
+                      {renderSortIndicator("report_date")}
+                    </button>
+                  </th>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("fiscal_period")}>
+                    <button
+                      onClick={() => handleSort("fiscal_period")}
+                      className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
+                    >
+                      Period
+                      {renderSortIndicator("fiscal_period")}
                     </button>
                   </th>
                   <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("prediction")}>
@@ -700,31 +815,34 @@ export default function HistoryPage() {
                       {renderSortIndicator("confidence")}
                     </button>
                   </th>
-                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("expectedEps")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("expected_eps")}>
                     <button
-                      onClick={() => handleSort("expectedEps")}
+                      onClick={() => handleSort("expected_eps")}
                       className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Expected EPS
-                      {renderSortIndicator("expectedEps")}
+                      {renderSortIndicator("expected_eps")}
                     </button>
                   </th>
-                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("actualEps")}>
+                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("actual_eps")}>
                     <button
-                      onClick={() => handleSort("actualEps")}
+                      onClick={() => handleSort("actual_eps")}
                       className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Actual EPS
-                      {renderSortIndicator("actualEps")}
+                      {renderSortIndicator("actual_eps")}
                     </button>
                   </th>
-                  <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("postEarningsMove")}>
+                  <th
+                    className="px-6 py-5 label-caps"
+                    aria-sort={getAriaSort("post_earnings_move")}
+                  >
                     <button
-                      onClick={() => handleSort("postEarningsMove")}
+                      onClick={() => handleSort("post_earnings_move")}
                       className="flex items-center gap-2 group text-left label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
                     >
                       Post-Earnings Move
-                      {renderSortIndicator("postEarningsMove")}
+                      {renderSortIndicator("post_earnings_move")}
                     </button>
                   </th>
                   <th className="px-6 py-5 label-caps" aria-sort={getAriaSort("brier")}>
@@ -736,7 +854,10 @@ export default function HistoryPage() {
                       {renderSortIndicator("brier")}
                     </button>
                   </th>
-                  <th className="pl-4 pr-8 py-5 text-right label-caps" aria-sort={getAriaSort("outcome")}>
+                  <th
+                    className="pl-4 pr-8 py-5 text-right label-caps"
+                    aria-sort={getAriaSort("outcome")}
+                  >
                     <button
                       onClick={() => handleSort("outcome")}
                       className="flex items-center gap-2 ml-auto group text-right label-caps hover:text-white transition-colors cursor-pointer outline-none focus-visible:text-teal"
@@ -748,7 +869,7 @@ export default function HistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 font-body">
-                {visibleRows.map((row) => (
+                {rows.map((row) => (
                   <tr
                     key={(row.id ?? row.ticker) + row.analysisDate}
                     tabIndex={0}
@@ -780,7 +901,7 @@ export default function HistoryPage() {
 
                     {/* Sector */}
                     <td className="px-6 py-4 text-sm text-ink-mute font-medium">
-                      {(!row.sector || row.sector === "Unknown") ? "—" : row.sector}
+                      {!row.sector || row.sector === "Unknown" ? "—" : row.sector}
                     </td>
 
                     {/* Analysis Date */}
@@ -793,15 +914,28 @@ export default function HistoryPage() {
                     </td>
 
                     {/* Report Date + Session Badge */}
-                    <td className="px-6 py-4 text-sm text-white font-mono flex items-center h-full">
-                      <span className="align-middle">
-                        {new Date(row.reportDate).toLocaleDateString(undefined, {
-                          year: "numeric",
-                          month: "2-digit",
-                          day: "2-digit",
-                        })}
+                    <td className="px-6 py-4 text-sm text-white font-mono">
+                      <span className="inline-flex items-center">
+                        <span className="align-middle">
+                          {new Date(row.reportDate).toLocaleDateString(undefined, {
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                          })}
+                        </span>
+                        <SessionBadge timing={row.reportTiming} />
                       </span>
-                      <SessionBadge timing={row.reportTiming} />
+                    </td>
+
+                    {/* Reporting Period */}
+                    <td className="px-6 py-4">
+                      {row.fiscalPeriod ? (
+                        <span className="px-2 py-1 rounded-md bg-teal/8 border border-teal/20 text-teal font-mono text-[11px] font-bold tracking-wider select-none">
+                          {row.fiscalPeriod}
+                        </span>
+                      ) : (
+                        <span className="text-ink-dim/40 font-mono text-sm">—</span>
+                      )}
                     </td>
 
                     {/* Prediction Pill */}
@@ -820,9 +954,7 @@ export default function HistoryPage() {
                             style={{ width: `${row.confidence}%` }}
                           />
                         </div>
-                        <span className="font-data text-white text-sm">
-                          {row.confidence}%
-                        </span>
+                        <span className="font-data text-white text-sm">{row.confidence}%</span>
                       </div>
                     </td>
 
@@ -848,9 +980,7 @@ export default function HistoryPage() {
                     <td className="px-6 py-4 font-mono text-sm">
                       {row.postEarningsMove !== null ? (
                         <span
-                          className={
-                            row.postEarningsMove >= 0 ? "text-bull" : "text-bear"
-                          }
+                          className={row.postEarningsMove >= 0 ? "text-bull" : "text-bear"}
                         >
                           {row.postEarningsMove >= 0 ? "+" : ""}
                           {row.postEarningsMove.toFixed(2)}%
@@ -865,9 +995,7 @@ export default function HistoryPage() {
                       {row.brier !== null ? (
                         <span
                           className={
-                            row.brier <= 0.1
-                              ? "text-bull-deep font-semibold"
-                              : "text-ink-mute"
+                            row.brier <= 0.1 ? "text-bull-deep font-semibold" : "text-ink-mute"
                           }
                         >
                           {row.brier.toFixed(4)}
@@ -892,18 +1020,91 @@ export default function HistoryPage() {
           </div>
 
           {/* Empty State */}
-          {visibleRows.length === 0 && (
+          {rows.length === 0 && !loading && (
             <div className="flex flex-col items-center justify-center py-16 text-center select-none">
               <XCircle className="w-12 h-12 text-ink-dim mb-3" />
               <p className="text-gray-500 font-bold uppercase tracking-widest text-xs mb-4">
-                No predictions match this filter
+                {hasFilters
+                  ? "No predictions match this filter"
+                  : "No analyses yet — run one from the dashboard"}
               </p>
-              <button
-                onClick={handleReset}
-                className="px-4 py-2 bg-teal text-black rounded-lg text-xs font-black uppercase tracking-widest hover:bg-teal/80 transition-colors"
-              >
-                Reset Filters
-              </button>
+              {hasFilters && (
+                <button
+                  onClick={handleReset}
+                  className="px-4 py-2 bg-teal text-black rounded-lg text-xs font-black uppercase tracking-widest hover:bg-teal/80 transition-colors cursor-pointer"
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Pagination Footer */}
+          {total > 0 && (
+            <div className="px-6 py-4 border-t border-panel-line bg-white/[0.01] flex items-center justify-between flex-wrap gap-4 select-none">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink-dim">
+                  Rows:
+                </span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => changePageSize(Number(e.target.value))}
+                  aria-label="Rows per page"
+                  className="bg-[#05070a] border border-panel-line rounded-[10px] px-3 py-1.5 font-mono text-[11px] text-white focus:border-teal outline-none cursor-pointer transition-colors"
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] font-mono text-ink-mute ml-2">
+                  Page {currentPage} of {pageCount}
+                </span>
+              </div>
+
+              <nav className="flex items-center gap-1" aria-label="History pagination">
+                <button
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  aria-label="Previous page"
+                  className="p-2 rounded-lg text-ink-mute hover:text-teal hover:bg-teal/10 border border-panel-line transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-ink-mute"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                {pageNumbers[0] > 1 && (
+                  <span className="px-2 text-ink-dim font-mono text-[11px]">…</span>
+                )}
+
+                {pageNumbers.map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => goToPage(n)}
+                    aria-current={n === currentPage ? "page" : undefined}
+                    className={`min-w-[32px] px-2.5 py-1.5 rounded-md font-mono text-[11px] transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-teal ${
+                      n === currentPage
+                        ? "bg-teal/14 text-teal border border-teal/30"
+                        : "text-ink-mute hover:text-white border border-transparent"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+
+                {pageNumbers[pageNumbers.length - 1] < pageCount && (
+                  <span className="px-2 text-ink-dim font-mono text-[11px]">…</span>
+                )}
+
+                <button
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage >= pageCount}
+                  aria-label="Next page"
+                  className="p-2 rounded-lg text-ink-mute hover:text-teal hover:bg-teal/10 border border-panel-line transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-ink-mute"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </nav>
             </div>
           )}
         </div>

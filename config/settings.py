@@ -193,6 +193,11 @@ class EarningsPrediction:
     company_description: Optional[str] = None
     sector: Optional[str] = None
 
+    # Fiscal period being reported on, carried through from CompanyData so the
+    # API layer can persist it without re-resolving (see database/fiscal_period.py)
+    fiscal_quarter: str = ""
+    fiscal_year: int = 0
+
 
 def load_config() -> PipelineConfig:
     """Load configuration from environment variables."""

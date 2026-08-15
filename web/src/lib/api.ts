@@ -34,6 +34,61 @@ export interface Prediction {
     composite_accuracy_score?: number;
     scored_at?: string;
     report_timing?: string;
+    // Fiscal reporting period (the period being reported on, not the one report_date falls in)
+    fiscal_quarter?: string | null;   // "Q1".."Q4"
+    fiscal_year?: number | null;
+    fiscal_period?: string | null;    // pre-formatted, e.g. "2026Q1"
+}
+
+export type HistorySortKey =
+    | "ticker"
+    | "sector"
+    | "analysis_date"
+    | "report_date"
+    | "fiscal_period"
+    | "prediction"
+    | "confidence"
+    | "expected_eps"
+    | "actual_eps"
+    | "post_earnings_move"
+    | "brier"
+    | "outcome";
+
+export interface HistoryQuery {
+    limit?: number;
+    offset?: number;
+    sort_by?: HistorySortKey;
+    sort_dir?: "asc" | "desc";
+    q?: string;
+    prediction?: string;      // BEAT | MISS | INLINE
+    outcome?: string;         // CORRECT | WRONG | UNVERIFIED
+    status?: string;          // SCORED | PENDING
+    sector?: string;
+    report_date?: string;     // YYYY-MM-DD
+    fiscal_period?: string;   // e.g. 2026Q1
+}
+
+export interface HistoryStats {
+    total: number;
+    scored_count: number;
+    correct_count: number;
+    win_rate: number | null;        // fraction of scored predictions that were correct
+    avg_brier: number | null;       // lower is better
+    avg_confidence: number | null;  // 0–1
+}
+
+export interface HistoryPage {
+    items: Prediction[];
+    total: number;
+    limit: number;
+    offset: number;
+    stats: HistoryStats;   // computed over the whole filtered set, not just this page
+}
+
+export interface HistoryFilterOptions {
+    sectors: string[];
+    fiscal_periods: string[];
+    report_dates: string[];
 }
 
 export interface PredictionMetrics {
@@ -135,9 +190,20 @@ export const api = {
         return this.fetchWithAuthInternal(url.toString(), token);
     },
 
-    async getPredictionHistory(token: string, forceRefresh: boolean = false): Promise<Prediction[]> {
-        const url = `${API_BASE_URL}/earnings/history`;
-        const cacheKey = `history:${token || "anon"}`;
+    async getPredictionHistory(
+        token: string,
+        params: HistoryQuery = {},
+        forceRefresh: boolean = false
+    ): Promise<HistoryPage> {
+        const url = new URL(`${API_BASE_URL}/earnings/history`);
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== "") {
+                url.searchParams.append(key, String(value));
+            }
+        });
+        // Cache per distinct query — a page of results is not interchangeable
+        // with another page or another filter combination.
+        const cacheKey = `history:${token || "anon"}:${url.searchParams.toString()}`;
         const now = Date.now();
         if (!forceRefresh && apiCache.has(cacheKey)) {
             const entry = apiCache.get(cacheKey)!;
@@ -145,9 +211,21 @@ export const api = {
                 return entry.data;
             }
         }
-        const data = await this.fetchWithAuthInternal(url, token);
+        const data = await this.fetchWithAuthInternal(url.toString(), token);
         apiCache.set(cacheKey, { data, timestamp: Date.now() });
         return data;
+    },
+
+    async getHistoryFilterOptions(token: string): Promise<HistoryFilterOptions> {
+        const url = `${API_BASE_URL}/earnings/history/filters`;
+        return this.fetchWithAuthInternal(url, token);
+    },
+
+    /** Drop every cached history response — call after a mutation (e.g. verify outcome). */
+    invalidateHistoryCache() {
+        Array.from(apiCache.keys())
+            .filter((k) => k.startsWith("history:"))
+            .forEach((k) => apiCache.delete(k));
     },
 
     async chatWithConsensus(ticker: string, messages: { role: string, content: string }[], predictionId?: number, token?: string) {

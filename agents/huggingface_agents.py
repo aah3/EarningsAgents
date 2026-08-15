@@ -1819,6 +1819,8 @@ class ThreeAgentSystem:
             rebuttal_summary=rebuttal_summary,
             options_features=company.options_features,
             report_time=report_time_short,
+            fiscal_quarter=getattr(company, "fiscal_quarter", "") or "",
+            fiscal_year=getattr(company, "fiscal_year", 0) or 0,
         )
 
 

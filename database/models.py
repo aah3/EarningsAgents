@@ -52,6 +52,10 @@ class Prediction(SQLModel, table=True):
     company_name: str
     report_date: datetime
     report_timing: Optional[str] = Field(default=None)
+    # Fiscal period being reported on (not the period report_date falls in).
+    # Resolved via database/fiscal_period.py; rendered as e.g. "2026Q1" in the UI.
+    fiscal_quarter: Optional[str] = Field(default=None, index=True)   # "Q1".."Q4"
+    fiscal_year: Optional[int] = Field(default=None, index=True)
     prediction_date: datetime = Field(default_factory=datetime.utcnow)
     direction: str # BEAT / MISS
     confidence: float

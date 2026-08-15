@@ -15,6 +15,7 @@ from data.earningsapi_source import RateLimitError
 from database.db import Session, engine
 from database.models import User, Prediction, CompanyProfile, EarningsHistory, EarningsCalendarEvent, UserSettings
 from database.crypto import decrypt
+from database.fiscal_period import resolve_fiscal_period
 from sqlmodel import select, or_
 
 logger = logging.getLogger(__name__)
@@ -308,6 +309,16 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                 session.commit()
                 session.refresh(user)
             
+            # Resolve the fiscal period being reported on, preferring any synced
+            # EarningsHistory row over the pipeline's own resolution.
+            fiscal_quarter, fiscal_year = resolve_fiscal_period(
+                session,
+                ticker.upper(),
+                report_date,
+                hint_quarter=result.get("fiscal_quarter"),
+                hint_year=result.get("fiscal_year"),
+            )
+
             # Save prediction
             db_prediction = Prediction(
                 user_id=user.id,
@@ -315,6 +326,8 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
                 company_name=result.get("company_name", "Unknown"),
                 report_date=datetime.combine(report_date, datetime.min.time()),
                 report_timing=resolved_report_timing if resolved_report_timing != "UNKNOWN" else result.get("report_time", "UNKNOWN"),
+                fiscal_quarter=fiscal_quarter,
+                fiscal_year=fiscal_year,
                 direction=result.get("direction", "NEUTRAL").upper(),
                 confidence=result.get("confidence", 0.0),
                 expected_price_move=result.get("expected_price_move", ""),
@@ -441,6 +454,16 @@ def score_predictions_task(self):
                     p.actual_guidance_stance = result.get("actual_guidance_stance")
                     p.composite_accuracy_score = result.get("composite_accuracy_score")
                     p.scored_at = result.get("scored_at", datetime.utcnow())
+                    # By scoring time EarningsHistory has usually synced, so an
+                    # inferred fiscal period can be upgraded to the real one.
+                    # Passing the current value as the hint means an existing
+                    # value is only ever replaced by authoritative history data.
+                    fq, fy = resolve_fiscal_period(
+                        session, p.ticker, p.report_date,
+                        hint_quarter=p.fiscal_quarter, hint_year=p.fiscal_year,
+                    )
+                    p.fiscal_quarter = fq
+                    p.fiscal_year = fy
                     session.add(p)
                     session.commit()
                     scored += 1
