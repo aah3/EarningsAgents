@@ -38,8 +38,8 @@ export function ProseLead({ children, className }: { children: ReactNode; classN
 }
 
 /** Shown in place of prose when an agent or source returned nothing. */
-export function ProseEmpty({ children }: { children: ReactNode }) {
-  return <p className="prose-list text-ink-dim italic">{children}</p>;
+export function ProseEmpty({ children, className }: { children: ReactNode; className?: string }) {
+  return <p className={cx("prose-list text-ink-dim italic", className)}>{children}</p>;
 }
 
 export type ProseListProps = {
@@ -63,8 +63,9 @@ export function ProseList({
 }: ProseListProps) {
   const a = ACCENTS[accent];
 
+  // Carry className through so the caller's spacing survives an empty list.
   if (!items || items.length === 0) {
-    return empty ? <ProseEmpty>{empty}</ProseEmpty> : null;
+    return empty ? <ProseEmpty className={className}>{empty}</ProseEmpty> : null;
   }
 
   return (

@@ -241,7 +241,7 @@ ${userText}`
                             <button
                                 onClick={handleOpenEditModal}
                                 title="Manually input or override actual numbers in the DB"
-                                className="px-3.5 py-2 bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20 rounded-lg label-caps transition-all flex items-center gap-1.5 cursor-pointer outline-none"
+                                className="px-3.5 py-2 bg-research/10 text-research border border-research/30 hover:bg-research/20 rounded-lg eyebrow transition-all flex items-center gap-1.5 cursor-pointer outline-none"
                             >
                                 <Edit3 className="w-3.5 h-3.5" /> Edit Actuals
                             </button>
@@ -362,7 +362,7 @@ ${userText}`
                                 </div>
                                 <p className="label-caps text-teal">Expected Guidance Outlook</p>
                             </div>
-                            <p className="text-sm font-body font-normal text-ink-mute leading-[1.7]">
+                            <p className="prose-body text-ink-mute">
                                 {result.likely_guidance}
                             </p>
                         </div>
@@ -642,7 +642,7 @@ ${userText}`
 
                         <form onSubmit={handleSaveOverride} className="space-y-4">
                             <div>
-                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                <label className="block eyebrow text-ink-dim mb-1">
                                     Expected Consensus EPS ($)
                                 </label>
                                 <input
@@ -656,7 +656,7 @@ ${userText}`
                             </div>
 
                             <div>
-                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                <label className="block eyebrow text-ink-dim mb-1">
                                     Actual Reported EPS ($)
                                 </label>
                                 <input
@@ -670,7 +670,7 @@ ${userText}`
                             </div>
 
                             <div>
-                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                <label className="block eyebrow text-ink-dim mb-1">
                                     Post-Earnings Price Move (%)
                                 </label>
                                 <input
@@ -684,7 +684,7 @@ ${userText}`
                             </div>
 
                             <div>
-                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                <label className="block eyebrow text-ink-dim mb-1">
                                     Actual Direction
                                 </label>
                                 <select
@@ -699,7 +699,7 @@ ${userText}`
                             </div>
 
                             <div>
-                                <label className="block text-xs font-mono font-bold uppercase text-ink-dim mb-1">
+                                <label className="block eyebrow text-ink-dim mb-1">
                                     Actual Guidance Stance
                                 </label>
                                 <select
