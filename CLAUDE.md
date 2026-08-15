@@ -87,9 +87,11 @@ SQLModel models in `database/models.py`: `User`/`UserSettings` (per-user LLM pro
 Next.js 16 (App Router) + React 19 + Tailwind 4 + Clerk auth + Sentry. `src/app/(auth)` is the Clerk-gated route group, `src/app/dashboard` the main app, `src/lib/api.ts` the backend client. Talks to the FastAPI backend via `NEXT_PUBLIC_API_URL` and the WebSocket router via `NEXT_PUBLIC_WS_URL`.
 
 ### CLI (`main.py`)
-`python main.py {single|daily|weekly} ...` drives the same `EarningsPipeline` outside the API/Celery path — useful for one-off runs and batch backfills. Loads config via `load_config()`, then applies CLI overrides (`--model` also infers `--provider`, `--enable-sec`, etc.). Root-level `run_*_debate.py` scripts (e.g. `run_jpm_debate.py`, `run_batch_debate.py`) are ad hoc one-off runners for specific tickers/batches, not part of the maintained CLI surface.
+### Agent Skills & Playbooks (`.agents/skills/`)
+10 version-controlled workspace skills are stored in `.agents/skills/`: `add-data-source`, `db-migration-and-scoring`, `tune-agent-prompts`, `add-api-route-and-task`, `run-backtest-and-scoring`, `frontend-component-and-ui`, `run-test-suite-and-smoke`, `docker-and-deployment-ops`, `options-analytics-modeling`, and `run-batch-debate`. Read the respective `SKILL.md` before initiating work on matching tasks.
 
 ## Notes
 - CI (`.github/workflows/ci.yml`) runs `pip install -r requirements.txt && python -m pytest -q` for backend, and `npm ci && npm run lint && npm run build` for frontend, on every PR/push to `main`.
 - Windows dev: Celery worker must run with `--pool=solo` (see `make dev-worker`); the `Makefile` invokes `.venv/Scripts/...` (Windows venv layout) rather than `.venv/bin/...`.
 - `requirements.txt` is exact-pinned from `pip freeze` — regenerate deliberately (`pip install -r requirements.txt --upgrade <pkg>; pip freeze > requirements.txt`), don't hand-edit versions.
+

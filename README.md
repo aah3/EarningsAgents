@@ -40,8 +40,9 @@ A production-grade, distributed research platform designed to predict and analyz
 
 ## 📂 Project Structure
 
-```
-EarningsAgents/
+├── .agents/               # Workspace Customization & AI Agent Skills Catalog
+│   ├── AGENTS.md          # Project guidelines & EPS verification invariants
+│   └── skills/            # 10 specialized agent playbooks (data, API, prompt tuning, DB, etc.)
 ├── api/                   # FastAPI Web App
 │   ├── dependencies/      # Auth (Clerk JWT validation) & DB dependencies
 │   ├── routers/           # Endpoints: /predict, /history, /calendar, /chat, etc.
@@ -353,6 +354,24 @@ The project includes a [Makefile](file:///c:/Users/alfredo/Project/EarningsAgent
 
 ---
 
+## 🤖 Agent Customization & Workspace Skills (`.agents/skills/`)
+
+The platform includes 10 version-controlled **AI Agent Skills** located in `.agents/skills/` designed to accelerate development and enforce strict repository invariants when using AI coding assistants (such as Antigravity or Claude Code):
+
+1. **`add-data-source`**: Standardized workflow for adding market/financial data providers to [`data/data_aggregator.py`](file:///c:/Users/alfredo/Project/EarningsAgents/data/data_aggregator.py).
+2. **`db-migration-and-scoring`**: Procedure for SQLModel schema edits, Alembic migrations, Fernet encryption, and EPS outcome verification invariants.
+3. **`tune-agent-prompts`**: Modifying Bull/Bear/Quant/Consensus prompts, ReAct tool definitions in [`agents/agent_tools.py`](file:///c:/Users/alfredo/Project/EarningsAgents/agents/agent_tools.py), and multi-LLM JSON response schemas.
+4. **`add-api-route-and-task`**: FastAPI endpoints, Celery workers (`--pool=solo`), Clerk auth dev bypass rules, and WebSocket task channels.
+5. **`run-backtest-and-scoring`**: Historical earnings backtest batches, actual EPS metric verification, and Brier score tracking.
+6. **`frontend-component-and-ui`**: Next.js 16 / React 19 UI components in `web/`, Tailwind CSS 4 styling, and mandatory client-side ticker sanitization/caching.
+7. **`run-test-suite-and-smoke`**: Running automated test suites (`make test`) and live integration smoke scripts (`make smoke`).
+8. **`docker-and-deployment-ops`**: Docker Compose 5-container stack management (`make build`/`up`) and Railway deployment configs.
+9. **`options-analytics-modeling`**: Options chain processing, ATM straddle implied moves, and `LIVE` vs `LAST-CLOSE` market session tags.
+10. **`run-batch-debate`**: Setting up and running multi-ticker earnings agent debate batch scripts.
+
+---
+
 ## 🗺️ Roadmap & Next Steps
 
 To review upcoming plans and help shape the next stage of features (such as SEC filers parsing, conversational AI copilot panels, and performance charts), read [RoadMap.md](file:///c:/Users/alfredo/Project/EarningsAgents/RoadMap.md).
+
