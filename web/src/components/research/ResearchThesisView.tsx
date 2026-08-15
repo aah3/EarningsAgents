@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { api, ResearchThesis, ResearchHistoryResponse } from "@/lib/api";
+import { useResearchThesis, invalidateThesis } from "./useResearchThesis";
 import SectionCard from "@/components/ui/SectionCard";
 import SectionHeader from "@/components/ui/SectionHeader";
 import { Prose, ProseLead, ProseList, ProseEmpty } from "@/components/ui/Prose";
@@ -24,7 +25,8 @@ import {
     AlertTriangle,
     X,
     Layers,
-    Info
+    Info,
+    ArrowRight
 } from "lucide-react";
 
 /**
@@ -105,11 +107,31 @@ function WeightMeter({ weight }: { weight?: string | null }) {
     );
 }
 
-export default function ResearchThesisView({ ticker }: { ticker: string }) {
+export type ResearchThesisVariant = "full" | "summary";
+
+export default function ResearchThesisView({
+    ticker,
+    variant = "full",
+    onOpenFull,
+}: {
+    ticker: string;
+    /**
+     * `full` is the standalone research tab: identity header, toolbar, pillars,
+     * catalysts, risks and the evidence matrix.
+     *
+     * `summary` is the condensed block embedded in the prediction tab. It drops
+     * the identity header and toolbar — the page above it already establishes
+     * which company this is — and shows only the conviction and the pillars,
+     * with a link through to the full view.
+     */
+    variant?: ResearchThesisVariant;
+    /** Invoked by the summary variant's "Open full thesis" control. */
+    onOpenFull?: () => void;
+}) {
     const { getToken } = useAuth();
-    const [thesis, setThesis] = useState<ResearchThesis | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const isSummary = variant === "summary";
+    // Shared across both mounts, so switching tabs no longer refetches.
+    const { thesis, setThesis, loading, error, refetch: fetchThesis } = useResearchThesis(ticker);
 
     // Modal & Drawer states
     const [showPersonalizeModal, setShowPersonalizeModal] = useState(false);
@@ -126,35 +148,15 @@ export default function ResearchThesisView({ ticker }: { ticker: string }) {
 
     const [toastMsg, setToastMsg] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
 
-    const fetchThesis = useCallback(async () => {
-        if (!ticker) return;
-        setLoading(true);
-        setError(null);
-        try {
-            const token = (await getToken()) || undefined;
-            const res = await api.getResearchThesis(ticker, token);
-            setThesis(res);
-        } catch (err: any) {
-            if (err.message && err.message.includes("404")) {
-                setThesis(null);
-            } else {
-                setError(err.message || "Failed to load research thesis.");
-            }
-        } finally {
-            setLoading(false);
-        }
-    }, [ticker, getToken]);
-
-    useEffect(() => {
-        fetchThesis();
-    }, [fetchThesis]);
-
     const handleTriggerThesis = async (notes?: string) => {
         setSubmittingNotes(true);
         setToastMsg(null);
         try {
             const token = (await getToken()) || undefined;
             const res = await api.triggerResearch(ticker, notes, token);
+            // A new thesis is being generated, so the cached one is now stale;
+            // drop it so any later mount refetches instead of serving it.
+            invalidateThesis(ticker);
             setShowPersonalizeModal(false);
             setUserNotesInput("");
             setToastMsg({
@@ -274,20 +276,23 @@ export default function ResearchThesisView({ ticker }: { ticker: string }) {
                 </div>
             )}
 
-            {/* Header Toolbar */}
+            {/* Identity header and toolbar. Suppressed in the summary variant —
+                the prediction page above it already names the company, and
+                repeating it put the ticker on screen three times. */}
+            {!isSummary && (
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-6 rounded-2xl bg-[var(--color-panel-sunk)] border border-panel-line shadow-inner">
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-3 flex-wrap">
-                        <h3 className="text-3xl font-display font-bold text-ink">{thesis.ticker}</h3>
-                        <span className="text-ink-mute text-lg font-medium">| {thesis.company_name}</span>
+                        <h3 className="text-3xl font-display font-semibold text-ink">{thesis.ticker}</h3>
+                        <span className="prose-body text-ink-mute">{thesis.company_name}</span>
                         <ScopeBadge
                             scope={thesis.scope}
                             icon={thesis.scope === 'personalized' ? <UserCheck /> : <Globe />}
                             label={thesis.scope === 'personalized' ? 'Personalized Thesis' : 'Baseline Thesis'}
                         />
                     </div>
-                    <p className="text-xs text-ink-dim font-mono">
-                        Generated: {new Date(thesis.generated_at).toLocaleString()} | Trigger: {thesis.source_trigger}
+                    <p className="eyebrow text-ink-dim">
+                        Generated {new Date(thesis.generated_at).toLocaleString()} · via {thesis.source_trigger}
                     </p>
                 </div>
 
@@ -323,6 +328,7 @@ export default function ResearchThesisView({ ticker }: { ticker: string }) {
                     </button>
                 </div>
             </div>
+            )}
 
             {/* Headline Conviction */}
             <SectionCard accent="research">
@@ -333,9 +339,13 @@ export default function ResearchThesisView({ ticker }: { ticker: string }) {
                     horizon={THESIS_HORIZON}
                     as="h3"
                     actions={
-                        <span className="eyebrow text-ink-dim">
-                            Confidence {(thesis.confidence_level).toFixed(0)}%
-                        </span>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                            {/* The summary variant has no toolbar, so scope rides here. */}
+                            {isSummary && <ScopeBadge scope={thesis.scope} />}
+                            <span className="eyebrow text-ink-dim">
+                                Confidence {(thesis.confidence_level).toFixed(0)}%
+                            </span>
+                        </div>
                     }
                 />
                 <ProseLead className="mt-4">&ldquo;{thesis.headline_view}&rdquo;</ProseLead>
@@ -366,6 +376,24 @@ export default function ResearchThesisView({ ticker }: { ticker: string }) {
                 ))}
             </div>
 
+            {/* Everything below is the full view only. The summary stops at the
+                conviction and the three pillars, then hands off to the research
+                tab — which is what keeps the prediction page readable. */}
+            {isSummary && (
+                <div className="flex justify-end">
+                    <button
+                        type="button"
+                        onClick={onOpenFull}
+                        className="px-4 py-2 bg-research/10 text-research border border-research/30 hover:bg-research/20 rounded-xl eyebrow transition-all flex items-center gap-2 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-research/40"
+                    >
+                        <span>Open full thesis</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            )}
+
+            {!isSummary && (
+              <>
             {/* Bull vs. Bear structural case. Same accents as the earnings debate's
                 own bull/bear cards, so the horizon chip is what tells them apart. */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -467,6 +495,8 @@ export default function ResearchThesisView({ ticker }: { ticker: string }) {
                         ))}
                     </div>
                 </SectionCard>
+            )}
+              </>
             )}
 
             {/* Personalization Modal */}
