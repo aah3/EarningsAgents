@@ -1109,9 +1109,15 @@ def download_prediction_report(
     
     db_sync_status = f"SUCCESSFUL (Record Saved with ID: {prediction.id})"
     
+    # Resolve ResearchThesis (personalized first, fallback to baseline)
+    from database.research_repo import get_latest_research_thesis
+    research_thesis = get_latest_research_thesis(session, prediction.ticker, user_id=prediction.user_id)
+    if not research_thesis:
+        research_thesis = get_latest_research_thesis(session, prediction.ticker, user_id=None)
+
     if format == "md":
         from output.report_generator import generate_markdown_report
-        md_content = generate_markdown_report(prediction, db_sync_status=db_sync_status, llm_info=llm_info)
+        md_content = generate_markdown_report(prediction, db_sync_status=db_sync_status, llm_info=llm_info, research_thesis=research_thesis)
         
         headers = {
             "Content-Disposition": f"attachment; filename={prediction.ticker}_{prediction.report_date.strftime('%Y-%m-%d')}_report.md"
@@ -1130,7 +1136,7 @@ def download_prediction_report(
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir) / f"report.pdf"
             try:
-                generate_pdf_report(prediction, temp_path, db_sync_status=db_sync_status, llm_info=llm_info)
+                generate_pdf_report(prediction, temp_path, db_sync_status=db_sync_status, llm_info=llm_info, research_thesis=research_thesis)
                 pdf_bytes = temp_path.read_bytes()
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")

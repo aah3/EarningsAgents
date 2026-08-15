@@ -31,6 +31,26 @@ class TestReportGenerator(unittest.TestCase):
                 "iv_skew": 0.05
             }
         )
+        self.mock_thesis = {
+            "headline_view": "Solid Secular Growth Driven by Direct-to-Consumer Expansion",
+            "confidence_level": 82.5,
+            "scope": "baseline",
+            "business_viability_summary": "Nike maintains resilient global pricing power and strong brand equity.",
+            "competitive_landscape_summary": "Wide brand moat despite emerging challenger brands.",
+            "macro_context_summary": "Consumer spending trends remain volatile across North America.",
+            "bull_case": "Expansion of high-margin DTC channels and margin recovery.",
+            "bear_case": "Inventory elevated in Greater China; macro deceleration.",
+            "catalysts": ["Q4 Earnings release", "Olympics product momentum"],
+            "risks": ["Supply chain bottlenecks", "Wholesale order cuts"],
+            "evidence_table": [
+                {
+                    "evidence": "Gross margin expanded +120 bps YoY",
+                    "source": "10-Q SEC Filing",
+                    "implication": "Pricing power intact",
+                    "weight": "high"
+                }
+            ]
+        }
 
     def test_generate_markdown_report(self):
         md = generate_markdown_report(
@@ -45,6 +65,20 @@ class TestReportGenerator(unittest.TestCase):
         self.assertIn("gemini-flash-latest", md)
         self.assertIn("Put/Call Volume Ratio", md)
 
+    def test_generate_markdown_report_with_research_thesis(self):
+        md = generate_markdown_report(
+            self.prediction, 
+            elapsed_time=137.32, 
+            db_sync_status="SUCCESSFUL",
+            llm_info={"provider": "gemini", "model_name": "gemini-flash-latest"},
+            research_thesis=self.mock_thesis
+        )
+        self.assertIn("Fundamental Research & Multi-Quarter Investment Thesis", md)
+        self.assertIn("Solid Secular Growth Driven by Direct-to-Consumer Expansion", md)
+        self.assertIn("Nike maintains resilient global pricing power", md)
+        self.assertIn("Q4 Earnings release", md)
+        self.assertIn("Gross margin expanded +120 bps YoY", md)
+
     def test_generate_pdf_report(self):
         if not FPDF_AVAILABLE:
             self.skipTest("fpdf2 not installed")
@@ -56,7 +90,8 @@ class TestReportGenerator(unittest.TestCase):
                 pdf_path, 
                 elapsed_time=137.32, 
                 db_sync_status="SUCCESSFUL",
-                llm_info={"provider": "gemini", "model_name": "gemini-flash-latest"}
+                llm_info={"provider": "gemini", "model_name": "gemini-flash-latest"},
+                research_thesis=self.mock_thesis
             )
             self.assertTrue(pdf_path.exists())
             self.assertGreater(pdf_path.stat().st_size, 0)
@@ -69,7 +104,8 @@ class TestReportGenerator(unittest.TestCase):
                 reports_dir, 
                 elapsed_time=137.32, 
                 db_sync_status="SUCCESSFUL",
-                llm_info={"provider": "gemini", "model_name": "gemini-flash-latest"}
+                llm_info={"provider": "gemini", "model_name": "gemini-flash-latest"},
+                research_thesis=self.mock_thesis
             )
             self.assertIn("md", saved)
             self.assertTrue(saved["md"].exists())

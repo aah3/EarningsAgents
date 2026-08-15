@@ -127,11 +127,21 @@ class PDFReport(FPDF):
         self.cell(0, 10, f"Page {self.page_no()} | Confidential - AI Agent Consensus Analysis", align="C")
 
 
+def get_field(obj: Any, field: str, default: Any = None) -> Any:
+    """Helper to extract field value whether obj is a dict or an object instance."""
+    if not obj:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(field, default)
+    return getattr(obj, field, default)
+
+
 def generate_markdown_report(
     prediction: Any, 
     elapsed_time: Optional[float] = None, 
     db_sync_status: str = "SUCCESSFUL",
-    llm_info: Optional[Dict[str, Any]] = None
+    llm_info: Optional[Dict[str, Any]] = None,
+    research_thesis: Optional[Any] = None
 ) -> str:
     """Generate a Markdown report string for an earnings prediction."""
     ticker = prediction.ticker
@@ -183,6 +193,74 @@ def generate_markdown_report(
     if guidance_exp_val != "N/A" or likely_guidance_val:
         likely_str = f"\n\n**Likely Guidance Detail**:\n{likely_guidance_val}" if likely_guidance_val else ""
         guidance_sect = f"## Guidance Outlook & Expectation\n\n- **Directional Expectation**: `{guidance_exp_val.upper()}`{likely_str}\n\n---\n\n"
+
+    # Research Thesis section
+    thesis_sect = ""
+    thesis_obj = research_thesis or getattr(prediction, "research_thesis", None)
+    if thesis_obj:
+        headline = get_field(thesis_obj, "headline_view", "")
+        conf = float(get_field(thesis_obj, "confidence_level", 50.0))
+        scope = str(get_field(thesis_obj, "scope", "baseline"))
+        user_notes = get_field(thesis_obj, "user_notes", None)
+        viability = get_field(thesis_obj, "business_viability_summary", "")
+        moat = get_field(thesis_obj, "competitive_landscape_summary", "")
+        macro = get_field(thesis_obj, "macro_context_summary", "")
+        bull_t = get_field(thesis_obj, "bull_case", "")
+        bear_t = get_field(thesis_obj, "bear_case", "")
+        cats = ensure_list(get_field(thesis_obj, "catalysts", []))
+        rsks = ensure_list(get_field(thesis_obj, "risks", []))
+        ev_items = get_field(thesis_obj, "evidence_table", []) or []
+
+        cats_str = "\n".join([f"- {c}" for c in cats]) if cats else "*No key catalysts logged.*"
+        rsks_str = "\n".join([f"- {r}" for r in rsks]) if rsks else "*No key risks logged.*"
+
+        ev_table_rows = []
+        if isinstance(ev_items, list):
+            for ev in ev_items:
+                if isinstance(ev, dict):
+                    ev_table_rows.append(f"| {ev.get('evidence', '')} | `{ev.get('source', '')}` | **{ev.get('implication', '')}** | {ev.get('weight', '')} |")
+                elif hasattr(ev, "evidence"):
+                    ev_table_rows.append(f"| {getattr(ev, 'evidence', '')} | `{getattr(ev, 'source', '')}` | **{getattr(ev, 'implication', '')}** | {getattr(ev, 'weight', '')} |")
+
+        ev_table_str = "\n".join(ev_table_rows) if ev_table_rows else "| *No evidence items recorded* | - | - | - |"
+        notes_str = f"\n- **User Custom Notes**: &ldquo;{user_notes}&rdquo;" if user_notes else ""
+
+        thesis_sect = f"""## Fundamental Research & Multi-Quarter Investment Thesis (12-36 Month Horizon)
+
+- **Headline Conviction**: **"{headline}"** ({conf:.1f}% Confidence)
+- **Thesis Scope**: `{scope.upper()}`{notes_str}
+
+### Core Fundamental Pillars
+
+- **Business Viability**: {viability}
+- **Competitive Moat**: {moat}
+- **Macroeconomic Context**: {macro}
+
+### Fundamental Bull & Bear Investment Cases
+
+#### Fundamental Bull Case
+{bull_t}
+
+#### Fundamental Bear Case
+{bear_t}
+
+### Catalysts & Risk Register
+
+#### Key Catalysts
+{cats_str}
+
+#### Risk Register
+{rsks_str}
+
+### Multi-Source Evidence Matrix
+
+| Evidence Item | Source Data | Implication | Weight |
+| :--- | :--- | :--- | :--- |
+{ev_table_str}
+
+---
+
+"""
 
     # Bull/Bear factors
     bull_list = ensure_list(prediction.bull_factors)
@@ -257,7 +335,7 @@ This report details the execution and results of the Multi-Agent AI Earnings Deb
 
 ---
 
-{desc_sect}{guidance_sect}## Bull Case Factors
+{desc_sect}{guidance_sect}{thesis_sect}## Bull Case Factors
 
 {bull_factors_str}
 
@@ -285,7 +363,8 @@ def generate_pdf_report(
     output_path: Path,
     elapsed_time: Optional[float] = None,
     db_sync_status: str = "SUCCESSFUL",
-    llm_info: Optional[Dict[str, Any]] = None
+    llm_info: Optional[Dict[str, Any]] = None,
+    research_thesis: Optional[Any] = None
 ) -> None:
     """Generate a high-quality PDF report for an earnings prediction using fpdf2."""
     if not FPDF_AVAILABLE:
@@ -451,6 +530,112 @@ def generate_pdf_report(
         pdf.ln(6)
 
     # ----------------------------------------------------
+    # 4.5. Fundamental Research & Investment Thesis (if present)
+    # ----------------------------------------------------
+    thesis_obj = research_thesis or getattr(prediction, "research_thesis", None)
+    if thesis_obj:
+        headline = get_field(thesis_obj, "headline_view", "")
+        conf = float(get_field(thesis_obj, "confidence_level", 50.0))
+        scope = str(get_field(thesis_obj, "scope", "baseline"))
+        user_notes = get_field(thesis_obj, "user_notes", None)
+        viability = get_field(thesis_obj, "business_viability_summary", "")
+        moat = get_field(thesis_obj, "competitive_landscape_summary", "")
+        macro = get_field(thesis_obj, "macro_context_summary", "")
+        bull_t = get_field(thesis_obj, "bull_case", "")
+        bear_t = get_field(thesis_obj, "bear_case", "")
+        cats = ensure_list(get_field(thesis_obj, "catalysts", []))
+        rsks = ensure_list(get_field(thesis_obj, "risks", []))
+        ev_items = get_field(thesis_obj, "evidence_table", []) or []
+
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_fill_color(13, 148, 136) # Teal 600
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(epw, 7, "  FUNDAMENTAL RESEARCH & INVESTMENT THESIS (12-36 MONTHS)", fill=True, new_x="LMARGIN", new_y="NEXT")
+
+        # Headline Box
+        pdf.set_fill_color(240, 253, 250) # Teal 50
+        pdf.set_draw_color(153, 246, 228) # Teal 200
+        pdf.set_font("Helvetica", "B", 9.5)
+        pdf.set_text_color(19, 78, 74) # Teal 900
+        
+        h_text = f"Headline View: \"{headline}\" (Confidence: {conf:.1f}% | Scope: {scope.upper()})"
+        if user_notes:
+            h_text += f"\nUser Custom Notes: \"{user_notes}\""
+        pdf.multi_cell(epw, 5, sanitize_for_pdf(h_text), border=1, fill=True)
+        pdf.ln(3)
+
+        # Pillars
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(epw, 4.5, sanitize_for_pdf("CORE FUNDAMENTAL PILLARS:"), new_x="LMARGIN", new_y="NEXT")
+        
+        pdf.set_font("Helvetica", "", 8.5)
+        pdf.set_text_color(51, 65, 85)
+        pillars_text = f"* Business Viability: {viability}\n* Competitive Moat: {moat}\n* Macro Context: {macro}"
+        pdf.multi_cell(epw, 4.5, sanitize_for_pdf(pillars_text), border=1, fill=False)
+        pdf.ln(3)
+
+        # Bull & Bear Thesis
+        if bull_t or bear_t:
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(epw, 4.5, sanitize_for_pdf("FUNDAMENTAL BULL & BEAR THESIS:"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "", 8.5)
+            thesis_cases = f"Fundamental Bull Case:\n{bull_t}\n\nFundamental Bear Case:\n{bear_t}"
+            pdf.multi_cell(epw, 4.5, sanitize_for_pdf(thesis_cases), border=1, fill=False)
+            pdf.ln(3)
+
+        # Catalysts & Risks
+        if cats or rsks:
+            cats_str = "\n".join([f"* {c}" for c in cats]) if cats else "None logged."
+            rsks_str = "\n".join([f"* {r}" for r in rsks]) if rsks else "None logged."
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(epw, 4.5, sanitize_for_pdf("CATALYSTS & RISK REGISTER:"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "", 8.5)
+            cat_risk_text = f"Key Catalysts:\n{cats_str}\n\nRisk Register:\n{rsks_str}"
+            pdf.multi_cell(epw, 4.5, sanitize_for_pdf(cat_risk_text), border=1, fill=False)
+            pdf.ln(3)
+
+        # Evidence Table
+        if isinstance(ev_items, list) and len(ev_items) > 0:
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(epw, 4.5, sanitize_for_pdf("MULTI-SOURCE EVIDENCE MATRIX:"), new_x="LMARGIN", new_y="NEXT")
+            
+            w_ev = 85
+            w_src = 35
+            w_imp = 30
+            w_wt = 30
+            
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(226, 232, 240)
+            pdf.cell(w_ev, 4.5, " Evidence Item", border=1, fill=True)
+            pdf.cell(w_src, 4.5, " Source", border=1, fill=True)
+            pdf.cell(w_imp, 4.5, " Implication", border=1, fill=True)
+            pdf.cell(w_wt, 4.5, " Weight", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+            
+            pdf.set_font("Helvetica", "", 8)
+            for ev in ev_items[:6]:
+                if isinstance(ev, dict):
+                    ev_txt = ev.get("evidence", "")
+                    src_txt = ev.get("source", "")
+                    imp_txt = ev.get("implication", "")
+                    wt_txt = ev.get("weight", "")
+                else:
+                    ev_txt = getattr(ev, "evidence", "")
+                    src_txt = getattr(ev, "source", "")
+                    imp_txt = getattr(ev, "implication", "")
+                    wt_txt = getattr(ev, "weight", "")
+                
+                pdf.cell(w_ev, 4.5, f" {sanitize_for_pdf(str(ev_txt)[:45])}", border=1)
+                pdf.cell(w_src, 4.5, f" {sanitize_for_pdf(str(src_txt)[:18])}", border=1)
+                pdf.cell(w_imp, 4.5, f" {sanitize_for_pdf(str(imp_txt)[:15])}", border=1)
+                pdf.cell(w_wt, 4.5, f" {sanitize_for_pdf(str(wt_txt)[:15])}", border=1, new_x="LMARGIN", new_y="NEXT")
+
+        pdf.ln(6)
+
+    # ----------------------------------------------------
     # 5. Bull Factors (Green Card Box)
     # ----------------------------------------------------
     pdf.set_font("Helvetica", "B", 11)
@@ -603,7 +788,8 @@ def export_report(
     elapsed_time: Optional[float] = None,
     db_sync_status: str = "SUCCESSFUL",
     llm_info: Optional[Dict[str, Any]] = None,
-    formats: Optional[List[str]] = None
+    formats: Optional[List[str]] = None,
+    research_thesis: Optional[Any] = None
 ) -> Dict[str, Path]:
     """
     Generate and save reports to reports_dir.
@@ -624,7 +810,7 @@ def export_report(
     
     # 1. MD Format
     if "md" in formats:
-        md_content = generate_markdown_report(prediction, elapsed_time, db_sync_status, llm_info)
+        md_content = generate_markdown_report(prediction, elapsed_time, db_sync_status, llm_info, research_thesis=research_thesis)
         md_path = reports_dir / f"{base_filename}.md"
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(md_content)
@@ -636,7 +822,7 @@ def export_report(
         if FPDF_AVAILABLE:
             pdf_path = reports_dir / f"{base_filename}.pdf"
             try:
-                generate_pdf_report(prediction, pdf_path, elapsed_time, db_sync_status, llm_info)
+                generate_pdf_report(prediction, pdf_path, elapsed_time, db_sync_status, llm_info, research_thesis=research_thesis)
                 saved_paths["pdf"] = pdf_path
                 logger.info(f"Saved PDF report to {pdf_path}")
             except Exception as e:
