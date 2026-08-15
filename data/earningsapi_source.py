@@ -68,7 +68,9 @@ def summarize_reaction(reactions: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 class RateLimitError(Exception):
     """Raised when EarningsAPI.com returns a 429 Too Many Requests response."""
-    pass
+    def __init__(self, message: str, is_quota_exceeded: bool = False):
+        super().__init__(message)
+        self.is_quota_exceeded = is_quota_exceeded
 
 
 class EarningsAPIDataSource(BaseDataSource):
@@ -143,8 +145,10 @@ class EarningsAPIDataSource(BaseDataSource):
         except Exception as e:
             import requests
             if isinstance(e, requests.exceptions.HTTPError) and e.response is not None and e.response.status_code == 429:
-                self.logger.error(f"Rate limit hit (429) for {url}: {e}")
-                raise RateLimitError(f"Rate limit exceeded (429): {e}") from e
+                resp_text = getattr(e.response, "text", "") or ""
+                is_quota = "quota" in resp_text.lower() or "limit" in resp_text.lower()
+                self.logger.error(f"Rate limit hit (429) for {url}: {e} (quota={is_quota})")
+                raise RateLimitError(f"Rate limit exceeded (429): {e}", is_quota_exceeded=is_quota) from e
             self.logger.error(f"Request failed to {url}: {e}")
             raise
 

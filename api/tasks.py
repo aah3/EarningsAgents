@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 import sys
 import os
 
+from celery.exceptions import SoftTimeLimitExceeded
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -62,8 +63,7 @@ def generate_research_thesis_task(self, ticker: str, user_id: Optional[int] = No
         return saved.id
 
 
-@celery_app.task(bind=True, name="api.tasks.analyze_ticker_task")
-
+@celery_app.task(bind=True, name="api.tasks.analyze_ticker_task", soft_time_limit=300, time_limit=330)
 def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, user_analysis: str = "", enable_rebuttals: Optional[bool] = None):
     """
     Background task to analyze a ticker and save results.
@@ -379,7 +379,9 @@ def analyze_ticker_task(self, ticker: str, report_date_str: str, clerk_id: str, 
         logger.info(f"Successfully completed analysis for {ticker}")
         return {"status": "SUCCESS", "ticker": ticker, "result": result}
 
-        
+    except SoftTimeLimitExceeded:
+        logger.error(f"Analysis task for {ticker} exceeded soft time limit (5 minutes)")
+        return {"status": "FAILURE", "error": f"Analysis task for {ticker} timed out after 5 minutes."}
     except Exception as e:
         logger.error(f"Task failed for {ticker}: {str(e)}")
         return {"status": "FAILURE", "error": str(e)}
@@ -599,6 +601,11 @@ def sync_ticker_history_task(self, ticker: str):
     try:
         with Session(engine) as session:
             return sync_ticker_history(session, ticker.upper(), src)
+    except RateLimitError as e:
+        if getattr(e, "is_quota_exceeded", False) or "quota" in str(e).lower():
+            logger.warning(f"EarningsAPI quota exceeded for {ticker}, skipping background sync retry: {e}")
+            return {"status": "SKIPPED", "reason": "EarningsAPI daily quota exceeded"}
+        raise
     finally:
         src.disconnect()
 
