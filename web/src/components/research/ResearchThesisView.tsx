@@ -69,6 +69,42 @@ function ScopeBadge({
     );
 }
 
+/**
+ * Evidence weight is an ordinal HIGH / MEDIUM / LOW, so it reads faster as
+ * filled segments than as a word — and the filled count sorts visually when
+ * scanning a stack of evidence entries.
+ *
+ * An unrecognised value still renders its own label with no segments filled,
+ * rather than silently showing an empty meter.
+ */
+const WEIGHT_STEPS: Record<string, number> = { LOW: 1, MEDIUM: 2, MED: 2, HIGH: 3 };
+
+function WeightMeter({ weight }: { weight?: string | null }) {
+    const label = (weight ?? "").trim();
+    const filled = WEIGHT_STEPS[label.toUpperCase()] ?? 0;
+    const tone = filled >= 3 ? ACCENTS.research : filled === 2 ? ACCENTS.teal : ACCENTS.neutral;
+
+    return (
+        <span className="flex items-center gap-2 shrink-0" title={label ? `Weight: ${label}` : undefined}>
+            <span className="eyebrow text-ink-dim">Weight</span>
+            <span className="flex items-center gap-1" aria-hidden="true">
+                {[0, 1, 2].map((i) => (
+                    <span
+                        key={i}
+                        className={cx(
+                            "w-4 h-1 rounded-full",
+                            i < filled ? tone.dot : "bg-white/10"
+                        )}
+                    />
+                ))}
+            </span>
+            <span className={cx("eyebrow", filled ? tone.text : "text-ink-dim")}>
+                {label || "—"}
+            </span>
+        </span>
+    );
+}
+
 export default function ResearchThesisView({ ticker }: { ticker: string }) {
     const { getToken } = useAuth();
     const [thesis, setThesis] = useState<ResearchThesis | null>(null);
@@ -396,40 +432,39 @@ export default function ResearchThesisView({ ticker }: { ticker: string }) {
                         as="h4"
                         divider
                     />
-                    {/* Scrolls within its own container so a wide table never
-                        pushes the page sideways — same pattern as the history ledger. */}
-                    <div className="overflow-x-auto custom-scrollbar mt-4">
-                        <table className="w-full text-left border-collapse min-w-[640px]">
-                            <thead>
-                                <tr className="border-b border-panel-line">
-                                    <th className="eyebrow text-ink-dim py-2.5 px-3">Evidence Item</th>
-                                    <th className="eyebrow text-ink-dim py-2.5 px-3">Source Data</th>
-                                    <th className="eyebrow text-ink-dim py-2.5 px-3">Implication</th>
-                                    <th className="eyebrow text-ink-dim py-2.5 px-3">Weight</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-panel-line">
-                                {thesis.evidence_table.map((item, idx) => (
-                                    <tr key={idx} className="hover:bg-white/5 transition-colors">
-                                        <td className="prose-list text-ink py-3 px-3">{item.evidence}</td>
-                                        <td className="py-3 px-3 font-mono text-[13px] text-teal">{item.source}</td>
-                                        <td className="py-3 px-3">
-                                            <span className={cx(
-                                                "eyebrow text-[10px] px-2 py-0.5 rounded-md border whitespace-nowrap",
-                                                item.implication === 'Positive'
-                                                    ? cx(ACCENTS.bull.chipBg, ACCENTS.bull.chipBorder, ACCENTS.bull.text)
-                                                    : item.implication === 'Negative'
-                                                        ? cx(ACCENTS.bear.chipBg, ACCENTS.bear.chipBorder, ACCENTS.bear.text)
-                                                        : cx(ACCENTS.neutral.chipBg, ACCENTS.neutral.chipBorder, ACCENTS.neutral.text)
-                                            )}>
-                                                {item.implication}
-                                            </span>
-                                        </td>
-                                        <td className="eyebrow text-ink-dim py-3 px-3">{item.weight}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                    {/* Stacked rather than tabular. `evidence` and `implication` are
+                        both full sentences from the model, so four columns squeezed
+                        each to a few characters wide and forced the panel to scroll
+                        sideways. Stacking gives every field the page's normal
+                        measure and reading format. */}
+                    <div className="mt-4 flex flex-col gap-3">
+                        {thesis.evidence_table.map((item, idx) => (
+                            <div
+                                key={idx}
+                                className="rounded-xl border border-panel-line bg-[var(--color-panel-sunk)] p-4 flex flex-col gap-3 hover:border-research/30 transition-colors"
+                            >
+                                {/* Source + weight share a line: both are short, and
+                                    together they say where this came from and how
+                                    much it counts. */}
+                                <div className="flex items-center justify-between gap-3 flex-wrap">
+                                    <div className="flex items-baseline gap-2.5 min-w-0">
+                                        <span className="eyebrow text-ink-dim shrink-0">Source</span>
+                                        <span className="font-mono text-[13px] text-teal truncate">{item.source}</span>
+                                    </div>
+                                    <WeightMeter weight={item.weight} />
+                                </div>
+
+                                <div>
+                                    <span className="eyebrow text-ink-dim">Evidence</span>
+                                    <p className="prose-body text-ink mt-1">{item.evidence}</p>
+                                </div>
+
+                                <div>
+                                    <span className="eyebrow text-ink-dim">Implication</span>
+                                    <p className="prose-body text-ink-mute mt-1">{item.implication}</p>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </SectionCard>
             )}
