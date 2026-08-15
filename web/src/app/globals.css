@@ -77,12 +77,16 @@
   }
 }
 
-/* Base resets */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* Base resets are provided by Tailwind's preflight inside @layer base, which
+   already applies `box-sizing: border-box; margin: 0; padding: 0` to
+   `*, ::after, ::before, ::backdrop`.
+
+   Do NOT re-declare that reset here. An unlayered `*` rule outranks every
+   layered utility regardless of specificity, so `* { padding: 0; margin: 0 }`
+   written at this level silently nullified every p-*, px-*, m-* and mb-*
+   utility across the entire app — cards rendered flush against their borders
+   and section spacing collapsed. Only gap-* survived, because gap is not part
+   of the reset. */
 
 html {
   scroll-behavior: smooth;

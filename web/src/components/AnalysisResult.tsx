@@ -4,6 +4,10 @@ import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { api, Prediction } from "@/lib/api";
 import ResearchThesisView from "@/components/research/ResearchThesisView";
+import SectionCard from "@/components/ui/SectionCard";
+import SectionHeader from "@/components/ui/SectionHeader";
+import { Prose, ProseList } from "@/components/ui/Prose";
+import { ACCENTS } from "@/components/ui/accents";
 import { 
     FileText, 
     FileDown, 
@@ -427,110 +431,101 @@ ${userText}`
                         <ResearchThesisView ticker={currentResult.ticker} />
                     </div>
 
-                    {/* Sequential Agent Case Cards */}
-                    <div className="flex flex-col gap-12">
+                    {/* Sequential Agent Case Cards — the near-term debate */}
+                    <div className="flex flex-col gap-8">
                         {/* Bull Case */}
-                        <div className="p-8 bg-bull/[0.02] rounded-2xl border border-bull/15 hover:border-bull/25 hover:bg-bull/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                            <div className="flex items-center gap-3 mb-5 select-none">
-                                <div className="w-8 h-8 rounded-full bg-bull/10 flex items-center justify-center border border-bull/20">
-                                    <TrendingUp className="w-4 h-4 text-bull" />
-                                </div>
-                                <p className="label-caps text-bull">Bull Case</p>
-                            </div>
+                        <SectionCard accent="bull" interactive>
+                            <SectionHeader
+                                accent="bull"
+                                icon={<TrendingUp />}
+                                eyebrow="Bull Case"
+                                horizon="This quarter"
+                                divider={!!bullSummary}
+                            />
                             {bullSummary && (
-                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line mb-6 pb-6 border-b border-bull/10">
+                                <Prose className={`mt-4 pb-5 mb-5 border-b ${ACCENTS.bull.rule}`}>
                                     {bullSummary}
-                                </p>
+                                </Prose>
                             )}
-                            <ul className="space-y-4">
-                                {result.bull_factors && result.bull_factors.length > 0 ? (
-                                    result.bull_factors.map((f, i) => (
-                                        <li key={i} className="text-sm font-body font-normal text-ink-mute flex items-start gap-3 leading-[1.6]">
-                                            <span className="text-bull mt-0.5 font-bold">✓</span> <span>{f}</span>
-                                        </li>
-                                    ))
-                                ) : (
-                                    <li className="text-sm text-ink-dim italic flex items-center justify-center p-4">No significant bullish factors identified in this analysis.</li>
-                                )}
-                            </ul>
-                        </div>
+                            <ProseList
+                                items={result.bull_factors ?? []}
+                                accent="bull"
+                                marker="check"
+                                empty="No significant bullish factors identified in this analysis."
+                                className={bullSummary ? undefined : "mt-4"}
+                            />
+                        </SectionCard>
 
                         {/* Bear Case */}
-                        <div className="p-8 bg-bear/[0.02] rounded-2xl border border-bear/15 hover:border-bear/25 hover:bg-bear/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                            <div className="flex items-center gap-3 mb-5 select-none">
-                                <div className="w-8 h-8 rounded-full bg-bear/10 flex items-center justify-center border border-bear/20">
-                                    <TrendingDown className="w-4 h-4 text-bear" />
-                                </div>
-                                <p className="label-caps text-bear">Bear Case</p>
-                            </div>
+                        <SectionCard accent="bear" interactive>
+                            <SectionHeader
+                                accent="bear"
+                                icon={<TrendingDown />}
+                                eyebrow="Bear Case"
+                                horizon="This quarter"
+                                divider={!!bearSummary}
+                            />
                             {bearSummary && (
-                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line mb-6 pb-6 border-b border-bear/10">
+                                <Prose className={`mt-4 pb-5 mb-5 border-b ${ACCENTS.bear.rule}`}>
                                     {bearSummary}
-                                </p>
+                                </Prose>
                             )}
-                            <ul className="space-y-4">
-                                {result.bear_factors && result.bear_factors.length > 0 ? (
-                                    result.bear_factors.map((f, i) => (
-                                        <li key={i} className="text-sm font-body font-normal text-ink-mute flex items-start gap-3 leading-[1.6]">
-                                            <span className="text-bear mt-0.5 font-bold">×</span> <span>{f}</span>
-                                        </li>
-                                    ))
-                                ) : (
-                                    <li className="text-sm text-ink-dim italic flex items-center justify-center p-4">No significant bearish factors identified in this analysis.</li>
-                                )}
-                            </ul>
-                        </div>
+                            <ProseList
+                                items={result.bear_factors ?? []}
+                                accent="bear"
+                                marker="cross"
+                                empty="No significant bearish factors identified in this analysis."
+                                className={bearSummary ? undefined : "mt-4"}
+                            />
+                        </SectionCard>
 
                         {/* Quant Case */}
                         {quantSummary && (
-                            <div className="p-8 bg-quant/[0.02] rounded-2xl border border-quant/15 hover:border-quant/25 hover:bg-quant/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                                <div className="flex items-center gap-3 mb-5 select-none">
-                                    <div className="w-8 h-8 rounded-full bg-quant/10 flex items-center justify-center border border-quant/20">
-                                        <BarChart3 className="w-4 h-4 text-quant" />
-                                    </div>
-                                    <p className="label-caps text-quant">Quant Case</p>
-                                </div>
-                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{quantSummary}</p>
-                            </div>
+                            <SectionCard accent="quant" interactive>
+                                <SectionHeader
+                                    accent="quant"
+                                    icon={<BarChart3 />}
+                                    eyebrow="Quant Case"
+                                    horizon="This quarter"
+                                />
+                                <Prose className="mt-4">{quantSummary}</Prose>
+                            </SectionCard>
                         )}
 
                         {/* Analyst Case / Custom Research */}
                         {userSummary && (
-                            <div className="p-8 bg-human/[0.02] rounded-2xl border border-human/15 hover:border-human/25 hover:bg-human/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                                <div className="flex items-center gap-3 mb-5 select-none">
-                                    <div className="w-8 h-8 rounded-full bg-human/10 flex items-center justify-center border border-human/20">
-                                        <User className="w-4 h-4 text-human" />
-                                    </div>
-                                    <p className="label-caps text-human">Analyst / User Insight</p>
-                                </div>
-                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{userSummary}</p>
-                            </div>
+                            <SectionCard accent="human" interactive>
+                                <SectionHeader
+                                    accent="human"
+                                    icon={<User />}
+                                    eyebrow="Analyst / User Insight"
+                                />
+                                <Prose className="mt-4">{userSummary}</Prose>
+                            </SectionCard>
                         )}
 
                         {/* Rebuttals / Cross-Examination */}
                         {result.rebuttal_summary && (
-                            <div className="p-8 bg-[#C68A4C]/[0.02] rounded-2xl border border-[#C68A4C]/15 hover:border-[#C68A4C]/25 hover:bg-[#C68A4C]/[0.04] transition-all duration-200 shadow-sm flex flex-col">
-                                <div className="flex items-center gap-3 mb-5 select-none">
-                                    <div className="w-8 h-8 rounded-full bg-[#C68A4C]/10 flex items-center justify-center border border-[#C68A4C]/20">
-                                        <AlertTriangle className="w-4 h-4 text-[#C68A4C]" />
-                                    </div>
-                                    <p className="label-caps text-[#C68A4C]">Rebuttals & Cross-Examination</p>
-                                </div>
-                                <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">{result.rebuttal_summary}</p>
-                            </div>
+                            <SectionCard accent="rebuttal" interactive>
+                                <SectionHeader
+                                    accent="rebuttal"
+                                    icon={<AlertTriangle />}
+                                    eyebrow="Rebuttals & Cross-Examination"
+                                />
+                                <Prose className="mt-4">{result.rebuttal_summary}</Prose>
+                            </SectionCard>
                         )}
 
                         {/* Consensus Summary */}
-                        <div className="p-10 rounded-2xl border border-panel-line bg-[var(--color-panel-sunk)] relative overflow-hidden shadow-sm">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-teal"></div>
-                            <p className="label-caps text-teal mb-5 flex items-center gap-2 select-none">
-                                <Sparkles className="w-3.5 h-3.5 text-teal" />
-                                Consensus Summary
-                            </p>
-                            <p className="text-[15px] font-body font-normal text-ink-mute leading-[1.7] whitespace-pre-line">
-                                {result.reasoning_summary}
-                            </p>
-                        </div>
+                        <SectionCard accent="neutral" className="relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-teal" aria-hidden="true" />
+                            <SectionHeader
+                                accent="teal"
+                                icon={<Sparkles />}
+                                eyebrow="Consensus Summary"
+                            />
+                            <Prose className="mt-4">{result.reasoning_summary}</Prose>
+                        </SectionCard>
                     </div>
                 </div>
             )}
