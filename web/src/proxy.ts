@@ -1,6 +1,14 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-const isPublicRoute = createRouteMatcher(["/", "/sign-in(.*)", "/sign-up(.*)"]);
+// /learn is linked from the landing nav, footer and both CTAs, so it has to be
+// reachable signed-out — otherwise every "Read the methodology" click bounces a
+// visitor into a sign-in modal.
+const isPublicRoute = createRouteMatcher([
+    "/",
+    "/learn(.*)",
+    "/sign-in(.*)",
+    "/sign-up(.*)",
+]);
 
 export const proxy = clerkMiddleware(async (auth, request) => {
     if (!isPublicRoute(request)) {

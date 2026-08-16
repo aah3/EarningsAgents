@@ -28,6 +28,18 @@
   --font-display: var(--font-space-grotesk);
   --font-body: var(--font-inter);
   --font-mono: var(--font-space-mono);
+
+  /* The width at which the landing page swaps the stacked pipeline stepper for
+     the full six-stage diagram.
+
+     CAUTION: Tailwind emits custom-breakpoint variants BEFORE the built-in
+     ones, regardless of pixel value — in a production build `.wide\:grid-cols-5`
+     lands ~2000 chars ahead of `.lg\:grid-cols-3`, so `lg:` wins at every width
+     above 1360. Use `wide:` only where no default-breakpoint variant sets the
+     same property (`hidden wide:block` is fine, because an unprefixed utility
+     sorts before all variants). Where they would compete, reach for a stock
+     breakpoint instead. */
+  --breakpoint-wide: 1360px;
 }
 
 :root {
@@ -129,11 +141,196 @@ body {
   animation: blink 2.2s ease-in-out infinite;
 }
 
+/* Packets travelling a connector. `offset-path` carries the circle along the
+   exact same `d` string the visible <path> uses, so the two can never drift.
+   Where offset-path is unsupported the dot simply parks at the origin and the
+   marching dash on the wire still communicates direction. */
+.flow-dot {
+  animation-name: flow-dot-run;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+}
+
+@keyframes flow-dot-run {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+/* A brightening wave that walks stage by stage through the diagram, so the
+   pipeline reads as running rather than as a static org chart. Each node sets
+   its own animation-delay from its stage index. */
+.node-halo {
+  stroke-width: 2.5;
+  stroke-opacity: 0;
+  animation: halo-sweep 5.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes halo-sweep {
+  0%,
+  62%,
+  100% {
+    stroke-opacity: 0;
+  }
+  16%,
+  38% {
+    stroke-opacity: 0.55;
+  }
+}
+
+.merge-bar,
+.scan-bar {
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+
+.merge-bar {
+  animation: merge-fill 4.4s ease-in-out infinite;
+}
+
+.scan-bar {
+  animation: scan-grow 5.2s ease-in-out infinite;
+}
+
+@keyframes merge-fill {
+  0%,
+  100% {
+    transform: scaleX(0.12);
+  }
+  50% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes scan-grow {
+  0%,
+  100% {
+    transform: scaleX(0.04);
+  }
+  55% {
+    transform: scaleX(1);
+  }
+}
+
+/* Drawn nodes are inert; the .pipe-hit buttons above them drive `is-active`.
+   Hover/focus lifts and brightens the whole group and retires the little "i"
+   affordance once you've found it. */
+.pipe-node {
+  transition:
+    filter 0.2s ease,
+    transform 0.2s ease;
+}
+
+.pipe-node.is-active {
+  filter: brightness(1.2);
+  transform: translateY(-2px);
+}
+
+.node-hint {
+  transition: opacity 0.2s ease;
+}
+
+.pipe-node.is-active .node-hint {
+  opacity: 0;
+}
+
+.stage-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  fill: var(--color-ink-dim);
+}
+
+.stage-num {
+  fill: var(--color-teal);
+  font-weight: 700;
+}
+
+.node-label-lg {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 23px;
+  fill: var(--color-ink);
+}
+
+@keyframes beam-sweep {
+  0% {
+    transform: translateX(-45%);
+  }
+  100% {
+    transform: translateX(255%);
+  }
+}
+
+@keyframes aurora-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translate3d(-2.5%, 1.5%, 0) scale(1.07);
+    opacity: 1;
+  }
+}
+
+@keyframes marquee-run {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform-origin: center;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .flowline,
   .core-ring,
-  .animate-blink-dot {
+  .animate-blink-dot,
+  .flow-dot,
+  .node-halo,
+  .merge-bar,
+  .scan-bar,
+  .hero-aurora,
+  .diagram-panel::after,
+  .marquee-track,
+  .pipe-tip {
     animation: none !important;
+  }
+
+  .merge-bar,
+  .scan-bar {
+    transform: none;
+  }
+
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
   }
 }
 
@@ -260,5 +457,117 @@ body {
     line-height: 1.2;
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
+  }
+
+  /* ── Marketing surfaces ─────────────────────────────────────────────────
+     Layered, not unlayered, for the same reason the type scale is: a call
+     site must be able to override one property with a utility without
+     fighting the cascade. See the note above .eyebrow. */
+
+  /* Soft colour wash sitting behind the headline. */
+  .hero-aurora {
+    background:
+      radial-gradient(640px 330px at 50% 0%, rgba(45, 212, 191, 0.16), transparent 68%),
+      radial-gradient(540px 300px at 16% 20%, rgba(96, 165, 250, 0.10), transparent 66%),
+      radial-gradient(540px 300px at 84% 24%, rgba(167, 139, 250, 0.09), transparent 66%);
+    filter: blur(6px);
+    animation: aurora-drift 18s ease-in-out infinite;
+  }
+
+  /* The framed panel the pipeline sits in: a masked grid plus a slow beam. */
+  .diagram-panel {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      0 30px 90px rgba(0, 0, 0, 0.5);
+  }
+
+  .diagram-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+    background-size: 38px 38px;
+    -webkit-mask-image: radial-gradient(130% 105% at 50% 40%, #000 42%, transparent 100%);
+    mask-image: radial-gradient(130% 105% at 50% 40%, #000 42%, transparent 100%);
+  }
+
+  .diagram-panel::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 26%;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(45, 212, 191, 0.055),
+      transparent
+    );
+    animation: beam-sweep 9s linear infinite;
+  }
+
+  /* Transparent hit target sitting over a drawn node. Carries all the
+     interaction the SVG cannot: hover, Tab order, a real focus ring. */
+  .pipe-hit {
+    position: absolute;
+    border-radius: 12px;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .pipe-hit:focus-visible {
+    outline: 2px solid var(--color-teal);
+    outline-offset: 3px;
+  }
+
+  /* Node tooltip. Anchored in JS from viewBox coordinates. */
+  .pipe-tip {
+    position: absolute;
+    z-index: 30;
+    width: min(330px, 46vw);
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--color-panel-line);
+    background: rgba(9, 14, 24, 0.97);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.62);
+    pointer-events: none;
+    animation: tip-in 0.14s ease-out;
+  }
+
+  /* Scroll-reveal, driven by the Reveal component's IntersectionObserver. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .reveal-in {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Edge-faded, infinitely scrolling strip. The track renders its children
+     twice, so a -50% translate lands exactly on a seam. */
+  .marquee {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent);
+  }
+
+  .marquee-track {
+    animation: marquee-run 42s linear infinite;
+  }
+
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
   }
 }

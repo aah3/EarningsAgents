@@ -3,96 +3,121 @@
 import React from "react";
 import Link from "next/link";
 import { SignInButton, SignedIn, SignedOut } from "@clerk/nextjs";
+import { ArrowRight, MousePointerClick } from "lucide-react";
+import Container from "./Container";
 import PipelineDiagram from "./PipelineDiagram";
-import { PipelineData, DEFAULT_PIPELINE } from "./pipeline.types";
+import PipelineStepper from "./PipelineStepper";
 
-interface HeroProps {
-  data?: PipelineData;
-}
-
-export default function Hero({ data = DEFAULT_PIPELINE }: HeroProps) {
+/**
+ * Copy on top, diagram underneath at full container width.
+ *
+ * The previous hero put the pipeline in a right-hand column beside the
+ * paragraph, which squeezed a five-stage flow into ~640px and left both halves
+ * cramped. Stacking gives the diagram the whole 1440 and lets the copy sit at a
+ * proper centred measure.
+ */
+export default function Hero() {
   return (
-    <section className="w-full max-w-[1240px] mx-auto grid grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] max-[940px]:grid-cols-1 gap-[56px] max-[940px]:gap-10 items-center px-10 max-[940px]:px-6 pt-14 pb-[90px] max-[940px]:pb-[70px]">
-      {/* Left Column: Copy */}
-      <div className="flex flex-col items-start">
-        {/* Eyebrow Pill */}
-        <span className="font-mono text-[12px] tracking-[0.14em] uppercase text-teal border border-panel-line bg-[rgba(45,212,191,0.05)] px-[13px] py-[7px] rounded-full inline-flex items-center gap-[9px] mb-[26px] select-none">
-          <span className="w-[7px] h-[7px] rounded-full bg-teal shadow-[0_0_10px_rgba(45,212,191,0.8)]" />
-          Multi-agent earnings intelligence
-        </span>
+    <section className="relative pt-12 md:pt-16 pb-16 md:pb-24">
+      {/* Ambient wash behind the headline. Sits under everything, ignores input. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[520px] hero-aurora"
+      />
 
-        {/* H1 Headline */}
-        <h1 className="font-display font-semibold text-[clamp(2.4rem,4.4vw,3.7rem)] leading-[1.04] tracking-[-0.025em] bg-gradient-to-b from-[#FFFFFF] to-[#B9C4DA] bg-clip-text text-transparent mb-[22px]">
-          Earnings predictions,
-          <br />
-          settled by{" "}
-          <span className="bg-gradient-to-r from-teal to-[#7DE8DA] bg-clip-text text-transparent">
-            debate.
+      <Container className="relative">
+        {/* ── Copy block ───────────────────────────────────────────────── */}
+        <div className="flex flex-col items-center text-center max-w-[860px] mx-auto">
+          <span className="font-mono text-[11.5px] tracking-[0.14em] uppercase text-teal border border-teal/20 bg-teal/[0.05] px-[13px] py-[7px] rounded-full inline-flex items-center gap-[9px] mb-7 select-none">
+            <span className="w-[7px] h-[7px] rounded-full bg-teal shadow-[0_0_10px_rgba(45,212,191,0.8)] animate-blink-dot" />
+            Multi-agent earnings intelligence
           </span>
-        </h1>
 
-        {/* Subheading Description */}
-        <p className="sub font-body text-[17.5px] leading-[1.62] text-ink-mute max-w-[46ch] mb-[34px]">
-          Bull, Bear, and Quant agents each build a case, then argue it out in a
-          rebuttal round — with <strong className="font-semibold text-ink">your own research</strong> thrown
-          into the debate. A <strong className="font-semibold text-ink">Consensus agent</strong> weighs the
-          arguments into one confidence-scored call. And it&apos;s not a one-shot
-          verdict: keep questioning the Consensus agent to unpack its reasoning
-          until you trust the decision.
-        </p>
+          <h1 className="font-display font-semibold text-[clamp(2.5rem,5.2vw,4.25rem)] leading-[1.03] tracking-[-0.028em] bg-gradient-to-b from-white to-[#B9C4DA] bg-clip-text text-transparent mb-6">
+            Earnings predictions,
+            <br />
+            settled by{" "}
+            <span className="bg-gradient-to-r from-teal to-[#7DE8DA] bg-clip-text text-transparent">
+              debate.
+            </span>
+          </h1>
 
-        {/* CTA Row */}
-        <div className="cta-row flex items-center gap-4 flex-wrap mb-[26px]">
-          <SignedOut>
-            <SignInButton mode="modal">
-              <button
-                className="btn-primary font-body text-[15.5px] font-semibold text-[#04231F] bg-gradient-to-br from-teal to-teal-deep px-[26px] py-3.5 rounded-[12px] transition-all duration-150 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-bg outline-none cursor-pointer"
+          <p className="font-body text-[17px] md:text-[18.5px] leading-[1.62] text-ink-mute max-w-[62ch] mb-9">
+            Bull, Bear, and Quant agents each build a case, then argue it out in a
+            rebuttal round — with{" "}
+            <strong className="font-semibold text-ink">your own research</strong>{" "}
+            thrown into the debate. A{" "}
+            <strong className="font-semibold text-ink">Consensus agent</strong>{" "}
+            weighs the arguments into a confidence-scored call on the quarter and
+            a{" "}
+            <strong className="font-semibold text-ink">12–36 month research thesis</strong>.
+            And neither is a one-shot answer: keep questioning the Consensus agent
+            to unpack its reasoning until you trust the decision.
+          </p>
+
+          <div className="flex items-center justify-center gap-3.5 flex-wrap mb-7">
+            <SignedOut>
+              <SignInButton mode="modal">
+                <button
+                  className="btn-primary font-body text-[15.5px] font-semibold text-[#04231F] bg-gradient-to-br from-teal to-teal-deep px-[26px] py-3.5 rounded-[12px] transition-transform duration-150 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-bg outline-none cursor-pointer"
+                  style={{ boxShadow: "0 8px 26px rgba(45, 212, 191, 0.32)" }}
+                >
+                  Run a live prediction
+                </button>
+              </SignInButton>
+            </SignedOut>
+            <SignedIn>
+              <Link
+                href="/dashboard"
+                className="btn-primary font-body text-[15.5px] font-semibold text-[#04231F] bg-gradient-to-br from-teal to-teal-deep px-[26px] py-3.5 rounded-[12px] transition-transform duration-150 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-bg outline-none"
                 style={{ boxShadow: "0 8px 26px rgba(45, 212, 191, 0.32)" }}
               >
                 Run a live prediction
-              </button>
-            </SignInButton>
-          </SignedOut>
-          <SignedIn>
+              </Link>
+            </SignedIn>
             <Link
-              href="/dashboard"
-              className="btn-primary font-body text-[15.5px] font-semibold text-[#04231F] bg-gradient-to-br from-teal to-teal-deep px-[26px] py-3.5 rounded-[12px] transition-all duration-150 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-bg outline-none"
-              style={{ boxShadow: "0 8px 26px rgba(45, 212, 191, 0.32)" }}
+              href="/learn"
+              className="font-body text-[15.5px] font-medium text-ink px-[22px] py-3.5 rounded-[12px] border border-panel-line inline-flex items-center gap-2 hover:border-ink-dim hover:bg-white/[0.03] transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-bg outline-none group"
             >
-              Run a live prediction
+              Read the methodology
+              <ArrowRight className="w-4 h-4 text-ink-mute group-hover:translate-x-0.5 transition-transform" />
             </Link>
-          </SignedIn>
-          <Link
-            href="#"
-            className="btn-ghost font-body text-[15.5px] font-medium text-ink bg-transparent px-[22px] py-3.5 rounded-[12px] border border-panel-line inline-flex items-center gap-[9px] hover:border-ink-dim hover:bg-white/[0.02] transition-colors duration-180 focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-bg outline-none"
-          >
-            <span className="play w-5 h-5 rounded-full bg-white/[0.08] grid place-items-center text-[9px]">
-              ▶
+          </div>
+
+          <div className="font-mono text-[12.5px] text-ink-dim tracking-[0.02em] flex items-center gap-2.5 select-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-bull shadow-[0_0_8px_var(--color-bull)]" />
+            Every call scored on a public Brier leaderboard — no cherry-picking.
+          </div>
+        </div>
+
+        {/* ── Diagram ──────────────────────────────────────────────────── */}
+        <div className="mt-14 md:mt-20 diagram-panel relative rounded-[22px] border border-panel-line bg-gradient-to-b from-[var(--color-panel-sunk)]/90 to-[#070A12]/60 p-4 md:p-6 overflow-hidden">
+          <div className="relative z-10 flex items-center justify-between gap-4 font-mono text-[11px] tracking-[0.12em] text-ink-dim uppercase mb-3 md:mb-1 px-1 select-none">
+            <span>Pipeline · how a call is made</span>
+            <span className="hidden wide:inline-flex items-center gap-1.5 normal-case tracking-normal font-body text-[12px] text-ink-mute">
+              <MousePointerClick className="w-3.5 h-3.5 text-teal" />
+              Hover any node
             </span>
-            Watch 2-min demo
-          </Link>
-        </div>
+            <span className="text-teal">● Example run</span>
+          </div>
 
-        {/* Proof Line */}
-        <div className="proof font-mono text-[12.5px] text-ink-dim tracking-[0.02em] flex items-center gap-2.5 select-none">
-          <span className="live w-1.5 h-1.5 rounded-full bg-bull shadow-[0_0_8px_var(--color-bull)]" />
-          Every call scored on a public Brier leaderboard — no cherry-picking.
+          {/* `wide` is 1360px (see globals.css), not a stock breakpoint. The
+              SVG is 1560 units wide and its stage is the viewport minus the
+              container gutters and this panel's padding, so it renders at
+              roughly (viewport - 128) / 1560: at 1280 that is 0.73 and the
+              10.5px mono sub-labels land at 7.6px, which is unreadable. 1360
+              holds the floor near 0.78 — 8.2px sub-labels, 14px node titles —
+              and still covers 1366 laptops. Below it the stepper says the same
+              thing at full size. Scale plateaus at ~0.89 once the container
+              caps at 1520. */}
+          <div className="relative z-10 hidden wide:block">
+            <PipelineDiagram />
+          </div>
+          <div className="relative z-10 wide:hidden pt-2 pb-1">
+            <PipelineStepper />
+          </div>
         </div>
-      </div>
-
-      {/* Right Column: Pipeline Diagram Wrap */}
-      <div className="diagram-wrap max-[940px]:order-2 relative border border-panel-line rounded-[20px] bg-gradient-to-b from-[var(--color-panel-sunk)]/90 to-[#070A12]/60 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_30px_80px_rgba(0,0,0,0.5)] overflow-hidden before:content-[''] before:absolute before:inset-0 before:bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] before:bg-[size:34px_34px] before:pointer-events-none">
-        {/* Diagram Head */}
-        <div className="diagram-head relative flex justify-between items-center font-mono text-[11px] tracking-[0.12em] text-ink-dim uppercase mb-1.5 px-1 py-0.5 select-none z-10">
-          <span>PIPELINE · {data.ticker} Q3</span>
-          <span className="status text-teal">● {data.status}</span>
-        </div>
-
-        {/* SVG Flow diagram */}
-        <div className="relative z-10 w-full">
-          <PipelineDiagram data={data} />
-        </div>
-      </div>
+      </Container>
     </section>
   );
 }
