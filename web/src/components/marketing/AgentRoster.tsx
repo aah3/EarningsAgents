@@ -33,7 +33,7 @@ export default function AgentRoster() {
       <Container>
         <SectionHeading
           eyebrow="The committee"
-          title="Four agents with genuinely different jobs"
+          title="Four agents, and one seat that's yours"
           id="agents"
         >
           Each one is prompted to be good at its own argument, not to be
