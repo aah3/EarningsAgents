@@ -110,10 +110,10 @@ run_googl_debate.py
 run_july29_batch_gd_chef.py
 
 # Batch execution & one-off scripts
-run_*_batch*
-run_scheduled_batch.py
-schedule_batch_run.py
+scripts/batch_runners/run_*
+scripts/batch_runners/schedule_batch_run.py
 scheduled_tasks/
 scratch/
-test_sprint2_*.py
-verify_research_models.py
+tests/test_sprint2_*.py
+scripts/verify_research_models.py
+

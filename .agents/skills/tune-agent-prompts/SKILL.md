@@ -39,5 +39,6 @@ Follow this procedure when modifying prompt templates, agent debate roles (Bull/
 2. Test a single ticker debate run in dry-run or verify settings mode:
    ```bash
    python verify_settings.py
-   python run_googl_debate.py
+   python scripts/batch_runners/run_googl_debate.py
+
    ```

@@ -34,7 +34,7 @@ python -m pytest tests/test_agents.py -v  # single file
 python -m pytest tests/test_agents.py -v -k test_name   # single test
 make smoke                                # runs tests/smoke_test_phase1.py, phase2, combined, phase4 (hit live/near-live paths)
 ```
-`pytest.ini` sets `testpaths = tests test_earnings_enrichment.py`. Most files under `tests/` prefixed `run_*` or `smoke_test_*` are manual/integration scripts (some call live APIs or LLMs), not part of the default pytest collection filter (`test_*.py`) unless named accordingly — check a file's name before assuming `make test` covers it.
+`pytest.ini` sets `testpaths = tests`. Most files under `tests/` prefixed `run_*` or `smoke_test_*` are manual/integration scripts (some call live APIs or LLMs), not part of the default pytest collection filter (`test_*.py`) unless named accordingly — check a file's name before assuming `make test` covers it.
 
 ### Docker / ops
 ```bash
